@@ -16,6 +16,11 @@ jobs:
         with:
           python-version: '3.11'
 
+      - name: Setup Flutter (non‑interactive)
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.41.7'
+
       - name: Install dependencies
         run: |
           pip install --upgrade pip
