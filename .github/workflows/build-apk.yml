@@ -21,6 +21,10 @@ jobs:
         with:
           flutter-version: '3.41.7'
 
+      - name: Accept Android licenses
+        run: |
+          yes | flutter doctor --android-licenses || true
+
       - name: Install dependencies
         run: |
           pip install --upgrade pip
@@ -30,12 +34,13 @@ jobs:
       - name: Build APK
         run: |
           flet build apk \
+            --yes \
             --product "هوى الشام" \
             --org com.hawaa \
             --splash-color "#1a237e" \
-            --android-permissions android.permission.INTERNET \
-            --android-permissions android.permission.WRITE_EXTERNAL_STORAGE \
-            --android-permissions android.permission.READ_EXTERNAL_STORAGE
+            --android-permissions INTERNET \
+            --android-permissions WRITE_EXTERNAL_STORAGE \
+            --android-permissions READ_EXTERNAL_STORAGE
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
