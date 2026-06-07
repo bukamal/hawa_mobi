@@ -42,9 +42,11 @@ jobs:
 
       - name: Find and copy APK
         run: |
+          echo "Searching for APK files..."
           find build -name "*.apk" -type f
           mkdir -p build/apk/release
           find build -name "*.apk" -type f -exec cp {} build/apk/release/ \;
+          echo "Contents of build/apk/release:"
           ls -la build/apk/release/ || true
 
       - name: Upload APK
