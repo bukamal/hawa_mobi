@@ -120,21 +120,19 @@ class CompanyDetailsMobileView(ft.Column):
 
     def _delete_record(self, record):
         def confirm(e):
-            if e.control.data == "yes":
+            # ✅ استخدام e.control.text بدلاً من e.control.data
+            if e.control.text == "نعم":
                 try:
-                    # محاولة الحذف عبر المستودع
                     repo = ExpenseRepository()
                     repo.delete(record['id'], UserSession.get_current().get('id') if UserSession.get_current() else None)
-                    # إعادة تحميل البيانات
+                    self._show_snackbar("تم الحذف", False)
                     self._reload()
-                    self._show_snackbar("تم الحذف بنجاح", is_error=False)
                 except Exception as ex:
-                    self._show_snackbar(f"فشل الحذف: {str(ex)}", True)
+                    self._show_snackbar(f"خطأ: {str(ex)}", True)
             self._close_dialog(dlg)
 
-        # إنشاء الأزرار مع خاصية data
-        btn_yes = ft.TextButton("نعم", on_click=confirm, data="yes")
-        btn_no = ft.TextButton("لا", on_click=lambda e: self._close_dialog(dlg), data="no")
+        btn_yes = ft.TextButton("نعم", on_click=confirm)
+        btn_no = ft.TextButton("لا", on_click=lambda e: self._close_dialog(dlg))
 
         dlg = ft.AlertDialog(
             title=ft.Text("تأكيد الحذف"),
@@ -144,19 +142,13 @@ class CompanyDetailsMobileView(ft.Column):
         self._page.show_dialog(dlg)
 
     def _reload(self):
-        """إعادة تحميل البيانات من قاعدة البيانات، مع إغلاق الاتصال القديم لضمان التحديث"""
         try:
-            from database.connection import DatabaseConnection
-            db = DatabaseConnection()
-            if db._local_conn:
-                db._local_conn.close()
-                db._local_conn = None
             repo = ExpenseRepository()
             self.records = repo.get_by_company(self.company_name, convert_to_display=False)
             self.records = sorted(self.records, key=lambda x: x['date'])
             self._load_data()
         except Exception as ex:
-            self._show_snackbar(f"خطأ في إعادة التحميل: {str(ex)}", True)
+            self._show_snackbar(f"خطأ: {str(ex)}", True)
 
     def _close_dialog(self, dialog):
         dialog.open = False

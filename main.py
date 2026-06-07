@@ -20,28 +20,16 @@ from views.app_layout import AppLayout
 from database import SettingsRepository
 from database.connection import set_db_path
 
-# قائمة الأذونات المطلوبة لنظام Android
-REQUIRED_PERMISSIONS = [
-    "android.permission.INTERNET",
-    "android.permission.WRITE_EXTERNAL_STORAGE",
-    "android.permission.READ_EXTERNAL_STORAGE"
-]
-
 def main(page: ft.Page):
-    # ===== إعداد مسار قاعدة البيانات =====
+    # ===== إعداد مسار قاعدة البيانات (متوافق مع Android) =====
     data_dir = None
-    
-    # محاولة الحصول على مسار التخزين الخاص بالتطبيق على Android
     try:
         from flet import StoragePaths
         data_dir = StoragePaths().app
-    except Exception as e:
-        print(f"StoragePaths failed: {e}")
-    
+    except Exception:
+        pass
     if not data_dir:
-        # بديل لبيئة سطح المكتب أو الويب
         data_dir = os.path.expanduser('~/.hawaa')
-    
     os.makedirs(data_dir, exist_ok=True)
     db_path = os.path.join(data_dir, "hawaa_data.db")
     set_db_path(db_path)
@@ -57,25 +45,6 @@ def main(page: ft.Page):
     set_language(repo.get('language', 'ar'))
     theme = repo.get('theme', 'light')
     page.theme_mode = ft.ThemeMode.LIGHT if theme == 'light' else ft.ThemeMode.DARK
-
-    # ===== طلب الصلاحيات في Android (يتم قبل عرض أي شيء) =====
-    def request_permissions():
-        if os.name == 'nt':
-            return  # ليس Android
-        try:
-            for perm in REQUIRED_PERMISSIONS:
-                page.request_permission(perm)
-        except Exception as e:
-            print(f"Error requesting permissions: {e}")
-
-    # طلب الصلاحيات فور بدء الصفحة
-    page.on_load = lambda e: request_permissions()
-
-    # تأخير طلب الصلاحيات أيضاً بعد 0.5 ثانية للتأكد (حل بديل)
-    async def delayed_permission_request():
-        await asyncio.sleep(0.5)
-        request_permissions()
-    asyncio.create_task(delayed_permission_request())
 
     def show_splash():
         page.controls.clear()

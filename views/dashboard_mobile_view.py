@@ -66,9 +66,6 @@ class DashboardMobileView(ft.Column):
 
         self._load_data()
 
-    # بقية الدوال كما هي (بدون تغيير)...
-    # (يجب نسخ الدوال من النسخة السابقة ولكن بدون recent_cards)
-
     def _show_snackbar(self, message, is_error=False):
         snack = ft.SnackBar(content=ft.Text(message, size=13), bgcolor=ft.Colors.RED if is_error else ft.Colors.GREEN, duration=3000)
         self._page.snack_bar = snack
@@ -200,7 +197,6 @@ class DashboardMobileView(ft.Column):
             self.cards_container.controls = cards
 
             self.transactions_count_text.value = f"📊 عدد القيود في هذه الفترة: {len(filtered)}"
-
             self._page.update()
         except Exception as ex:
             self._show_snackbar(f"خطأ في تحديث لوحة التحكم: {str(ex)}", True)

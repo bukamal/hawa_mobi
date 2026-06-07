@@ -5,11 +5,29 @@ import os
 import json
 from typing import List, Dict
 
+_SETTINGS_FILE = os.path.join(os.path.expanduser('~/.hawaa'), 'settings.json')
+def _load_settings():
+    if os.path.exists(_SETTINGS_FILE):
+        try:
+            with open(_SETTINGS_FILE, 'r', encoding='utf-8') as f:
+                return json.load(f)
+        except: pass
+    return {}
+def _save_settings(settings):
+    os.makedirs(os.path.dirname(_SETTINGS_FILE), exist_ok=True)
+    with open(_SETTINGS_FILE, 'w', encoding='utf-8') as f:
+        json.dump(settings, f, ensure_ascii=False, indent=2)
+def get_setting(key: str, default=None):
+    return _load_settings().get(key, default)
+def set_setting(key: str, value):
+    s = _load_settings()
+    s[key] = value
+    _save_settings(s)
+
 _DB_PATH = None
-_SETTINGS_FILE = None
 
 def set_db_path(path):
-    global _DB_PATH, _SETTINGS_FILE
+    global _DB_PATH
     _DB_PATH = path
     _SETTINGS_FILE = os.path.join(os.path.dirname(path), 'settings.json')
 
@@ -25,34 +43,6 @@ def get_local_db_path():
         _DB_PATH = os.path.join(data_dir, 'hawaa_data.db')
         _SETTINGS_FILE = os.path.join(data_dir, 'settings.json')
     return _DB_PATH
-
-def _load_settings():
-    path = _SETTINGS_FILE or os.path.join(os.path.dirname(get_local_db_path()), 'settings.json')
-    if os.path.exists(path):
-        try:
-            with open(path, 'r', encoding='utf-8') as f:
-                return json.load(f)
-        except: pass
-    return {}
-
-def _save_settings(settings):
-    path = _SETTINGS_FILE or os.path.join(os.path.dirname(get_local_db_path()), 'settings.json')
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-    with open(path, 'w', encoding='utf-8') as f:
-        json.dump(settings, f, ensure_ascii=False, indent=2)
-
-def get_setting(key: str, default=None):
-    return _load_settings().get(key, default)
-
-def set_setting(key: str, value):
-    s = _load_settings()
-    s[key] = value
-    _save_settings(s)
-
-def get_local_db_path():
-    return _DB_PATH if _DB_PATH else os.path.join(os.path.expanduser('~/.hawaa'), 'hawaa_data.db')
-
-LOCAL_DB_PATH = get_local_db_path()
 
 class DatabaseConnection:
     _instance = None
@@ -198,5 +188,3 @@ class DatabaseConnection:
         conn.commit()
     def vacuum(self):
         if self.mode != "client" and self._local_conn: self._local_conn.execute("VACUUM")
-
-DB_PATH = get_local_db_path()

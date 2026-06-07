@@ -244,10 +244,10 @@ class SettingsMobileView(ft.Column):
         self._show_snackbar("تم حفظ معلومات الشركة", is_error=False)
     def _browse_logo(self, e): self._show_snackbar("استخدم مسار الملف مباشرة")
 
-    # ==================== تبويب اللغة والمظهر (تم إصلاح cur_theme) ====================
+    # ==================== تبويب اللغة والمظهر ====================
     def _lang_theme_tab(self):
         cur_lang = self.repo.get('language','ar')
-        cur_theme = self.repo.get('theme','light')   # ✅ تم إضافة هذا السطر المفقود
+        cur_theme = self.repo.get('theme','light')
         self.lang_dropdown = ft.Dropdown(
             label="اللغة",
             value="العربية" if cur_lang=='ar' else "English" if cur_lang=='en' else "Français",
@@ -295,7 +295,6 @@ class SettingsMobileView(ft.Column):
             options=[ft.dropdown.Option("محلي"), ft.dropdown.Option("عميل"), ft.dropdown.Option("خادم")],
             width=250
         )
-        # تعيين on_change بعد الإنشاء
         self.mode_dropdown.on_change = self._on_mode_change
 
         self.server_url = ft.TextField(label="عنوان الخادم (للعميل)", value=db.server_url, width=350, hint_text="http://192.168.1.100:8001")
