@@ -1,0 +1,8 @@
+flet>=0.85.0
+requests>=2.25.0
+Flask==3.0.0
+flask-jwt-extended==4.6.0
+Flask-Limiter>=3.5.0
+waitress>=2.1.0
+bcrypt>=4.0.0
+werkzeug>=2.3.0

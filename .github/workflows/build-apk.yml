@@ -1,0 +1,39 @@
+name: Build APK
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          pip install --upgrade pip
+          pip install flet[build] requests bcrypt
+          pip install -r requirements.txt
+
+      - name: Build APK
+        run: |
+          flet build apk \
+            --product "هوى الشام" \
+            --org com.hawaa \
+            --splash-color "#1a237e" \
+            --android-permissions android.permission.INTERNET \
+            --android-permissions android.permission.WRITE_EXTERNAL_STORAGE \
+            --android-permissions android.permission.READ_EXTERNAL_STORAGE
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: hawaa-apk
+          path: build/apk/release/*.apk
