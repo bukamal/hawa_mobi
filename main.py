@@ -21,17 +21,27 @@ from database import SettingsRepository
 from database.connection import set_db_path
 
 def main(page: ft.Page):
-    # الحصول على مسار التخزين بطريقة متوافقة مع جميع الإصدارات (والـ APK)
+    # ===== إعداد مسار قاعدة البيانات (متوافق مع Android) =====
     data_dir = None
-    # محاولة استخدام StoragePaths إذا كان متاحاً (للـ APK)
-    try:
-        from flet import StoragePaths
-        data_dir = StoragePaths().app
-    except:
-        pass
+    
+    # الطريقة الصحيحة للحصول على مسار التخزين في Flet 0.85.2
+    if hasattr(page, 'storage_paths') and page.storage_paths:
+        try:
+            if isinstance(page.storage_paths, list) and len(page.storage_paths) > 0:
+                data_dir = page.storage_paths[0]
+            elif hasattr(page.storage_paths, 'get'):
+                data_dir = page.storage_paths.get('app')
+        except:
+            pass
+    
+    if not data_dir and hasattr(page, 'get_storage_path'):
+        try:
+            data_dir = page.get_storage_path()
+        except:
+            pass
     
     if not data_dir:
-        # بديل: استخدام المسار الافتراضي للمستخدم (يعمل في وضع الويب)
+        # وضع الويب أو سطح المكتب
         data_dir = os.path.expanduser('~/.hawaa')
     
     os.makedirs(data_dir, exist_ok=True)
@@ -49,6 +59,23 @@ def main(page: ft.Page):
     set_language(repo.get('language', 'ar'))
     theme = repo.get('theme', 'light')
     page.theme_mode = ft.ThemeMode.LIGHT if theme == 'light' else ft.ThemeMode.DARK
+
+    # ===== طلب صلاحيات Android في وقت التشغيل =====
+    def check_permissions():
+        if os.name == 'nt' or os.path.exists("/data/data/com.termux"):
+            return
+        try:
+            page.request_permission("android.permission.INTERNET")
+            page.request_permission("android.permission.WRITE_EXTERNAL_STORAGE")
+            page.request_permission("android.permission.READ_EXTERNAL_STORAGE")
+        except Exception as e:
+            print(f"Permission request error: {e}")
+
+    # تأخير طلب الصلاحيات بعد تحميل الصفحة
+    def on_page_load(e):
+        check_permissions()
+    
+    page.on_load = on_page_load
 
     def show_splash():
         page.controls.clear()
@@ -103,7 +130,6 @@ def main(page: ft.Page):
 
     async def close_app_async():
         stop_license_checker()
-        # إيقاف خادم Flask إذا كان يعمل
         try:
             from flask_server import stop_flask_server
             stop_flask_server()

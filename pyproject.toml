@@ -17,7 +17,7 @@ build-backend = "flet_core.build"
 org = "com.hawaa"
 product = "هوى الشام"
 android_permissions = [
-    "android.permission.INTERNET",
-    "android.permission.WRITE_EXTERNAL_STORAGE",
-    "android.permission.READ_EXTERNAL_STORAGE",
+    "INTERNET",
+    "WRITE_EXTERNAL_STORAGE",
+    "READ_EXTERNAL_STORAGE"
 ]

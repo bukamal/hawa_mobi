@@ -40,17 +40,21 @@ jobs:
         run: |
           flet build apk --yes --verbose --product "هوى الشام" --org com.hawaa
 
-      - name: Find and copy APK
+      - name: Locate and rename APK
         run: |
-          echo "Searching for APK files..."
-          find build -name "*.apk" -type f
+          # البحث عن أول ملف APK في مجلد build
+          APK_PATH=$(find build -name "*.apk" -type f | head -n 1)
+          if [ -z "$APK_PATH" ]; then
+            echo "❌ No APK found!"
+            exit 1
+          fi
+          echo "✅ Found APK at: $APK_PATH"
           mkdir -p build/apk/release
-          find build -name "*.apk" -type f -exec cp {} build/apk/release/ \;
-          echo "Contents of build/apk/release:"
-          ls -la build/apk/release/ || true
+          cp "$APK_PATH" build/apk/release/app-release.apk
+          echo "✅ Copied to build/apk/release/app-release.apk"
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: hawaa-apk
-          path: build/apk/release/*.apk
+          path: build/apk/release/app-release.apk
