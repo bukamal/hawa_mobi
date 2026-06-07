@@ -16,25 +16,40 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Setup Flutter (non‑interactive)
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y openjdk-17-jdk curl unzip zip git
+
+      - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
           flutter-version: '3.41.7'
+          channel: 'stable'
 
       - name: Accept Android licenses
-        run: |
-          yes | flutter doctor --android-licenses || true
+        run: yes | flutter doctor --android-licenses || true
 
-      - name: Install dependencies
+      - name: Install Python dependencies
         run: |
           pip install --upgrade pip
           pip install flet[build] requests bcrypt
-          pip install -r requirements.txt
+          pip install -r requirements.txt || true
 
-      - name: Build APK
+      - name: Debug project files
         run: |
-          # استخدام --yes لتجنب أي مطالبات تفاعلية
-          flet build apk --yes --product "هوى الشام" --org com.hawaa
+          ls -la
+          ls -la views/ || true
+          cat main.py | head -20
+
+      - name: Build APK with verbose output
+        run: |
+          flet build apk --yes --verbose --product "هوى الشام" --org com.hawaa
+
+      - name: List build artifacts
+        run: |
+          find build -type f || true
+          ls -la build/apk/release/ || true
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
