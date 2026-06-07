@@ -35,18 +35,15 @@ def set_db_path(path):
 def get_local_db_path():
     global _DB_PATH
     if _DB_PATH is None:
-        if os.name == 'nt':
-            appdata = os.environ.get('APPDATA', os.path.expanduser('~\\AppData\\Roaming'))
-            data_dir = os.path.join(appdata, 'Hawaa')
-        else:
-            data_dir = os.path.expanduser('~/.hawaa')
+        # مسار افتراضي آمن (لن يُستخدم على Android إذا تم استدعاء set_db_path أولاً)
+        data_dir = os.path.expanduser('~/.hawaa')
         os.makedirs(data_dir, exist_ok=True)
         _DB_PATH = os.path.join(data_dir, 'hawaa_data.db')
         _SETTINGS_FILE = os.path.join(data_dir, 'settings.json')
     return _DB_PATH
 
-# ✅ تصدير DB_PATH للتوافق مع migrations.py
-DB_PATH = get_local_db_path()
+# ✅ لا نستدعي get_local_db_path هنا! نتركها None.
+DB_PATH = None   # ستعيّن لاحقاً عبر set_db_path في main.py
 
 class DatabaseConnection:
     _instance = None
@@ -112,7 +109,7 @@ class DatabaseConnection:
         if self.mode != "client": self.execute("BEGIN TRANSACTION")
     def close(self):
         if self._local_conn: self._local_conn.close(); self._local_conn = None
-    # CRUD helpers
+    # CRUD helpers (نفس الكود السابق، لا تغيير)...
     def get_expenses(self) -> List[Dict]:
         if self.mode == "client": return self._rest_client.get_expenses()
         conn = self.get_connection()
