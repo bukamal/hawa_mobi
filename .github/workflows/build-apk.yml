@@ -36,19 +36,15 @@ jobs:
           pip install flet[build] requests bcrypt
           pip install -r requirements.txt || true
 
-      - name: Debug project files
-        run: |
-          ls -la
-          ls -la views/ || true
-          cat main.py | head -20
-
-      - name: Build APK with verbose output
+      - name: Build APK
         run: |
           flet build apk --yes --verbose --product "هوى الشام" --org com.hawaa
 
-      - name: List build artifacts
+      - name: Find and copy APK
         run: |
-          find build -type f || true
+          find build -name "*.apk" -type f
+          mkdir -p build/apk/release
+          find build -name "*.apk" -type f -exec cp {} build/apk/release/ \;
           ls -la build/apk/release/ || true
 
       - name: Upload APK
