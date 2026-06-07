@@ -29,6 +29,7 @@ _DB_PATH = None
 def set_db_path(path):
     global _DB_PATH
     _DB_PATH = path
+    global _SETTINGS_FILE
     _SETTINGS_FILE = os.path.join(os.path.dirname(path), 'settings.json')
 
 def get_local_db_path():
@@ -43,6 +44,9 @@ def get_local_db_path():
         _DB_PATH = os.path.join(data_dir, 'hawaa_data.db')
         _SETTINGS_FILE = os.path.join(data_dir, 'settings.json')
     return _DB_PATH
+
+# ✅ تصدير DB_PATH للتوافق مع migrations.py
+DB_PATH = get_local_db_path()
 
 class DatabaseConnection:
     _instance = None

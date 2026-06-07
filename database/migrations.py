@@ -1,7 +1,9 @@
 # -*- coding: utf-8 -*-
 import sqlite3, os, datetime
-from database.connection import DatabaseConnection, DB_PATH
+from database.connection import DatabaseConnection, get_local_db_path
 from auth.password import hash_password
+
+DB_PATH = get_local_db_path()
 
 def init_database():
     db = DatabaseConnection()
