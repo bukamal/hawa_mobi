@@ -17,7 +17,11 @@ class UsersMobileView(ft.Column):
             bgcolor=ft.Colors.INDIGO,
             foreground_color=ft.Colors.WHITE,
             on_click=self._add_user,
-            tooltip=translate('add')
+            tooltip=translate('add'),
+            mini=False,
+            elevation=6,
+            shape=ft.CircleBorder(),
+            margin=ft.Margin(left=0, right=16, top=0, bottom=80)
         )
         self._page.floating_action_button = self.add_btn
 
@@ -73,7 +77,7 @@ class UsersMobileView(ft.Column):
                         padding=15
                     ),
                     elevation=1,
-                    margin=ft.margin.symmetric(vertical=5, horizontal=10)
+                    margin=ft.Margin(left=10, right=10, top=5, bottom=5)
                 )
                 cards.append(card)
             self.users_list.controls = cards
@@ -100,10 +104,17 @@ class UsersMobileView(ft.Column):
                     self._load_users()
                 else:
                     self._show_snackbar("فشل الحذف", True)
-            self._page.close_dialog()
+            self._close_dialog(dlg)
         dlg = ft.AlertDialog(
             title=ft.Text(translate('confirm_delete')),
             content=ft.Text("هل أنت متأكد من حذف هذا المستخدم؟"),
-            actions=[ft.TextButton("نعم", on_click=confirm_delete), ft.TextButton("لا", on_click=lambda e: self._page.close_dialog())]
+            actions=[
+                ft.TextButton("نعم", on_click=confirm_delete),
+                ft.TextButton("لا", on_click=lambda e: self._close_dialog(dlg))
+            ]
         )
         self._page.show_dialog(dlg)
+
+    def _close_dialog(self, dialog):
+        dialog.open = False
+        self._page.update()

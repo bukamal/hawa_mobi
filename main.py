@@ -20,28 +20,26 @@ from views.app_layout import AppLayout
 from database import SettingsRepository
 from database.connection import set_db_path
 
+# قائمة الأذونات المطلوبة لنظام Android
+REQUIRED_PERMISSIONS = [
+    "android.permission.INTERNET",
+    "android.permission.WRITE_EXTERNAL_STORAGE",
+    "android.permission.READ_EXTERNAL_STORAGE"
+]
+
 def main(page: ft.Page):
-    # ===== إعداد مسار قاعدة البيانات (متوافق مع Android) =====
+    # ===== إعداد مسار قاعدة البيانات =====
     data_dir = None
     
-    # الطريقة الصحيحة للحصول على مسار التخزين في Flet 0.85.2
-    if hasattr(page, 'storage_paths') and page.storage_paths:
-        try:
-            if isinstance(page.storage_paths, list) and len(page.storage_paths) > 0:
-                data_dir = page.storage_paths[0]
-            elif hasattr(page.storage_paths, 'get'):
-                data_dir = page.storage_paths.get('app')
-        except:
-            pass
-    
-    if not data_dir and hasattr(page, 'get_storage_path'):
-        try:
-            data_dir = page.get_storage_path()
-        except:
-            pass
+    # محاولة الحصول على مسار التخزين الخاص بالتطبيق على Android
+    try:
+        from flet import StoragePaths
+        data_dir = StoragePaths().app
+    except Exception as e:
+        print(f"StoragePaths failed: {e}")
     
     if not data_dir:
-        # وضع الويب أو سطح المكتب
+        # بديل لبيئة سطح المكتب أو الويب
         data_dir = os.path.expanduser('~/.hawaa')
     
     os.makedirs(data_dir, exist_ok=True)
@@ -60,22 +58,24 @@ def main(page: ft.Page):
     theme = repo.get('theme', 'light')
     page.theme_mode = ft.ThemeMode.LIGHT if theme == 'light' else ft.ThemeMode.DARK
 
-    # ===== طلب صلاحيات Android في وقت التشغيل =====
-    def check_permissions():
-        if os.name == 'nt' or os.path.exists("/data/data/com.termux"):
-            return
+    # ===== طلب الصلاحيات في Android (يتم قبل عرض أي شيء) =====
+    def request_permissions():
+        if os.name == 'nt':
+            return  # ليس Android
         try:
-            page.request_permission("android.permission.INTERNET")
-            page.request_permission("android.permission.WRITE_EXTERNAL_STORAGE")
-            page.request_permission("android.permission.READ_EXTERNAL_STORAGE")
+            for perm in REQUIRED_PERMISSIONS:
+                page.request_permission(perm)
         except Exception as e:
-            print(f"Permission request error: {e}")
+            print(f"Error requesting permissions: {e}")
 
-    # تأخير طلب الصلاحيات بعد تحميل الصفحة
-    def on_page_load(e):
-        check_permissions()
-    
-    page.on_load = on_page_load
+    # طلب الصلاحيات فور بدء الصفحة
+    page.on_load = lambda e: request_permissions()
+
+    # تأخير طلب الصلاحيات أيضاً بعد 0.5 ثانية للتأكد (حل بديل)
+    async def delayed_permission_request():
+        await asyncio.sleep(0.5)
+        request_permissions()
+    asyncio.create_task(delayed_permission_request())
 
     def show_splash():
         page.controls.clear()

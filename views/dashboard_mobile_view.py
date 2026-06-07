@@ -14,7 +14,6 @@ class DashboardMobileView(ft.Column):
         self.spacing = 15
         self.scroll = ft.ScrollMode.AUTO
 
-        # ===== شريط الفلاتر =====
         self.period_filter = ft.Dropdown(
             label="الفترة",
             value="الكل",
@@ -29,7 +28,6 @@ class DashboardMobileView(ft.Column):
         )
         self.period_filter.on_change = self._on_period_change
 
-        # حقول التاريخ المخصصة (تظهر فقط عند اختيار "مخصص")
         self.start_date_picker = ft.TextField(
             label="من تاريخ",
             hint_text="YYYY-MM-DD",
@@ -46,25 +44,16 @@ class DashboardMobileView(ft.Column):
         )
         self.custom_date_row = ft.Row([self.start_date_picker, self.end_date_picker], spacing=10, visible=False)
 
-        # أزرار التحديث
         self.refresh_btn = ft.IconButton(ft.Icons.REFRESH, on_click=self._refresh, tooltip="تحديث")
-
-        # ===== ملخص سريع (عدد القيود في الفترة) =====
         self.transactions_count_text = ft.Text("", size=12, color=ft.Colors.GREY_600)
 
-        # ===== حاوية البطاقات (إحصائيات) =====
-        self.cards_container = ft.Column(spacing=10, scroll=ft.ScrollMode.AUTO)
-
-        # ===== قائمة آخر القيود (بطاقات) =====
-        self.recent_cards = ft.Column(spacing=10, scroll=ft.ScrollMode.AUTO)
-
-        # ===== منتقيات التاريخ (DatePicker) =====
         self.start_date_picker_obj = ft.DatePicker(on_change=self._on_start_date_change)
         self.end_date_picker_obj = ft.DatePicker(on_change=self._on_end_date_change)
         self._page.overlay.append(self.start_date_picker_obj)
         self._page.overlay.append(self.end_date_picker_obj)
 
-        # تخطيط الصفحة
+        self.cards_container = ft.Column(spacing=10, scroll=ft.ScrollMode.AUTO)
+
         self.controls = [
             ft.Row([ft.Text(translate('dashboard'), size=20, weight=ft.FontWeight.BOLD), self.refresh_btn],
                    alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
@@ -72,15 +61,14 @@ class DashboardMobileView(ft.Column):
             self.custom_date_row,
             ft.Row([self.transactions_count_text], alignment=ft.MainAxisAlignment.CENTER),
             ft.Divider(),
-            self.cards_container,
-            ft.Divider(),
-            ft.Text("آخر القيود:", size=14, weight=ft.FontWeight.BOLD),
-            self.recent_cards
+            self.cards_container
         ]
 
         self._load_data()
 
-    # ========== دوال مساعدة ==========
+    # بقية الدوال كما هي (بدون تغيير)...
+    # (يجب نسخ الدوال من النسخة السابقة ولكن بدون recent_cards)
+
     def _show_snackbar(self, message, is_error=False):
         snack = ft.SnackBar(content=ft.Text(message, size=13), bgcolor=ft.Colors.RED if is_error else ft.Colors.GREEN, duration=3000)
         self._page.snack_bar = snack
@@ -106,7 +94,6 @@ class DashboardMobileView(ft.Column):
     def _on_period_change(self, e):
         if self.period_filter.value == "مخصص":
             self.custom_date_row.visible = True
-            # تعيين قيم افتراضية إذا كانت فارغة
             if not self.start_date_picker.value:
                 self.start_date_picker.value = (datetime.now() - timedelta(days=30)).strftime("%Y-%m-%d")
             if not self.end_date_picker.value:
@@ -138,14 +125,11 @@ class DashboardMobileView(ft.Column):
             end = datetime(today.year, 12, 31)
             return start.strftime("%Y-%m-%d"), end.strftime("%Y-%m-%d")
         elif period == "مخصص":
-            start = self.start_date_picker.value
-            end = self.end_date_picker.value
-            return start, end
-        else:  # الكل
+            return self.start_date_picker.value, self.end_date_picker.value
+        else:
             return None, None
 
     def _create_card(self, title, value, color=ft.Colors.INDIGO, icon=None):
-        """إنشاء بطاقة إحصائية مبسطة للموبايل"""
         return ft.Card(
             content=ft.Container(
                 content=ft.Row([
@@ -159,31 +143,7 @@ class DashboardMobileView(ft.Column):
                 padding=15
             ),
             elevation=1,
-            margin=ft.margin.symmetric(vertical=3, horizontal=5)
-        )
-
-    def _create_recent_card(self, record, display_curr):
-        """إنشاء بطاقة لعرض قيد في قائمة آخر القيود"""
-        amount_str = f"{record['amount_original']:,.2f} {record['currency_original']}"
-        type_text = "لنا" if record['type'] == 'incoming' else "له"
-        type_color = ft.Colors.GREEN if record['type'] == 'incoming' else ft.Colors.RED
-        icon = ft.Icons.ARROW_DOWNWARD if record['type'] == 'incoming' else ft.Icons.ARROW_UPWARD
-        return ft.Card(
-            content=ft.Container(
-                content=ft.Column([
-                    ft.Row([
-                        ft.Text(record['company_name'], size=14, weight=ft.FontWeight.BOLD, expand=True),
-                        ft.Text(record['date'], size=11, color=ft.Colors.GREY_500)
-                    ]),
-                    ft.Row([
-                        ft.Row([icon, ft.Text(amount_str, size=14, color=type_color, weight=ft.FontWeight.BOLD)], spacing=5),
-                        ft.Text(type_text, size=12, color=type_color)
-                    ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN)
-                ], spacing=5),
-                padding=12
-            ),
-            elevation=1,
-            margin=ft.margin.symmetric(vertical=5, horizontal=5)
+            margin=ft.Margin(left=5, right=5, top=3, bottom=3)
         )
 
     def _refresh(self, e):
@@ -195,7 +155,6 @@ class DashboardMobileView(ft.Column):
             user_repo = UserRepository()
             all_expenses = expense_repo.get_all(convert_to_display=False)
 
-            # تطبيق فلتر الفترة
             start_date, end_date = self._get_date_filter()
             filtered = []
             for ex in all_expenses:
@@ -205,7 +164,6 @@ class DashboardMobileView(ft.Column):
                     continue
                 filtered.append(ex)
 
-            # إحصائيات أساسية
             total_in_usd = sum(e['amount'] for e in filtered if e['type'] == 'incoming')
             total_out_usd = sum(e['amount'] for e in filtered if e['type'] == 'outgoing')
             net_usd = total_in_usd - total_out_usd
@@ -219,7 +177,6 @@ class DashboardMobileView(ft.Column):
             avg = sum(e['amount'] for e in filtered) / len(filtered) if filtered else 0
             avg_display = currency.convert(avg, 'USD', display_curr)
 
-            # أعلى شركة
             company_net = defaultdict(float)
             for e in filtered:
                 val = e['amount'] if e['type'] == 'incoming' else -e['amount']
@@ -227,11 +184,9 @@ class DashboardMobileView(ft.Column):
             top_company = max(company_net.items(), key=lambda x: x[1]) if company_net else ("—", 0)
             top_display = currency.convert(top_company[1], 'USD', display_curr)
 
-            # سعر الصرف الحالي
             rate = currency.get_rate_to_usd(display_curr)
             rate_text = f"1 {display_curr} = {rate:.4f} USD" if display_curr != 'USD' else "1 USD = 1.00 USD"
 
-            # عرض البطاقات
             cards = [
                 self._create_card(translate('total_incoming'), currency.format_amount(total_in, display_curr), ft.Colors.GREEN),
                 self._create_card(translate('total_outgoing'), currency.format_amount(total_out, display_curr), ft.Colors.RED),
@@ -244,15 +199,7 @@ class DashboardMobileView(ft.Column):
             ]
             self.cards_container.controls = cards
 
-            # عدد القيود في الفترة
             self.transactions_count_text.value = f"📊 عدد القيود في هذه الفترة: {len(filtered)}"
-
-            # آخر 5 قيود (بطاقات)
-            recent = sorted(all_expenses, key=lambda x: x['id'], reverse=True)[:5]
-            recent_cards = [self._create_recent_card(r, display_curr) for r in recent]
-            if not recent_cards:
-                recent_cards.append(ft.Container(content=ft.Text("لا توجد قيود حديثة", color=ft.Colors.GREY_400), alignment=ft.Alignment.CENTER, padding=20))
-            self.recent_cards.controls = recent_cards
 
             self._page.update()
         except Exception as ex:

@@ -82,7 +82,7 @@ class AuditLogMobileView(ft.Column):
                         padding=12
                     ),
                     elevation=1,
-                    margin=ft.margin.symmetric(vertical=5, horizontal=10)
+                    margin=ft.Margin(left=10, right=10, top=5, bottom=5)
                 )
                 cards.append(card)
             if not cards:
@@ -101,7 +101,11 @@ class AuditLogMobileView(ft.Column):
                     self._refresh(None)
                 except Exception as ex:
                     self._show_snackbar(f"خطأ: {str(ex)}", True)
-            self._page.close_dialog()
+            self._close_dialog(dlg)
         dlg = ft.AlertDialog(title=ft.Text("تأكيد الحذف"), content=ft.Text("هل أنت متأكد من حذف السجلات الأقدم من 90 يوماً؟"),
-                             actions=[ft.TextButton("نعم", on_click=confirm), ft.TextButton("لا", on_click=lambda e: self._page.close_dialog())])
+                             actions=[ft.TextButton("نعم", on_click=confirm), ft.TextButton("لا", on_click=lambda e: self._close_dialog(dlg))])
         self._page.show_dialog(dlg)
+
+    def _close_dialog(self, dialog):
+        dialog.open = False
+        self._page.update()

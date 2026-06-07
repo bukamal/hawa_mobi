@@ -24,7 +24,6 @@ class AccountsMobileView(ft.Column):
             text_size=14
         )
 
-        # عناصر الملخص
         self.net_text = ft.Text("0", size=22, weight=ft.FontWeight.BOLD, color=ft.Colors.INDIGO)
         self.companies_count_text = ft.Text("0", size=22, weight=ft.FontWeight.BOLD, color=ft.Colors.BLUE)
         self.records_count_text = ft.Text("0", size=22, weight=ft.FontWeight.BOLD, color=ft.Colors.ORANGE)
@@ -49,24 +48,20 @@ class AccountsMobileView(ft.Column):
 
         self.cards_container = ft.Column(spacing=10, scroll=ft.ScrollMode.AUTO, expand=True)
 
-        # ✅ ضبط الزر العائم ليكون متناسقاً ومنتظماً
         self.fab = ft.FloatingActionButton(
             icon=ft.Icons.ADD,
             bgcolor=ft.Colors.GREEN,
             foreground_color=ft.Colors.WHITE,
             on_click=self._add_record,
             tooltip=translate('add'),
-            mini=False,               # حجم عادي
-            elevation=6,              # ظل خفيف
-            shape=ft.CircleBorder(),  # شكل دائري منتظم
-            margin=ft.Margin(left=0, right=16, top=0, bottom=80)  # رفع عن شريط التنقل
+            mini=False,
+            elevation=6,
+            shape=ft.CircleBorder(),
+            margin=ft.Margin(left=0, right=16, top=0, bottom=80)
         )
 
         self.controls = [
-            ft.Container(
-                content=self.search_field,
-                padding=ft.Padding(left=10, right=10, top=10, bottom=0)
-            ),
+            ft.Container(content=self.search_field, padding=ft.Padding(left=10, right=10, top=10, bottom=0)),
             self.summary_bar,
             self.cards_container
         ]
