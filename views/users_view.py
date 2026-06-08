@@ -27,10 +27,7 @@ class UsersView(ft.Column):
         self._load_users()
 
     def _show_snackbar(self, message, is_error=False):
-        snack = ft.SnackBar(content=ft.Text(message), bgcolor=ft.Colors.RED if is_error else ft.Colors.GREEN)
-        self._page.snack_bar = snack
-        snack.open = True
-        self._page.update()
+        self._page.open(ft.SnackBar(content=ft.Text(message), bgcolor=ft.Colors.RED if is_error else ft.Colors.GREEN))
 
     def _load_users(self):
         try:
@@ -62,12 +59,12 @@ class UsersView(ft.Column):
     def _add_user(self, e):
         from views.dialogs.user_dialog import UserDialog
         dialog = UserDialog(page=self._page, on_save=lambda: self._load_users())
-        self._page.show_dialog(dialog)
+        self._page.open(dialog)
 
     def _edit_user(self, user_id):
         from views.dialogs.user_dialog import UserDialog
         dialog = UserDialog(page=self._page, user_id=user_id, on_save=lambda: self._load_users())
-        self._page.show_dialog(dialog)
+        self._page.open(dialog)
 
     def _delete_user(self, user_id):
         def confirm_delete(e):
@@ -81,4 +78,4 @@ class UsersView(ft.Column):
             self._page.close_dialog()
         dlg = ft.AlertDialog(title=ft.Text(translate('confirm_delete')), content=ft.Text("هل أنت متأكد من حذف هذا المستخدم؟"),
                              actions=[ft.TextButton("نعم", on_click=confirm_delete), ft.TextButton("لا", on_click=lambda e: self._page.close_dialog())])
-        self._page.show_dialog(dlg)
+        self._page.open(dlg)

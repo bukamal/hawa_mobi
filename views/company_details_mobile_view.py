@@ -27,10 +27,7 @@ class CompanyDetailsMobileView(ft.Column):
         self._load_data()
 
     def _show_snackbar(self, message, is_error=False):
-        snack = ft.SnackBar(content=ft.Text(message, size=13), bgcolor=ft.Colors.RED if is_error else ft.Colors.GREEN, duration=3000)
-        self._page.snack_bar = snack
-        snack.open = True
-        self._page.update()
+        self._page.open(ft.SnackBar(content=ft.Text(message, size=13), bgcolor=ft.Colors.RED if is_error else ft.Colors.GREEN, duration=3000))
 
     def _load_data(self):
         display_curr = currency.get_display_currency()
@@ -116,11 +113,10 @@ class CompanyDetailsMobileView(ft.Column):
     def _edit_record(self, record):
         from views.dialogs.add_edit_expense_dialog import AddEditExpenseDialog
         dialog = AddEditExpenseDialog(page=self._page, on_save=lambda _: self._reload(), expense=record)
-        self._page.show_dialog(dialog)
+        self._page.open(dialog)
 
     def _delete_record(self, record):
         def confirm(e):
-            # ✅ استخدام e.control.text بدلاً من e.control.data
             if e.control.text == "نعم":
                 try:
                     repo = ExpenseRepository()
@@ -139,7 +135,7 @@ class CompanyDetailsMobileView(ft.Column):
             content=ft.Text(f"حذف قيد بمبلغ {record['amount_original']} {record['currency_original']}؟"),
             actions=[btn_yes, btn_no]
         )
-        self._page.show_dialog(dlg)
+        self._page.open(dlg)
 
     def _reload(self):
         try:

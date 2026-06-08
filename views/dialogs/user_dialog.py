@@ -87,10 +87,7 @@ class UserDialog(ft.AlertDialog):
         self._page.update()
 
     def _show_snackbar(self, message, is_error=False):
-        snack = ft.SnackBar(content=ft.Text(message, size=13), bgcolor=ft.Colors.RED if is_error else ft.Colors.GREEN, duration=3000)
-        self._page.snack_bar = snack
-        snack.open = True
-        self._page.update()
+        self._page.open(ft.SnackBar(content=ft.Text(message, size=13), bgcolor=ft.Colors.RED if is_error else ft.Colors.GREEN, duration=3000))
 
     def _load_user(self):
         try:
@@ -137,4 +134,4 @@ class UserDialog(ft.AlertDialog):
     def _change_password(self, e):
         from views.dialogs.change_password_dialog import ChangePasswordDialog
         dialog = ChangePasswordDialog(page=self._page, user_id=self.user_id, on_save=lambda: None)
-        self._page.show_dialog(dialog)
+        self._page.open(dialog)

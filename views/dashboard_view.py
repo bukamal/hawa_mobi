@@ -63,10 +63,7 @@ class DashboardView(ft.Column):
         return start.strftime("%Y-%m-%d"), end.strftime("%Y-%m-%d")
 
     def _show_snackbar(self, message, is_error=False):
-        snack = ft.SnackBar(content=ft.Text(message), bgcolor=ft.Colors.RED if is_error else ft.Colors.GREEN)
-        self._page.snack_bar = snack
-        snack.open = True
-        self._page.update()
+        self._page.open(ft.SnackBar(content=ft.Text(message), bgcolor=ft.Colors.RED if is_error else ft.Colors.GREEN))
 
     def _refresh(self, e):
         try:

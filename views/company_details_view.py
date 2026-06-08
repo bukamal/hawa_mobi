@@ -51,10 +51,7 @@ class CompanyDetailsView(ft.Column):
         self._load_data()
 
     def _show_snackbar(self, message, is_error=False):
-        snack = ft.SnackBar(content=ft.Text(message), bgcolor=ft.Colors.RED if is_error else ft.Colors.GREEN)
-        self._page.snack_bar = snack
-        snack.open = True
-        self._page.update()
+        self._page.open(ft.SnackBar(content=ft.Text(message), bgcolor=ft.Colors.RED if is_error else ft.Colors.GREEN))
 
     def _load_data(self):
         repo = ExpenseRepository()
@@ -100,7 +97,7 @@ class CompanyDetailsView(ft.Column):
     def _add_record(self, e):
         from views.dialogs.add_edit_expense_dialog import AddEditExpenseDialog
         dialog = AddEditExpenseDialog(page=self._page, on_save=lambda _: self._load_data(), company_name=self.company_name)
-        self._page.show_dialog(dialog)
+        self._page.open(dialog)
 
     def _delete_record(self, e):
         self._show_snackbar("اختر قيداً من الجدول للحذف")

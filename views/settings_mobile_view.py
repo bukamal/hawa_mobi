@@ -36,12 +36,8 @@ class SettingsMobileView(ft.Column):
         ]
 
     def _show_snackbar(self, message, is_error=False):
-        snack = ft.SnackBar(content=ft.Text(message, size=13), bgcolor=ft.Colors.RED if is_error else ft.Colors.GREEN, duration=3000)
-        self._page.snack_bar = snack
-        snack.open = True
-        self._page.update()
+        self._page.open(ft.SnackBar(content=ft.Text(message, size=13), bgcolor=ft.Colors.RED if is_error else ft.Colors.GREEN, duration=3000))
 
-    # ==================== تبويب العملات ====================
     def _currency_tab(self):
         field_width = 280
         self.base_curr = ft.Dropdown(
@@ -92,7 +88,6 @@ class SettingsMobileView(ft.Column):
         self.repo.set('abbreviate_numbers', 'true' if self.abbreviate.value else 'false')
         self._show_snackbar("تم حفظ إعدادات العملة", is_error=False)
 
-    # ==================== تبويب أسعار الصرف ====================
     def _rates_tab(self):
         self.rates_list = ft.Column(spacing=10, scroll=ft.ScrollMode.AUTO, expand=True)
         refresh_btn = ft.FilledButton(
@@ -226,7 +221,6 @@ class SettingsMobileView(ft.Column):
         except Exception as ex:
             self._show_snackbar(f"خطأ: {str(ex)}", True)
 
-    # ==================== تبويب الشركة ====================
     def _company_tab(self):
         info = get_company_info()
         self.company_name = ft.TextField(label="اسم الشركة", value=info.get('name',''), width=350)
@@ -244,7 +238,6 @@ class SettingsMobileView(ft.Column):
         self._show_snackbar("تم حفظ معلومات الشركة", is_error=False)
     def _browse_logo(self, e): self._show_snackbar("استخدم مسار الملف مباشرة")
 
-    # ==================== تبويب اللغة والمظهر ====================
     def _lang_theme_tab(self):
         cur_lang = self.repo.get('language','ar')
         cur_theme = self.repo.get('theme','light')
@@ -277,7 +270,6 @@ class SettingsMobileView(ft.Column):
         self._show_snackbar("تم تغيير المظهر", is_error=False)
         self._page.update()
 
-    # ==================== تبويب الشبكة ====================
     def _network_tab(self):
         try:
             hostname = socket.gethostname()
@@ -347,8 +339,30 @@ class SettingsMobileView(ft.Column):
         if ok:
             callback(*args, **kwargs)
             return
-        key_field = ft.TextField(label="مفتاح التفعيل", width=300, password=True)
-        status = ft.Text("", color=ft.Colors.RED, size=12)
+        
+        page_width = self._page.width or 400
+        dialog_width = min(320, page_width - 60)
+        field_width = dialog_width - 40
+        
+        info_text = ft.Text(
+            "ميزة الشبكة (العميل/الخادم) غير مفعلة.\nأدخل مفتاح التفعيل الخاص بالشبكة:",
+            size=13,
+            color=ft.Colors.GREY_700,
+            text_align=ft.TextAlign.CENTER
+        )
+        
+        key_field = ft.TextField(
+            label="مفتاح التفعيل",
+            hint_text="XXXX-XXXX-XXXX-XXXX",
+            width=field_width,
+            password=True,
+            can_reveal_password=True,
+            text_align=ft.TextAlign.CENTER,
+            border_radius=10
+        )
+        
+        status = ft.Text("", color=ft.Colors.RED, size=12, text_align=ft.TextAlign.CENTER)
+        
         def do_activate(e):
             key = key_field.value.strip()
             if not key:
@@ -364,20 +378,42 @@ class SettingsMobileView(ft.Column):
             else:
                 status.value = f"فشل التفعيل: {msg}"
                 dialog.update()
-        dialog = ft.AlertDialog(
-            title=ft.Text("تفعيل ميزة الشبكة"),
-            content=ft.Column([
-                ft.Text("ميزة الشبكة (العميل/الخادم) غير مفعلة.\nأدخل مفتاح التفعيل الخاص بالشبكة:"),
-                key_field,
-                status
-            ], spacing=10),
-            actions=[
-                ft.TextButton("تفعيل", on_click=do_activate),
-                ft.TextButton("إلغاء", on_click=lambda e: self._close_dialog(dialog))
-            ],
-            actions_alignment=ft.MainAxisAlignment.END
+        
+        activate_btn = ft.FilledButton(
+            content=ft.Text("تفعيل"),
+            on_click=do_activate,
+            bgcolor=ft.Colors.INDIGO,
+            color=ft.Colors.WHITE,
+            expand=True
         )
-        self._page.show_dialog(dialog)
+        cancel_btn = ft.TextButton(
+            content=ft.Text("إلغاء"),
+            on_click=lambda e: setattr(dialog, 'open', False)
+        )
+        
+        content = ft.Column(
+            controls=[
+                ft.Icon(ft.Icons.LOCK, size=48, color=ft.Colors.INDIGO),
+                info_text,
+                ft.Container(height=10),
+                key_field,
+                status,
+                ft.Row([cancel_btn, activate_btn], spacing=15, alignment=ft.MainAxisAlignment.SPACE_AROUND)
+            ],
+            spacing=15,
+            width=dialog_width,
+            scroll=ft.ScrollMode.AUTO,
+            horizontal_alignment=ft.CrossAxisAlignment.CENTER
+        )
+        
+        dialog = ft.AlertDialog(
+            title=ft.Text("تفعيل ميزة الشبكة", size=18, weight=ft.FontWeight.BOLD),
+            content=content,
+            inset_padding=20,
+            shape=ft.RoundedRectangleBorder(radius=15)
+        )
+        
+        self._page.open(dialog)
 
     def _start_server_with_activation(self, e):
         self._require_network_activation(self._start_server, e)
@@ -403,10 +439,29 @@ class SettingsMobileView(ft.Column):
             self._show_snackbar(f"❌ خطأ: {str(ex)}", True)
 
     def _save_network(self, e):
-        from database.connection import set_setting
+        from database.connection import set_setting, get_setting
         mode_map = {"محلي":"local", "عميل":"client", "خادم":"server"}
-        mode = mode_map.get(self.mode_dropdown.value, "local")
-        set_setting("network/mode", mode)
+        new_mode = mode_map.get(self.mode_dropdown.value, "local")
+        old_mode = get_setting("network/mode", "local")
+        
+        if new_mode == "server":
+            try:
+                port = int(self.server_port.value)
+            except:
+                port = 8001
+            from flask_server import start_flask_server
+            if not start_flask_server(port):
+                self._show_snackbar("الخادم يعمل بالفعل", True)
+                return
+            else:
+                self._show_snackbar(f"✅ تم تشغيل الخادم على المنفذ {port}", is_error=False)
+        else:
+            if old_mode == "server":
+                from flask_server import stop_flask_server
+                stop_flask_server()
+                self._show_snackbar("تم إيقاف الخادم", is_error=False)
+        
+        set_setting("network/mode", new_mode)
         set_setting("network/server_url", self.server_url.value.strip())
         self._show_snackbar("سيتم تطبيق الإعدادات بعد إعادة التشغيل", is_error=False)
         self._page.update()
@@ -451,7 +506,6 @@ class SettingsMobileView(ft.Column):
         except Exception as ex:
             self._show_snackbar(f"خطأ: {str(ex)}", True)
 
-    # ==================== تبويب النسخ الاحتياطي والصيانة ====================
     def _backup_tab(self):
         backup_btn = ft.FilledButton(
             content=ft.Row([ft.Icon(ft.Icons.BACKUP), ft.Text("نسخ احتياطي")]),
@@ -548,7 +602,7 @@ class SettingsMobileView(ft.Column):
                 ft.TextButton("لا", on_click=lambda e: self._close_dialog(dlg))
             ]
         )
-        self._page.show_dialog(dlg)
+        self._page.open(dlg)
 
     def _perform_reset(self):
         try:
@@ -574,7 +628,7 @@ class SettingsMobileView(ft.Column):
 
     async def _restart_app(self):
         await asyncio.sleep(2)
-        self._page.window.destroy()
+        self._page.window.close()
 
     def _close_dialog(self, dialog):
         dialog.open = False

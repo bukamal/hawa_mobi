@@ -43,10 +43,7 @@ class AuditLogView(ft.Column):
         self._refresh(None)
 
     def _show_snackbar(self, message, is_error=False):
-        snack = ft.SnackBar(content=ft.Text(message), bgcolor=ft.Colors.RED if is_error else ft.Colors.GREEN)
-        self._page.snack_bar = snack
-        snack.open = True
-        self._page.update()
+        self._page.open(ft.SnackBar(content=ft.Text(message), bgcolor=ft.Colors.RED if is_error else ft.Colors.GREEN))
 
     def _load_users(self):
         try:
@@ -94,4 +91,4 @@ class AuditLogView(ft.Column):
             self._page.close_dialog()
         dlg = ft.AlertDialog(title=ft.Text("تأكيد الحذف"), content=ft.Text("هل أنت متأكد من حذف السجلات الأقدم من 90 يوماً؟"),
                              actions=[ft.TextButton("نعم", on_click=confirm), ft.TextButton("لا", on_click=lambda e: self._page.close_dialog())])
-        self._page.show_dialog(dlg)
+        self._page.open(dlg)

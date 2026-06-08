@@ -55,10 +55,7 @@ class AccountsView(ft.Column):
         self._refresh_table(None)
 
     def _show_snackbar(self, message, is_error=False):
-        snack = ft.SnackBar(content=ft.Text(message), bgcolor=ft.Colors.RED if is_error else ft.Colors.GREEN)
-        self._page.snack_bar = snack
-        snack.open = True
-        self._page.update()
+        self._page.open(ft.SnackBar(content=ft.Text(message), bgcolor=ft.Colors.RED if is_error else ft.Colors.GREEN))
 
     def _refresh_table(self, e):
         try:
@@ -100,7 +97,7 @@ class AccountsView(ft.Column):
             actions=[ft.TextButton("إغلاق", on_click=lambda e: self._close_dialog(dialog))],
             actions_alignment=ft.MainAxisAlignment.END,
         )
-        self._page.show_dialog(dialog)
+        self._page.open(dialog)
 
     def _close_dialog(self, dialog):
         dialog.open = False
@@ -112,7 +109,7 @@ class AccountsView(ft.Column):
             return
         from views.dialogs.add_edit_expense_dialog import AddEditExpenseDialog
         dialog = AddEditExpenseDialog(page=self._page, on_save=self._refresh_table)
-        self._page.show_dialog(dialog)
+        self._page.open(dialog)
 
     def _print_report(self, e):
         self._show_snackbar("جاري إعداد التقرير...", is_error=False)

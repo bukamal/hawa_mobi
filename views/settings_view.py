@@ -16,12 +16,10 @@ class SettingsView(ft.Column):
         self.spacing = 15
         self.repo = SettingsRepository()
 
-        # قائمة الأزرار (القائمة الجانبية)
         self.section_buttons = []
         self.current_section = None
         self.content_area = ft.Container(expand=True, padding=20)
 
-        # تعريف الأقسام
         self.sections = {
             "currency": {"title": "💰 العملات", "icon": ft.Icons.ATTACH_MONEY, "builder": self._currency_tab},
             "exchange": {"title": "💱 أسعار الصرف", "icon": ft.Icons.REFRESH, "builder": self._rates_tab},
@@ -31,7 +29,6 @@ class SettingsView(ft.Column):
             "backup": {"title": "🔄 النسخ الاحتياطي", "icon": ft.Icons.BACKUP, "builder": self._backup_tab},
         }
 
-        # إنشاء الأزرار
         for key, sec in self.sections.items():
             btn = ft.ListTile(
                 leading=ft.Icon(sec["icon"]),
@@ -41,7 +38,6 @@ class SettingsView(ft.Column):
             )
             self.section_buttons.append(btn)
 
-        # الشريط الجانبي
         sidebar = ft.Container(
             content=ft.Column(
                 controls=[ft.Text("الإعدادات", size=20, weight=ft.FontWeight.BOLD)] +
@@ -55,7 +51,6 @@ class SettingsView(ft.Column):
             border_radius=10
         )
 
-        # الصف الرئيسي
         self.content_row = ft.Row(
             controls=[sidebar, self.content_area],
             expand=True,
@@ -64,29 +59,18 @@ class SettingsView(ft.Column):
         )
 
         self.controls = [ft.Text(translate('settings'), size=24, weight=ft.FontWeight.BOLD), self.content_row]
-
-        # عرض القسم الأول
         self.switch_section("currency")
 
     def switch_section(self, section_key):
-        """تبديل القسم المعروض"""
         self.current_section = section_key
-        # تحديث حالة الأزرار
         for btn in self.section_buttons:
             btn.selected = (btn.title.value == self.sections[section_key]["title"])
-        # بناء المحتوى
         builder = self.sections[section_key]["builder"]
         self.content_area.content = builder()
         self._page.update()
 
     def _show_snackbar(self, message, is_error=False):
-        """طريقة بديلة لـ show_snack_bar"""
-        snack = ft.SnackBar(content=ft.Text(message), bgcolor=ft.Colors.RED if is_error else ft.Colors.GREEN)
-        self._page.snack_bar = snack
-        snack.open = True
-        self._page.update()
-
-    # ========== أقسام الإعدادات ==========
+        self._page.open(ft.SnackBar(content=ft.Text(message), bgcolor=ft.Colors.RED if is_error else ft.Colors.GREEN))
 
     def _currency_tab(self):
         self.base_curr = ft.Dropdown(
@@ -316,7 +300,6 @@ class SettingsView(ft.Column):
             padding=20
         )
 
-    # ========== دوال الحفظ والإجراءات ==========
     def _load_rates(self):
         try:
             rates = currency.get_all_currencies()
@@ -374,4 +357,4 @@ class SettingsView(ft.Column):
             content=ft.Text("سيتم حذف جميع البيانات. هل أنت متأكد؟"),
             actions=[ft.TextButton("نعم", on_click=confirm), ft.TextButton("لا", on_click=lambda e: self._page.close_dialog())]
         )
-        self._page.show_dialog(dlg)
+        self._page.open(dlg)

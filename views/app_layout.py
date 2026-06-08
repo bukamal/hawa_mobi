@@ -100,7 +100,7 @@ class AppLayout(ft.Column):
     def _change_password(self, e):
         from views.dialogs.change_password_dialog import ChangePasswordDialog
         dialog = ChangePasswordDialog(page=self._page, on_save=lambda: None)
-        self._page.show_dialog(dialog)
+        self._page.open(dialog)
 
     def _logout(self, e):
         def confirm_logout(e):
@@ -124,7 +124,7 @@ class AppLayout(ft.Column):
             content=ft.Text("هل تريد تسجيل الخروج؟"),
             actions=[ft.TextButton("نعم", on_click=confirm_logout), ft.TextButton("لا", on_click=lambda e: self._page.close_dialog())]
         )
-        self._page.show_dialog(dlg)
+        self._page.open(dlg)
 
     def _rebuild_after_login(self):
         self._page.controls.clear()

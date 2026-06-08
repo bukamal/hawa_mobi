@@ -67,16 +67,13 @@ class DashboardMobileView(ft.Column):
         self._load_data()
 
     def _show_snackbar(self, message, is_error=False):
-        snack = ft.SnackBar(content=ft.Text(message, size=13), bgcolor=ft.Colors.RED if is_error else ft.Colors.GREEN, duration=3000)
-        self._page.snack_bar = snack
-        snack.open = True
-        self._page.update()
+        self._page.open(ft.SnackBar(content=ft.Text(message, size=13), bgcolor=ft.Colors.RED if is_error else ft.Colors.GREEN, duration=3000))
 
     def _open_start_date_picker(self, e):
-        self._page.show_dialog(self.start_date_picker_obj)
+        self._page.open(self.start_date_picker_obj)
 
     def _open_end_date_picker(self, e):
-        self._page.show_dialog(self.end_date_picker_obj)
+        self._page.open(self.end_date_picker_obj)
 
     def _on_start_date_change(self, e):
         if self.start_date_picker_obj.value:

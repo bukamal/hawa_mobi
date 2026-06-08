@@ -31,7 +31,6 @@ if os.path.exists("/data/data/com.termux"):
 
 def main(page: ft.Page):
     # ========== الخطوة 1: التأكد من وجود الجداول ==========
-    # نستدعي ensure_db() التي تنشئ الجداول إذا لم تكن موجودة
     ensure_db()
     
     # إجراء إضافي: التأكد من وجود جدول settings حتى لو فشلت ensure_db()
@@ -40,9 +39,7 @@ def main(page: ft.Page):
         conn = sqlite3.connect(db_path)
         conn.execute("SELECT 1 FROM settings LIMIT 1")
     except sqlite3.OperationalError:
-        # الجدول غير موجود، نقوم بإنشائه يدوياً
         conn.execute("CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT)")
-        # إدراج القيم الافتراضية
         defaults = [
             ('language', 'ar'), ('theme', 'light'), ('base_currency', 'USD'),
             ('display_currency', 'USD'), ('currency_decimals', '2'),
@@ -98,7 +95,7 @@ def main(page: ft.Page):
     def show_change_password():
         from views.dialogs.change_password_dialog import ChangePasswordDialog
         dialog = ChangePasswordDialog(page=page, on_save=lambda: show_main_app())
-        page.show_dialog(dialog)
+        page.open(dialog)  # تحديث: page.open بدلاً من show_dialog
 
     def show_main_app():
         page.controls.clear()
@@ -115,7 +112,7 @@ def main(page: ft.Page):
             actions=[ft.TextButton("إغلاق", on_click=close_app_after_dialog)],
             actions_alignment=ft.MainAxisAlignment.CENTER,
         )
-        page.show_dialog(dlg)
+        page.open(dlg)  # تحديث
 
     async def close_app_async():
         stop_license_checker()
@@ -126,7 +123,7 @@ def main(page: ft.Page):
             pass
         try:
             if hasattr(page.window, 'close') and callable(page.window.close):
-                await page.window.close()
+                page.window.close()
         except:
             pass
 
@@ -154,4 +151,4 @@ def main(page: ft.Page):
         show_error(str(e))
 
 if __name__ == "__main__":
-    ft.run(main)
+    ft.app(target=main)

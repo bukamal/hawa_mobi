@@ -70,10 +70,7 @@ class AccountsMobileView(ft.Column):
         self._refresh_cards(None)
 
     def _show_snackbar(self, message, is_error=False):
-        snack = ft.SnackBar(content=ft.Text(message, size=13), bgcolor=ft.Colors.RED if is_error else ft.Colors.GREEN, duration=3000)
-        self._page.snack_bar = snack
-        snack.open = True
-        self._page.update()
+        self._page.open(ft.SnackBar(content=ft.Text(message, size=13), bgcolor=ft.Colors.RED if is_error else ft.Colors.GREEN, duration=3000))
 
     def _refresh_cards(self, e):
         try:
@@ -185,7 +182,7 @@ class AccountsMobileView(ft.Column):
             inset_padding=20,
             scrollable=True
         )
-        self._page.show_dialog(dialog)
+        self._page.open(dialog)
 
     def _close_dialog(self, dialog):
         dialog.open = False
@@ -197,4 +194,4 @@ class AccountsMobileView(ft.Column):
             return
         from views.dialogs.add_edit_expense_dialog import AddEditExpenseDialog
         dialog = AddEditExpenseDialog(page=self._page, on_save=lambda _: self._refresh_cards(None), company_name=company_name)
-        self._page.show_dialog(dialog)
+        self._page.open(dialog)

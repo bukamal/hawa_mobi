@@ -13,7 +13,7 @@ class AddEditExpenseDialog(ft.AlertDialog):
         self.on_save = on_save
         self.expense = expense
 
-        # معالجة آمنة لـ company_name لتجنب كائن Event
+        # معالجة آمنة لـ company_name
         predefined = None
         if company_name is not None:
             if hasattr(company_name, 'name') and hasattr(company_name, 'data'):
@@ -67,7 +67,6 @@ class AddEditExpenseDialog(ft.AlertDialog):
             width=120
         )
 
-        # DatePicker
         self.date_picker_field = ft.TextField(
             label=translate('date'),
             value=expense['date'] if expense else "",
@@ -81,7 +80,6 @@ class AddEditExpenseDialog(ft.AlertDialog):
             first_date=datetime.datetime(2020, 1, 1),
             last_date=datetime.datetime.now() + datetime.timedelta(days=365*10)
         )
-        # إضافة DatePicker إلى overlay حتى يظهر
         self._page.overlay.append(self.date_picker)
 
         self.notes_field = ft.TextField(
@@ -134,10 +132,8 @@ class AddEditExpenseDialog(ft.AlertDialog):
         self.currency_dropdown.on_change = self._update_conversion
         self._update_conversion(None)
 
-    # ========== دوال مساعدة ==========
     def _open_date_picker(self, e):
-        # ✅ استخدام show_dialog بدلاً من open
-        self._page.show_dialog(self.date_picker)
+        self._page.open(self.date_picker)
 
     def _on_date_change(self, e):
         if self.date_picker.value:
@@ -149,10 +145,7 @@ class AddEditExpenseDialog(ft.AlertDialog):
         self._page.update()
 
     def _show_snackbar(self, message, is_error=False):
-        snack = ft.SnackBar(content=ft.Text(message, size=13), bgcolor=ft.Colors.RED if is_error else ft.Colors.GREEN, duration=3000)
-        self._page.snack_bar = snack
-        snack.open = True
-        self._page.update()
+        self._page.open(ft.SnackBar(content=ft.Text(message, size=13), bgcolor=ft.Colors.RED if is_error else ft.Colors.GREEN, duration=3000))
 
     def _update_conversion(self, e):
         try:

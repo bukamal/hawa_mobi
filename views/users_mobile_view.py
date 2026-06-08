@@ -30,10 +30,7 @@ class UsersMobileView(ft.Column):
         self._load_users()
 
     def _show_snackbar(self, message, is_error=False):
-        snack = ft.SnackBar(content=ft.Text(message, size=13), bgcolor=ft.Colors.RED if is_error else ft.Colors.GREEN, duration=3000)
-        self._page.snack_bar = snack
-        snack.open = True
-        self._page.update()
+        self._page.open(ft.SnackBar(content=ft.Text(message, size=13), bgcolor=ft.Colors.RED if is_error else ft.Colors.GREEN, duration=3000))
 
     def _load_users(self):
         try:
@@ -88,12 +85,12 @@ class UsersMobileView(ft.Column):
     def _add_user(self, e):
         from views.dialogs.user_dialog import UserDialog
         dialog = UserDialog(page=self._page, on_save=lambda: self._load_users())
-        self._page.show_dialog(dialog)
+        self._page.open(dialog)
 
     def _edit_user(self, user_id):
         from views.dialogs.user_dialog import UserDialog
         dialog = UserDialog(page=self._page, user_id=user_id, on_save=lambda: self._load_users())
-        self._page.show_dialog(dialog)
+        self._page.open(dialog)
 
     def _delete_user(self, user_id):
         def confirm_delete(e):
@@ -113,7 +110,7 @@ class UsersMobileView(ft.Column):
                 ft.TextButton("لا", on_click=lambda e: self._close_dialog(dlg))
             ]
         )
-        self._page.show_dialog(dlg)
+        self._page.open(dlg)
 
     def _close_dialog(self, dialog):
         dialog.open = False
