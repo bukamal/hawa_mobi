@@ -4,7 +4,7 @@ version = "1.0.0"
 description = "نظام حسابات هوى الشام للسياحة والسفر"
 requires-python = ">=3.10"
 dependencies = [
-    "flet==0.86.0",
+    "flet>=0.85.0",
     "requests>=2.25.0",
     "bcrypt>=4.0.0",
 ]

@@ -18,23 +18,8 @@ from views.login_view import LoginView
 from views.splash_view import SplashView
 from views.app_layout import AppLayout
 from database import SettingsRepository
-from database.connection import set_db_path
 
 def main(page: ft.Page):
-    # ===== إعداد مسار قاعدة البيانات =====
-    data_dir = None
-    try:
-        from flet import StoragePaths
-        data_dir = StoragePaths().app
-    except Exception:
-        pass
-    if not data_dir:
-        # بديل في حالة عدم وجود StoragePaths (للتطوير)
-        data_dir = os.path.join(os.path.expanduser('~'), '.hawaa')
-    os.makedirs(data_dir, exist_ok=True)
-    db_path = os.path.join(data_dir, "hawaa_data.db")
-    set_db_path(db_path)
-
     page.title = translate('app_title')
     page.theme_mode = ft.ThemeMode.LIGHT
     page.rtl = True

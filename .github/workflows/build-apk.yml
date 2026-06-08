@@ -2,6 +2,8 @@ name: Build APK
 
 on:
   workflow_dispatch:
+  push:
+    branches: [ main ]
 
 jobs:
   build:
@@ -31,17 +33,25 @@ jobs:
       - name: Install Python dependencies
         run: |
           pip install --upgrade pip
-          pip install flet==0.90.0 requests bcrypt
-
-      - name: Clear Flet cache
-        run: rm -rf ~/.flet ~/.cache/flet
+          pip install flet[build] requests bcrypt
 
       - name: Build APK
         run: |
           flet build apk --yes --verbose --product "هوى الشام" --org com.hawaa
 
+      - name: Find and copy APK
+        run: |
+          APK_PATH=$(find build -name "*.apk" -type f | head -n 1)
+          if [ -z "$APK_PATH" ]; then
+            echo "❌ No APK found!"
+            exit 1
+          fi
+          echo "✅ Found APK at: $APK_PATH"
+          mkdir -p build/apk/release
+          cp "$APK_PATH" build/apk/release/app-release.apk
+
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: hawaa-apk
-          path: build/apk/release/*.apk
+          path: build/apk/release/app-release.apk

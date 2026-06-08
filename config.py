@@ -3,23 +3,20 @@ import os
 import json
 from database.connection import get_local_db_path
 
-def _get_config_file():
-    return os.path.join(os.path.dirname(get_local_db_path()), 'config.json')
+_CONFIG_FILE = os.path.join(os.path.dirname(get_local_db_path()), 'config.json')
 
 def _load_config():
-    config_file = _get_config_file()
-    if os.path.exists(config_file):
+    if os.path.exists(_CONFIG_FILE):
         try:
-            with open(config_file, 'r', encoding='utf-8') as f:
+            with open(_CONFIG_FILE, 'r', encoding='utf-8') as f:
                 return json.load(f)
         except:
             pass
     return {}
 
 def _save_config(config):
-    config_file = _get_config_file()
-    os.makedirs(os.path.dirname(config_file), exist_ok=True)
-    with open(config_file, 'w', encoding='utf-8') as f:
+    os.makedirs(os.path.dirname(_CONFIG_FILE), exist_ok=True)
+    with open(_CONFIG_FILE, 'w', encoding='utf-8') as f:
         json.dump(config, f, ensure_ascii=False, indent=2)
 
 def get_company_info():
