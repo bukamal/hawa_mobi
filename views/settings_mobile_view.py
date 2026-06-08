@@ -449,17 +449,25 @@ class SettingsMobileView(ft.Column):
                 port = int(self.server_port.value)
             except:
                 port = 8001
-            from flask_server import start_flask_server
-            if not start_flask_server(port):
-                self._show_snackbar("الخادم يعمل بالفعل", True)
+            # استيراد شرطي داخل الدالة
+            try:
+                from flask_server import start_flask_server
+                if not start_flask_server(port):
+                    self._show_snackbar("الخادم يعمل بالفعل", True)
+                    return
+                else:
+                    self._show_snackbar(f"✅ تم تشغيل الخادم على المنفذ {port}", is_error=False)
+            except ImportError:
+                self._show_snackbar("مكتبات الخادم غير مثبتة. قم بتثبيت Flask والمكتبات المطلوبة.", True)
                 return
-            else:
-                self._show_snackbar(f"✅ تم تشغيل الخادم على المنفذ {port}", is_error=False)
         else:
             if old_mode == "server":
-                from flask_server import stop_flask_server
-                stop_flask_server()
-                self._show_snackbar("تم إيقاف الخادم", is_error=False)
+                try:
+                    from flask_server import stop_flask_server
+                    stop_flask_server()
+                    self._show_snackbar("تم إيقاف الخادم", is_error=False)
+                except ImportError:
+                    pass
         
         set_setting("network/mode", new_mode)
         set_setting("network/server_url", self.server_url.value.strip())
@@ -490,6 +498,8 @@ class SettingsMobileView(ft.Column):
                 self._page.update()
             else:
                 self._show_snackbar("الخادم يعمل بالفعل", True)
+        except ImportError:
+            self._show_snackbar("مكتبات الخادم غير مثبتة", True)
         except Exception as ex:
             self._show_snackbar(f"فشل التشغيل: {str(ex)}", True)
 
@@ -503,6 +513,8 @@ class SettingsMobileView(ft.Column):
                 self._page.update()
             else:
                 self._show_snackbar("الخادم غير قيد التشغيل", True)
+        except ImportError:
+            self._show_snackbar("مكتبات الخادم غير مثبتة", True)
         except Exception as ex:
             self._show_snackbar(f"خطأ: {str(ex)}", True)
 

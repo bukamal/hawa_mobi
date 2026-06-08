@@ -45,7 +45,6 @@ def handle_exception(page: ft.Page, error: Exception, message: str = "خطأ غ�
     error_details = traceback.format_exc()
     logger.error(f"{message}: {str(error)}\n{error_details}")
     
-    # محاولة عرض الخطأ في واجهة التطبيق إذا كانت الصفحة موجودة
     try:
         dlg = ft.AlertDialog(
             title=ft.Text("❗ خطأ", size=20, weight=ft.FontWeight.BOLD, color=ft.Colors.RED),
@@ -70,11 +69,9 @@ def main(page: ft.Page):
     logger.info("تم استدعاء main()، تهيئة الصفحة...")
     
     try:
-        # ========== الخطوة 1: التأكد من وجود الجداول ==========
         ensure_db()
         logger.info("تم التأكد من قاعدة البيانات")
         
-        # إجراء إضافي: التأكد من وجود جدول settings
         db_path = get_local_db_path()
         try:
             conn = sqlite3.connect(db_path)
@@ -176,11 +173,15 @@ def main(page: ft.Page):
     async def close_app_async():
         logger.info("إغلاق التطبيق...")
         stop_license_checker()
+        # استيراد flask_server شرطي فقط إذا كان موجوداً
         try:
-            from flask_server import stop_flask_server
-            stop_flask_server()
-        except:
-            pass
+            # نتحقق مما إذا كان وضع الخادم مفعلاً قبل الاستيراد
+            from database.connection import get_setting
+            if get_setting("network/mode") == "server":
+                from flask_server import stop_flask_server
+                stop_flask_server()
+        except Exception as e:
+            logger.warning(f"تعذر إيقاف خادم Flask: {e}")
         try:
             if hasattr(page.window, 'close') and callable(page.window.close):
                 page.window.close()
@@ -212,6 +213,5 @@ def main(page: ft.Page):
         handle_exception(page, e, "خطأ في تشغيل التطبيق")
 
 if __name__ == "__main__":
-    # توجيه الأخطاء غير المعالجة إلى logger
     sys.excepthook = lambda exctype, value, tb: logger.critical("Unhandled exception", exc_info=(exctype, value, tb))
     ft.app(target=main)
