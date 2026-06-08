@@ -1,13 +1,17 @@
 # -*- coding: utf-8 -*-
-import sqlite3, os, datetime
-from database.connection import DatabaseConnection, DB_PATH
+import sqlite3
+import os
+import datetime
+from database.connection import DatabaseConnection, get_local_db_path
 from auth.password import hash_password
 
 def init_database():
     db = DatabaseConnection()
-    if db.is_remote(): return
+    if db.is_remote():
+        return
     db.close()
-    conn = sqlite3.connect(DB_PATH)
+    db_path = get_local_db_path()
+    conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row
     cursor = conn.cursor()
     cursor.executescript('''
@@ -39,16 +43,18 @@ def init_database():
                        ('admin', pwd_hash, salt, 'المدير العام', 'admin', now, 1))
     conn.commit()
     conn.close()
-    print(f"✅ تم تهيئة قاعدة البيانات: {DB_PATH}")
+    print(f"✅ تم تهيئة قاعدة البيانات: {db_path}")
 
 def ensure_db():
     db = DatabaseConnection()
-    if db.is_remote(): return
-    if not os.path.exists(DB_PATH):
+    if db.is_remote():
+        return
+    db_path = get_local_db_path()
+    if not os.path.exists(db_path):
         init_database()
     else:
         try:
-            conn = sqlite3.connect(DB_PATH)
+            conn = sqlite3.connect(db_path)
             cursor = conn.cursor()
             cursor.execute("PRAGMA table_info(expenses)")
             cols = [c[1] for c in cursor.fetchall()]
