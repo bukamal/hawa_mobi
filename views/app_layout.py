@@ -103,6 +103,7 @@ class AppLayout(ft.Column):
         self._page.open(dialog)
 
     def _logout(self, e):
+        dlg = None  # سيتم تعيينه لاحقاً
         def confirm_logout(e):
             if e.control.text == "نعم":
                 from database.connection import DatabaseConnection
@@ -118,13 +119,22 @@ class AppLayout(ft.Column):
                     from views.login_view import LoginView
                     login = LoginView(page=self._page, on_login_success=lambda u: self._rebuild_after_login(), on_exit=self.on_logout)
                     self._page.add(login)
-            self._page.close_dialog()
+            if dlg:
+                dlg.open = False
+                self._page.update()
         dlg = ft.AlertDialog(
             title=ft.Text(translate('logout')),
             content=ft.Text("هل تريد تسجيل الخروج؟"),
-            actions=[ft.TextButton("نعم", on_click=confirm_logout), ft.TextButton("لا", on_click=lambda e: self._page.close_dialog())]
+            actions=[
+                ft.TextButton("نعم", on_click=confirm_logout),
+                ft.TextButton("لا", on_click=lambda e: self._close_dialog(dlg))
+            ]
         )
         self._page.open(dlg)
+
+    def _close_dialog(self, dialog):
+        dialog.open = False
+        self._page.update()
 
     def _rebuild_after_login(self):
         self._page.controls.clear()

@@ -80,6 +80,7 @@ class AuditLogView(ft.Column):
 
     def _export(self, e): self._show_snackbar("قريباً...")
     def _delete_old(self, e):
+        dlg = None
         def confirm(e):
             if e.control.text == "نعم":
                 try:
@@ -88,7 +89,13 @@ class AuditLogView(ft.Column):
                     self._refresh(None)
                 except Exception as ex:
                     self._show_snackbar(f"خطأ: {str(ex)}", True)
-            self._page.close_dialog()
+            if dlg:
+                dlg.open = False
+                self._page.update()
         dlg = ft.AlertDialog(title=ft.Text("تأكيد الحذف"), content=ft.Text("هل أنت متأكد من حذف السجلات الأقدم من 90 يوماً؟"),
-                             actions=[ft.TextButton("نعم", on_click=confirm), ft.TextButton("لا", on_click=lambda e: self._page.close_dialog())])
+                             actions=[ft.TextButton("نعم", on_click=confirm), ft.TextButton("لا", on_click=lambda e: self._close_dialog(dlg))])
         self._page.open(dlg)
+
+    def _close_dialog(self, dialog):
+        dialog.open = False
+        self._page.update()

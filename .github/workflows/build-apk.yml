@@ -24,7 +24,7 @@ jobs:
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
-          flutter-version: '3.41.7'
+          flutter-version: '3.27.4'
           channel: 'stable'
 
       - name: Accept Android licenses
@@ -33,7 +33,7 @@ jobs:
       - name: Install Python dependencies
         run: |
           pip install --upgrade pip
-          pip install flet==0.85.2 requests bcrypt
+          pip install flet==0.85.2 requests bcrypt flask flask-jwt-extended flask-limiter waitress werkzeug
 
       - name: Clear Flet cache
         run: |
@@ -43,6 +43,7 @@ jobs:
       - name: Build APK
         run: |
           flet build apk --yes --verbose --clear-cache \
+            --include-packages flet,requests,bcrypt,flask,flask_jwt_extended,flask_limiter,waitress,werkzeug \
             --product "هوى الشام" \
             --org com.hawaa
 

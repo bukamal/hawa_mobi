@@ -348,13 +348,20 @@ class SettingsView(ft.Column):
     def _backup_now(self, e): self._show_snackbar("جاري النسخ الاحتياطي...")
     def _export_db(self, e): self._show_snackbar("جاري التصدير...")
     def _reset_db(self, e):
+        dlg = None
         def confirm(e):
             if e.control.text == "نعم":
                 self._show_snackbar("تم إعادة التهيئة", is_error=False)
-            self._page.close_dialog()
+            if dlg:
+                dlg.open = False
+                self._page.update()
         dlg = ft.AlertDialog(
             title=ft.Text("⚠️ تحذير"),
             content=ft.Text("سيتم حذف جميع البيانات. هل أنت متأكد؟"),
-            actions=[ft.TextButton("نعم", on_click=confirm), ft.TextButton("لا", on_click=lambda e: self._page.close_dialog())]
+            actions=[ft.TextButton("نعم", on_click=confirm), ft.TextButton("لا", on_click=lambda e: self._close_dialog(dlg))]
         )
         self._page.open(dlg)
+
+    def _close_dialog(self, dialog):
+        dialog.open = False
+        self._page.update()

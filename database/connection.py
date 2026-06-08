@@ -3,20 +3,25 @@ import sqlite3
 import threading
 import os
 import json
+import sys
 from typing import List, Dict
 
 # مسار ثابت لجميع البيئات (نستخدمه في وضع الويب وسطح المكتب)
-_FIXED_DATA_DIR = os.path.expanduser('~/.hawaa')
 _SETTINGS_FILE = None
 _DB_PATH = None
 
 def _get_data_dir():
-    """يُرجع مجلد البيانات (نستخدم مساراً ثابتاً لتوحيد الوصول)"""
-    # نستخدم متغير البيئة إذا وُجد (للتعديل اليدوي)
+    """يُرجع مجلد البيانات (مسار آمن لجميع المنصات)"""
     env_dir = os.environ.get('HAWAA_DATA_DIR')
     if env_dir:
         return env_dir
-    return _FIXED_DATA_DIR
+    if os.name == 'nt' or sys.platform == 'darwin':
+        # Windows أو macOS
+        return os.path.expanduser('~/.hawaa')
+    else:
+        # Linux / Android
+        home = os.environ.get('HOME', '/data/data/com.hawaa/files')
+        return os.path.join(home, '.hawaa')
 
 def _get_settings_file():
     global _SETTINGS_FILE
@@ -158,7 +163,7 @@ class DatabaseConnection:
             self._local_conn.close()
             self._local_conn = None
 
-    # ========== CRUD helpers (محذوفة للاختصار لكن تعمل كما هي سابقاً) ==========
+    # ========== CRUD helpers ==========
     def get_expenses(self) -> List[Dict]:
         if self.mode == "client":
             return self._rest_client.get_expenses()

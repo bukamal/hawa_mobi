@@ -67,6 +67,7 @@ class UsersView(ft.Column):
         self._page.open(dialog)
 
     def _delete_user(self, user_id):
+        dlg = None
         def confirm_delete(e):
             if e.control.text == "نعم":
                 repo = UserRepository()
@@ -75,7 +76,13 @@ class UsersView(ft.Column):
                     self._load_users()
                 else:
                     self._show_snackbar("فشل الحذف", True)
-            self._page.close_dialog()
+            if dlg:
+                dlg.open = False
+                self._page.update()
         dlg = ft.AlertDialog(title=ft.Text(translate('confirm_delete')), content=ft.Text("هل أنت متأكد من حذف هذا المستخدم؟"),
-                             actions=[ft.TextButton("نعم", on_click=confirm_delete), ft.TextButton("لا", on_click=lambda e: self._page.close_dialog())])
+                             actions=[ft.TextButton("نعم", on_click=confirm_delete), ft.TextButton("لا", on_click=lambda e: self._close_dialog(dlg))])
         self._page.open(dlg)
+
+    def _close_dialog(self, dialog):
+        dialog.open = False
+        self._page.update()
