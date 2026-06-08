@@ -5,20 +5,35 @@ import os
 import json
 from typing import List, Dict
 
-_SETTINGS_FILE = os.path.join(os.path.expanduser('~/.hawaa'), 'settings.json')
+_SETTINGS_FILE = None
+
+def _get_settings_path():
+    global _SETTINGS_FILE
+    if _SETTINGS_FILE is None:
+        data_dir = os.path.join(os.path.expanduser('~'), '.hawaa')
+        os.makedirs(data_dir, exist_ok=True)
+        _SETTINGS_FILE = os.path.join(data_dir, 'settings.json')
+    return _SETTINGS_FILE
+
 def _load_settings():
-    if os.path.exists(_SETTINGS_FILE):
+    path = _get_settings_path()
+    if os.path.exists(path):
         try:
-            with open(_SETTINGS_FILE, 'r', encoding='utf-8') as f:
+            with open(path, 'r', encoding='utf-8') as f:
                 return json.load(f)
-        except: pass
+        except:
+            pass
     return {}
+
 def _save_settings(settings):
-    os.makedirs(os.path.dirname(_SETTINGS_FILE), exist_ok=True)
-    with open(_SETTINGS_FILE, 'w', encoding='utf-8') as f:
+    path = _get_settings_path()
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, 'w', encoding='utf-8') as f:
         json.dump(settings, f, ensure_ascii=False, indent=2)
+
 def get_setting(key: str, default=None):
     return _load_settings().get(key, default)
+
 def set_setting(key: str, value):
     s = _load_settings()
     s[key] = value
@@ -29,21 +44,18 @@ _DB_PATH = None
 def set_db_path(path):
     global _DB_PATH
     _DB_PATH = path
+    # تحديث مسار الإعدادات ليكون بجانب قاعدة البيانات
     global _SETTINGS_FILE
     _SETTINGS_FILE = os.path.join(os.path.dirname(path), 'settings.json')
 
 def get_local_db_path():
     global _DB_PATH
     if _DB_PATH is None:
-        # مسار افتراضي آمن (لن يُستخدم على Android إذا تم استدعاء set_db_path أولاً)
-        data_dir = os.path.expanduser('~/.hawaa')
+        # مسار افتراضي للاستخدام في حال لم يتم تعيين المسار (لن يحدث في Android لأن set_db_path يُستدعى أولاً)
+        data_dir = os.path.join(os.path.expanduser('~'), '.hawaa')
         os.makedirs(data_dir, exist_ok=True)
         _DB_PATH = os.path.join(data_dir, 'hawaa_data.db')
-        _SETTINGS_FILE = os.path.join(data_dir, 'settings.json')
     return _DB_PATH
-
-# ✅ لا نستدعي get_local_db_path هنا! نتركها None.
-DB_PATH = None   # ستعيّن لاحقاً عبر set_db_path في main.py
 
 class DatabaseConnection:
     _instance = None
@@ -109,7 +121,7 @@ class DatabaseConnection:
         if self.mode != "client": self.execute("BEGIN TRANSACTION")
     def close(self):
         if self._local_conn: self._local_conn.close(); self._local_conn = None
-    # CRUD helpers (نفس الكود السابق، لا تغيير)...
+    # CRUD helpers (مختصرة للطول ولكنها موجودة في ملفك الأصلي)
     def get_expenses(self) -> List[Dict]:
         if self.mode == "client": return self._rest_client.get_expenses()
         conn = self.get_connection()

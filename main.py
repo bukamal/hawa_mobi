@@ -21,7 +21,7 @@ from database import SettingsRepository
 from database.connection import set_db_path
 
 def main(page: ft.Page):
-    # ===== إعداد مسار قاعدة البيانات (متوافق مع Android) =====
+    # ===== إعداد مسار قاعدة البيانات =====
     data_dir = None
     try:
         from flet import StoragePaths
@@ -29,7 +29,8 @@ def main(page: ft.Page):
     except Exception:
         pass
     if not data_dir:
-        data_dir = os.path.expanduser('~/.hawaa')
+        # بديل في حالة عدم وجود StoragePaths (للتطوير)
+        data_dir = os.path.join(os.path.expanduser('~'), '.hawaa')
     os.makedirs(data_dir, exist_ok=True)
     db_path = os.path.join(data_dir, "hawaa_data.db")
     set_db_path(db_path)
