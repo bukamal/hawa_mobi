@@ -2,33 +2,50 @@
 # -*- coding: utf-8 -*-
 import os
 import sys
-import asyncio
+
+# ========== Android Path Fix (يجب أن يكون قبل أي استيراد آخر) ==========
+if hasattr(sys, '_MEIPASS') or os.path.exists('/data/user/'):
+    try:
+        app_dir = os.path.dirname(os.path.abspath(__file__))
+        while app_dir and not app_dir.endswith('files'):
+            parent = os.path.dirname(app_dir)
+            if parent == app_dir:
+                break
+            app_dir = parent
+        if app_dir.endswith('files'):
+            os.environ['HAWAA_DATA_DIR'] = os.path.join(app_dir, 'app_data')
+    except:
+        pass
+
+import flet as ft
+import traceback
+
+# ========== استيرادات آمنة مع try/except ==========
+try:
+    from database.migrations import ensure_db
+    from auth.activation import check_activation, start_license_checker, stop_license_checker
+    from auth.session import UserSession
+    from i18n.translator import translate, set_language
+    from views.login_view import LoginView
+    from views.splash_view import SplashView
+    from views.app_layout import AppLayout
+    from database import SettingsRepository
+except Exception as e:
+    print(f"IMPORT ERROR: {e}")
+    traceback.print_exc()
+    def main(page: ft.Page):
+        page.title = "Error"
+        page.add(
+            ft.Text(f"Import Error: {str(e)}", color=ft.Colors.RED, size=16),
+            ft.Text(traceback.format_exc(), color=ft.Colors.GREY_600, size=10)
+        )
+    ft.run(main)
+    sys.exit(1)
 
 if os.path.exists("/data/data/com.termux"):
     os.environ.setdefault('DISPLAY', ':1')
     os.environ.setdefault('FLET_SERVER_PORT', '8551')
     os.environ.setdefault('FLET_SERVER_IP', '127.0.0.1')
-
-# Android path fix - يجب أن يكون قبل أي استيراد آخر
-if hasattr(sys, '_MEIPASS') or os.path.exists('/data/user/'):
-    app_dir = os.path.dirname(os.path.abspath(__file__))
-    while app_dir and not app_dir.endswith('files'):
-        parent = os.path.dirname(app_dir)
-        if parent == app_dir:
-            break
-        app_dir = parent
-    if app_dir.endswith('files'):
-        os.environ['HAWAA_DATA_DIR'] = os.path.join(app_dir, 'app_data')
-
-import flet as ft
-from database.migrations import ensure_db
-from auth.activation import check_activation, start_license_checker, stop_license_checker
-from auth.session import UserSession
-from i18n.translator import translate, set_language
-from views.login_view import LoginView
-from views.splash_view import SplashView
-from views.app_layout import AppLayout
-from database import SettingsRepository
 
 def main(page: ft.Page):
     page.title = translate('app_title')
@@ -106,7 +123,6 @@ def main(page: ft.Page):
                 await page.window.close()
         except:
             pass
-        page.window.destroy()
 
     def close_app():
         asyncio.create_task(close_app_async())

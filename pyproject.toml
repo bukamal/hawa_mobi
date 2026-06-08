@@ -17,7 +17,9 @@ build-backend = "flet_core.build"
 org = "com.hawaa"
 product = "هوى الشام"
 android_permissions = [
-    "android.permission.INTERNET"
+    "android.permission.INTERNET",
+    "android.permission.WRITE_EXTERNAL_STORAGE",
+    "android.permission.READ_EXTERNAL_STORAGE",
 ]
 
 [tool.flet.app]

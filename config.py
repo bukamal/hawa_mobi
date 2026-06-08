@@ -23,9 +23,12 @@ def _load_config():
 
 def _save_config(config):
     config_file = _get_config_file()
-    os.makedirs(os.path.dirname(config_file), exist_ok=True)
-    with open(config_file, 'w', encoding='utf-8') as f:
-        json.dump(config, f, ensure_ascii=False, indent=2)
+    try:
+        os.makedirs(os.path.dirname(config_file), exist_ok=True)
+        with open(config_file, 'w', encoding='utf-8') as f:
+            json.dump(config, f, ensure_ascii=False, indent=2)
+    except Exception as e:
+        print(f"Warning: Cannot save config: {e}")
 
 def get_company_info():
     config = _load_config()
