@@ -33,14 +33,14 @@ jobs:
       - name: Install Python dependencies
         run: |
           pip install --upgrade pip
-          pip install flet[build] requests bcrypt
-          pip install -r requirements.txt || true
+          # تثبيت إصدار ثابت من Flet بدلاً من أحدث إصدار
+          pip install flet==0.85.2 requests bcrypt
 
       - name: Build APK
         run: |
           flet build apk --yes --verbose --product "هوى الشام" --org com.hawaa
 
-      - name: Find and rename APK
+      - name: Find and copy APK
         run: |
           APK_PATH=$(find build -name "*.apk" -type f | head -n 1)
           if [ -z "$APK_PATH" ]; then
