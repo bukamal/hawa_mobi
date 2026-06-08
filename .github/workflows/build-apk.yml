@@ -33,11 +33,18 @@ jobs:
       - name: Install Python dependencies
         run: |
           pip install --upgrade pip
-          pip install flet[build] requests bcrypt
+          pip install flet==0.86.0 requests bcrypt
+
+      - name: Clear Flet cache
+        run: |
+          rm -rf ~/.flet
+          rm -rf ~/.cache/flet
 
       - name: Build APK
         run: |
-          flet build apk --yes --verbose --product "هوى الشام" --org com.hawaa
+          flet build apk --yes --verbose --clear-cache \
+            --product "هوى الشام" \
+            --org com.hawaa
 
       - name: Find and copy APK
         run: |

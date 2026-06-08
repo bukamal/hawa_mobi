@@ -9,6 +9,17 @@ if os.path.exists("/data/data/com.termux"):
     os.environ.setdefault('FLET_SERVER_PORT', '8551')
     os.environ.setdefault('FLET_SERVER_IP', '127.0.0.1')
 
+# Android path fix - يجب أن يكون قبل أي استيراد آخر
+if hasattr(sys, '_MEIPASS') or os.path.exists('/data/user/'):
+    app_dir = os.path.dirname(os.path.abspath(__file__))
+    while app_dir and not app_dir.endswith('files'):
+        parent = os.path.dirname(app_dir)
+        if parent == app_dir:
+            break
+        app_dir = parent
+    if app_dir.endswith('files'):
+        os.environ['HAWAA_DATA_DIR'] = os.path.join(app_dir, 'app_data')
+
 import flet as ft
 from database.migrations import ensure_db
 from auth.activation import check_activation, start_license_checker, stop_license_checker

@@ -6,15 +6,21 @@ import json
 import sys
 from typing import List, Dict
 
-# ========== تحديد مسار البيانات بشكل آمن ==========
+# ========== تحديد مسار البيانات حسب المنصة ==========
 
 def _get_app_data_dir():
     """يُرجع مساراً صالحاً للكتابة على جميع المنصات (Android, Termux, Windows, Linux/macOS)"""
     
-    # المحاولة 1: استخدام مسار هذا الملف (الأكثر موثوقية على Android APK)
+    # المحاولة 1: متغير بيئة من main.py
+    env_dir = os.environ.get('HAWAA_DATA_DIR')
+    if env_dir:
+        os.makedirs(env_dir, exist_ok=True)
+        return env_dir
+    
+    # المحاولة 2: مسار الملف الحالي (يعمل في APK)
     try:
         current_file = os.path.abspath(__file__)
-        # __file__ = .../files/flet/app/database/connection.py
+        # __file__ = /data/user/0/.../files/flet/app/database/connection.py
         app_dir = os.path.dirname(os.path.dirname(current_file))  # .../files/flet/app/
         if os.path.exists(app_dir) and os.access(app_dir, os.W_OK):
             data_dir = os.path.join(os.path.dirname(app_dir), 'app_data')  # .../files/app_data/
@@ -23,7 +29,7 @@ def _get_app_data_dir():
     except Exception:
         pass
     
-    # المحاولة 2: استخدام os.getcwd() (Flet يضعنا في المجلد الصحيح عادة)
+    # المحاولة 3: os.getcwd() (لبيئة التطوير العادية)
     try:
         cwd = os.getcwd()
         if 'files' in cwd and os.access(cwd, os.W_OK):
@@ -33,20 +39,20 @@ def _get_app_data_dir():
     except Exception:
         pass
     
-    # المحاولة 3: Termux Android
+    # المحاولة 4: Termux Android
     if os.path.exists("/data/data/com.termux"):
         termux_dir = os.path.expanduser("~/storage/shared/.hawaa")
         os.makedirs(termux_dir, exist_ok=True)
         return termux_dir
     
-    # المحاولة 4: Windows
+    # المحاولة 5: Windows
     if os.name == 'nt':
         appdata = os.environ.get('APPDATA', os.path.expanduser('~\\AppData\\Roaming'))
         data_dir = os.path.join(appdata, 'Hawaa')
         os.makedirs(data_dir, exist_ok=True)
         return data_dir
     
-    # المحاولة 5: Linux/macOS عادي
+    # المحاولة 6: Linux/macOS عادي
     home_dir = os.path.expanduser("~/.hawaa")
     os.makedirs(home_dir, exist_ok=True)
     return home_dir
@@ -154,7 +160,7 @@ class DatabaseConnection:
         if self.mode != "client":
             conn = self.get_connection()
             cursor = conn.execute(sql, params)
-            if audit_data and any(sql.strip().upper().startswith(cmd) for cmd in ('INSERT', 'UPDATE', 'DELETE')):
+            if audit_data and any(sql.strip().upper().startswith(cmd) for cmd in ('INSERT','UPDATE','DELETE')):
                 self._log_audit_local(
                     audit_data.get('user_id'), audit_data.get('username'),
                     audit_data.get('action'), audit_data.get('table_name'),
