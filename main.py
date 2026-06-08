@@ -3,50 +3,52 @@
 import os
 import sys
 
-# ========== Android Path Fix (يجب أن يكون قبل أي استيراد آخر) ==========
-if hasattr(sys, '_MEIPASS') or os.path.exists('/data/user/'):
-    try:
-        app_dir = os.path.dirname(os.path.abspath(__file__))
-        while app_dir and not app_dir.endswith('files'):
-            parent = os.path.dirname(app_dir)
-            if parent == app_dir:
-                break
-            app_dir = parent
-        if app_dir.endswith('files'):
-            os.environ['HAWAA_DATA_DIR'] = os.path.join(app_dir, 'app_data')
-    except:
-        pass
+# ========== الخطوة 1: تحديد مسار التخزين الآمن (قبل أي استيراد يقرأه) ==========
+# نستخدم StoragePaths إذا كان متاحاً (على Android APK) أو نستخدم مساراً افتراضياً.
+_data_dir = None
 
+# هذه محاولة للاستفادة من StoragePaths دون استيراد flet (لأن استيراد flet قد يكون ثقيلاً)
+try:
+    # نستورد فقط StoragePaths من flet (لا نستورد كل flet)
+    from flet import StoragePaths
+    _data_dir = StoragePaths().app
+    print(f"✅ Using StoragePaths: {_data_dir}")
+except Exception as e:
+    print(f"⚠️ StoragePaths not available: {e}")
+
+if not _data_dir:
+    # بديل لأجهزة Android (Termux أو بيئة الاختبار)
+    if os.path.exists("/data/data/com.termux"):
+        _data_dir = os.path.expanduser("~/storage/shared/.hawaa")
+    else:
+        # سطح المكتب العادي
+        _data_dir = os.path.expanduser("~/.hawaa")
+    print(f"✅ Using fallback path: {_data_dir}")
+
+# تعيين متغير البيئة ليتمكن database/connection.py من قراءته
+os.environ['HAWAA_DATA_DIR'] = _data_dir
+
+# ========== الآن يمكن استيراد باقي الوحدات ==========
 import flet as ft
+import asyncio
 import traceback
 
-# ========== استيرادات آمنة مع try/except ==========
-try:
-    from database.migrations import ensure_db
-    from auth.activation import check_activation, start_license_checker, stop_license_checker
-    from auth.session import UserSession
-    from i18n.translator import translate, set_language
-    from views.login_view import LoginView
-    from views.splash_view import SplashView
-    from views.app_layout import AppLayout
-    from database import SettingsRepository
-except Exception as e:
-    print(f"IMPORT ERROR: {e}")
-    traceback.print_exc()
-    def main(page: ft.Page):
-        page.title = "Error"
-        page.add(
-            ft.Text(f"Import Error: {str(e)}", color=ft.Colors.RED, size=16),
-            ft.Text(traceback.format_exc(), color=ft.Colors.GREY_600, size=10)
-        )
-    ft.run(main)
-    sys.exit(1)
+from database.migrations import ensure_db
+from auth.activation import check_activation, start_license_checker, stop_license_checker
+from auth.session import UserSession
+from i18n.translator import translate, set_language
+from views.login_view import LoginView
+from views.splash_view import SplashView
+from views.app_layout import AppLayout
+from database import SettingsRepository
 
+# ========== إعدادات Termux (إن وجدت) ==========
 if os.path.exists("/data/data/com.termux"):
     os.environ.setdefault('DISPLAY', ':1')
     os.environ.setdefault('FLET_SERVER_PORT', '8551')
     os.environ.setdefault('FLET_SERVER_IP', '127.0.0.1')
 
+# ========== الدالة الرئيسية ==========
 def main(page: ft.Page):
     page.title = translate('app_title')
     page.theme_mode = ft.ThemeMode.LIGHT
