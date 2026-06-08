@@ -33,7 +33,6 @@ jobs:
       - name: Install Python dependencies
         run: |
           pip install --upgrade pip
-          # تثبيت إصدار ثابت من Flet بدلاً من أحدث إصدار
           pip install flet==0.85.2 requests bcrypt
 
       - name: Build APK
