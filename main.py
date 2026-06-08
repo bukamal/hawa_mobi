@@ -3,35 +3,15 @@
 import os
 import sys
 
-# ========== الخطوة 1: تحديد مسار التخزين الآمن (قبل أي استيراد يقرأه) ==========
-# نستخدم StoragePaths إذا كان متاحاً (على Android APK) أو نستخدم مساراً افتراضياً.
-_data_dir = None
+# ========== تحديد مسار ثابت (نفس مسار قاعدة البيانات) ==========
+_FIXED_DATA_DIR = os.path.expanduser('~/.hawaa')
+os.environ['HAWAA_DATA_DIR'] = _FIXED_DATA_DIR
 
-# هذه محاولة للاستفادة من StoragePaths دون استيراد flet (لأن استيراد flet قد يكون ثقيلاً)
-try:
-    # نستورد فقط StoragePaths من flet (لا نستورد كل flet)
-    from flet import StoragePaths
-    _data_dir = StoragePaths().app
-    print(f"✅ Using StoragePaths: {_data_dir}")
-except Exception as e:
-    print(f"⚠️ StoragePaths not available: {e}")
-
-if not _data_dir:
-    # بديل لأجهزة Android (Termux أو بيئة الاختبار)
-    if os.path.exists("/data/data/com.termux"):
-        _data_dir = os.path.expanduser("~/storage/shared/.hawaa")
-    else:
-        # سطح المكتب العادي
-        _data_dir = os.path.expanduser("~/.hawaa")
-    print(f"✅ Using fallback path: {_data_dir}")
-
-# تعيين متغير البيئة ليتمكن database/connection.py من قراءته
-os.environ['HAWAA_DATA_DIR'] = _data_dir
-
-# ========== الآن يمكن استيراد باقي الوحدات ==========
+# ========== استيراد الوحدات ==========
 import flet as ft
 import asyncio
 import traceback
+import sqlite3
 
 from database.migrations import ensure_db
 from auth.activation import check_activation, start_license_checker, stop_license_checker
@@ -41,15 +21,39 @@ from views.login_view import LoginView
 from views.splash_view import SplashView
 from views.app_layout import AppLayout
 from database import SettingsRepository
+from database.connection import get_local_db_path
 
-# ========== إعدادات Termux (إن وجدت) ==========
+# ========== إعدادات Termux ==========
 if os.path.exists("/data/data/com.termux"):
     os.environ.setdefault('DISPLAY', ':1')
     os.environ.setdefault('FLET_SERVER_PORT', '8551')
     os.environ.setdefault('FLET_SERVER_IP', '127.0.0.1')
 
-# ========== الدالة الرئيسية ==========
 def main(page: ft.Page):
+    # ========== الخطوة 1: التأكد من وجود الجداول ==========
+    # نستدعي ensure_db() التي تنشئ الجداول إذا لم تكن موجودة
+    ensure_db()
+    
+    # إجراء إضافي: التأكد من وجود جدول settings حتى لو فشلت ensure_db()
+    db_path = get_local_db_path()
+    try:
+        conn = sqlite3.connect(db_path)
+        conn.execute("SELECT 1 FROM settings LIMIT 1")
+    except sqlite3.OperationalError:
+        # الجدول غير موجود، نقوم بإنشائه يدوياً
+        conn.execute("CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT)")
+        # إدراج القيم الافتراضية
+        defaults = [
+            ('language', 'ar'), ('theme', 'light'), ('base_currency', 'USD'),
+            ('display_currency', 'USD'), ('currency_decimals', '2'),
+            ('number_format', 'western'), ('abbreviate_numbers', 'false')
+        ]
+        conn.executemany("INSERT OR IGNORE INTO settings (key, value) VALUES (?,?)", defaults)
+        conn.commit()
+        print("✅ تم إنشاء جدول settings وإدراج القيم الافتراضية")
+    finally:
+        conn.close()
+
     page.title = translate('app_title')
     page.theme_mode = ft.ThemeMode.LIGHT
     page.rtl = True
@@ -145,7 +149,6 @@ def main(page: ft.Page):
         )
 
     try:
-        ensure_db()
         show_splash()
     except Exception as e:
         show_error(str(e))

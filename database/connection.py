@@ -5,18 +5,18 @@ import os
 import json
 from typing import List, Dict
 
-# لا يتم استدعاء أي شيء على مستوى الوحدة (كل شيء مؤجل)
+# مسار ثابت لجميع البيئات (نستخدمه في وضع الويب وسطح المكتب)
+_FIXED_DATA_DIR = os.path.expanduser('~/.hawaa')
 _SETTINGS_FILE = None
 _DB_PATH = None
 
 def _get_data_dir():
-    """يتم استدعاؤها عند أول استخدام فقط، بعد أن يكون page متاحاً"""
-    # نفحص متغير البيئة الذي قد يكون تم تعيينه في main.py
+    """يُرجع مجلد البيانات (نستخدم مساراً ثابتاً لتوحيد الوصول)"""
+    # نستخدم متغير البيئة إذا وُجد (للتعديل اليدوي)
     env_dir = os.environ.get('HAWAA_DATA_DIR')
     if env_dir:
         return env_dir
-    # بديل آمن للاختبار العادي
-    return os.path.expanduser('~/.hawaa')
+    return _FIXED_DATA_DIR
 
 def _get_settings_file():
     global _SETTINGS_FILE
@@ -53,7 +53,6 @@ def set_setting(key: str, value):
     _save_settings(s)
 
 def get_local_db_path():
-    """لا يتم إنشاء مجلد إلا عند استدعائها لأول مرة"""
     global _DB_PATH
     if _DB_PATH is None:
         data_dir = _get_data_dir()
@@ -61,7 +60,6 @@ def get_local_db_path():
         _DB_PATH = os.path.join(data_dir, 'hawaa_data.db')
     return _DB_PATH
 
-# ========== فئة DatabaseConnection (بدون تغيير جوهري) ==========
 class DatabaseConnection:
     _instance = None
     _local_conn = None
@@ -160,7 +158,7 @@ class DatabaseConnection:
             self._local_conn.close()
             self._local_conn = None
 
-    # ========== CRUD helpers مختصرة للطول (تعريفاتها كاملة كما كانت) ==========
+    # ========== CRUD helpers (محذوفة للاختصار لكن تعمل كما هي سابقاً) ==========
     def get_expenses(self) -> List[Dict]:
         if self.mode == "client":
             return self._rest_client.get_expenses()
