@@ -33,7 +33,7 @@ jobs:
       - name: Install Python dependencies
         run: |
           pip install --upgrade pip
-          pip install flet==0.86.0 requests bcrypt
+          pip install flet==0.85.2 requests bcrypt
 
       - name: Clear Flet cache
         run: |
