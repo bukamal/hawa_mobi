@@ -29,6 +29,7 @@ class SettingsMobileView(ft.Column):
             self._settings_tile("💰 العملات", self._currency_tab(), expanded=True),
             self._settings_tile("💱 أسعار الصرف", self._rates_tab()),
             self._settings_tile("🏢 الشركة", self._company_tab()),
+            self._settings_tile("🖨️ التقارير والطباعة", self._reports_tab()),
             self._settings_tile("🌐 اللغة والمظهر", self._lang_theme_tab()),
             self._settings_tile("🌐 الشبكة", self._network_tab()),
             self._settings_tile("🔄 النسخ الاحتياطي", self._backup_tab()),
@@ -249,6 +250,51 @@ class SettingsMobileView(ft.Column):
 
     def _browse_logo(self, e):
         self._show_snackbar("استخدم مسار الملف مباشرة")
+
+
+    def _reports_tab(self):
+        from reports.config import get_report_settings
+        settings = get_report_settings()
+        self.report_header_note = ft.TextField(label="نص الرأس", value=settings.get('header_note', ''), width=350)
+        self.report_footer_note = ft.TextField(label="نص التذييل", value=settings.get('footer_note', ''), width=350, multiline=True, min_lines=2, max_lines=3)
+        self.report_show_generated_at = ft.Checkbox(label="إظهار تاريخ إنشاء التقرير", value=bool(settings.get('show_generated_at', True)))
+        self.report_columns = []
+        column_controls = []
+        for col in settings.get('account_statement_columns', []):
+            checkbox = ft.Checkbox(label=str(col.get('label', col.get('key'))), value=bool(col.get('visible', True)))
+            label_field = ft.TextField(label="اسم العمود", value=str(col.get('label', '')), width=180)
+            self.report_columns.append((str(col.get('key')), checkbox, label_field))
+            column_controls.append(ft.Row([checkbox, label_field], spacing=8, wrap=True))
+        save_btn = ft.FilledButton(content=ft.Text("حفظ إعدادات التقارير"), bgcolor=ft.Colors.INDIGO, color=ft.Colors.WHITE, on_click=self._save_reports)
+        return ft.Column([
+            info_banner("ترتيب كشف الحساب الافتراضي: التاريخ، الملاحظات، لنا، له، التراكمي. يمكن إظهار أعمدة إضافية مثل القيمة التاريخية للعملة."),
+            self.report_header_note,
+            self.report_footer_note,
+            self.report_show_generated_at,
+            ft.Text("أعمدة كشف الحساب", size=14, weight=ft.FontWeight.BOLD),
+            ft.Column(column_controls, spacing=4),
+            save_btn,
+        ], spacing=12)
+
+    def _save_reports(self, e):
+        from reports.config import get_report_settings, save_report_settings
+        settings = get_report_settings()
+        by_key = {c.get('key'): dict(c) for c in settings.get('account_statement_columns', [])}
+        for key, checkbox, label_field in getattr(self, 'report_columns', []):
+            if key in by_key:
+                by_key[key]['visible'] = bool(checkbox.value)
+                by_key[key]['label'] = label_field.value or by_key[key].get('label', key)
+        ordered = []
+        for c in settings.get('account_statement_columns', []):
+            if c.get('key') in by_key:
+                ordered.append(by_key[c.get('key')])
+        save_report_settings({
+            'header_note': self.report_header_note.value,
+            'footer_note': self.report_footer_note.value,
+            'show_generated_at': bool(self.report_show_generated_at.value),
+            'account_statement_columns': ordered,
+        })
+        self._show_snackbar("تم حفظ إعدادات التقارير والطباعة", False)
 
     def _lang_theme_tab(self):
         cur_lang = self.repo.get('language','ar')

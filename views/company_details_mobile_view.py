@@ -35,7 +35,19 @@ class CompanyDetailsMobileView(ft.Column):
         ], visible=True, bgcolor=ft.Colors.GREY_100)
         self.records_list = ft.Column(spacing=8, scroll=ft.ScrollMode.AUTO)
 
-        self.controls = [self.summary_panel, ft.Divider(height=1), self.records_list]
+        self.report_actions = ft.Row([
+            ft.FilledButton(
+                content=ft.Row([ft.Icon(ft.Icons.PRINT), ft.Text("كشف HTML للطباعة")], tight=True),
+                on_click=self._export_printable_statement,
+                bgcolor=ft.Colors.INDIGO,
+                color=ft.Colors.WHITE,
+            ),
+            ft.TextButton(
+                content=ft.Row([ft.Icon(ft.Icons.TABLE_VIEW), ft.Text("CSV")], tight=True),
+                on_click=self._export_csv_statement,
+            ),
+        ], spacing=8, wrap=True)
+        self.controls = [self.summary_panel, self.report_actions, ft.Divider(height=1), self.records_list]
         self._load_data()
 
     def _show_snackbar(self, message, is_error=False):
@@ -120,6 +132,26 @@ class CompanyDetailsMobileView(ft.Column):
 
         self.records_list.controls = cards
         self._page.update()
+
+    def _export_printable_statement(self, e):
+        try:
+            from reports.account_statement import export_account_statement_html
+            path = export_account_statement_html(self.company_name, self.records)
+            self._show_snackbar(f"تم إنشاء كشف الطباعة: {path}", False)
+            try:
+                self._page.launch_url("file://" + path)
+            except Exception:
+                pass
+        except Exception as ex:
+            self._show_snackbar(f"خطأ في إنشاء الكشف: {str(ex)}", True)
+
+    def _export_csv_statement(self, e):
+        try:
+            from reports.account_statement import export_account_statement_csv
+            path = export_account_statement_csv(self.company_name, self.records)
+            self._show_snackbar(f"تم إنشاء CSV: {path}", False)
+        except Exception as ex:
+            self._show_snackbar(f"خطأ في إنشاء CSV: {str(ex)}", True)
 
     def _edit_record(self, record):
         from views.dialogs.add_edit_expense_dialog import AddEditExpenseDialog

@@ -15,24 +15,16 @@ MUTED = ft.Colors.GREY_600
 BORDER = ft.Colors.GREY_200
 
 
-
-def safe_border_all(width=1, color=BORDER):
-    """Flet-compatible all-sides border. Compatible with older Flet builds."""
-    side = ft.BorderSide(width, color)
-    return ft.Border(left=side, top=side, right=side, bottom=side)
-
-
-def safe_border_bottom(width=1, color=BORDER):
-    """Flet-compatible bottom border. Compatible with older Flet builds."""
-    return ft.Border(bottom=ft.BorderSide(width, color))
-
-
-
 def app_mark(size=86, color=PRIMARY, dark=False):
     """Vector-like application mark: H + flight. No runtime asset dependency."""
     fg = ft.Colors.WHITE if not dark else color
     bg = color if not dark else ft.Colors.WHITE
-    border = safe_border_all(1, ft.Colors.WHITE_24 if not dark else ft.Colors.INDIGO_100)
+    border = ft.Border(
+        left=ft.BorderSide(1, ft.Colors.WHITE_24 if not dark else ft.Colors.INDIGO_100),
+        top=ft.BorderSide(1, ft.Colors.WHITE_24 if not dark else ft.Colors.INDIGO_100),
+        right=ft.BorderSide(1, ft.Colors.WHITE_24 if not dark else ft.Colors.INDIGO_100),
+        bottom=ft.BorderSide(1, ft.Colors.WHITE_24 if not dark else ft.Colors.INDIGO_100),
+    )
     return ft.Container(
         width=size,
         height=size,

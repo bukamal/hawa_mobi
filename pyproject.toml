@@ -16,7 +16,7 @@ build-backend = "setuptools.build_meta"
 py-modules = ["main", "config", "currency"]
 
 [tool.setuptools.packages.find]
-include = ["auth*", "database*", "i18n*", "views*", "services*"]
+include = ["auth*", "database*", "i18n*", "views*", "services*", "reports*"]
 
 [tool.flet]
 icon = "assets/app_icon.png"
