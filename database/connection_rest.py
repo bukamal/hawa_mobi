@@ -33,6 +33,10 @@ class RestClient:
                     raise
                 time.sleep(backoff * (2**attempt))
 
+
+    def health(self) -> Dict:
+        return self._request('GET', '/api/health', retries=1)
+
     def login(self, username: str, password: str) -> Dict:
         res = self._request('POST', '/api/login', {'username': username, 'password': password})
         self.set_token(res['token'])
@@ -53,6 +57,15 @@ class RestClient:
 
     def delete_expense(self, expense_id: int):
         self._request('DELETE', f'/api/expenses/{expense_id}')
+
+    def get_expense_summary(self) -> Dict:
+        return self._request('GET', '/api/expenses/summary')
+
+    def get_pending_payment_reminders(self) -> List[Dict]:
+        return self._request('GET', '/api/payment_reminders')
+
+    def count_waiting_payment(self) -> int:
+        return int(self._request('GET', '/api/payment_reminders/count_waiting').get('count', 0))
 
     def get_users(self) -> List[Dict]:
         return self._request('GET', '/api/users')

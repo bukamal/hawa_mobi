@@ -4,13 +4,13 @@ from typing import List, Dict, Optional
 
 class AuditRepository(BaseRepository):
     def log(self, user_id: Optional[int], username: str, action: str, table_name: str, record_id: int, details: str, ip: str = ''):
-        if self.db.is_remote(): return
+        if self.data.is_remote(): return
         now = datetime.datetime.now().isoformat()
         self._execute("INSERT INTO audit_log (user_id, username, action, table_name, record_id, details, ip_address, timestamp) VALUES (?,?,?,?,?,?,?,?)",
                       (user_id, username, action, table_name, record_id, details, ip, now))
         self._commit()
     def get_all(self, limit: int = 1000, user_id: int = None, action: str = None, table_name: str = None, start_date: str = None, end_date: str = None) -> List[Dict]:
-        if self.db.is_remote():
+        if self.data.is_remote():
             logs = self.db.get_rest_client().get_audit_log()
             filtered = logs[:limit]
             if user_id: filtered = [l for l in filtered if l.get('user_id') == user_id]
@@ -29,7 +29,7 @@ class AuditRepository(BaseRepository):
         sql += " ORDER BY id DESC LIMIT ?"; params.append(limit)
         return self._fetch_all(sql, tuple(params))
     def get_stats(self) -> Dict:
-        if self.db.is_remote():
+        if self.data.is_remote():
             logs = self.db.get_rest_client().get_audit_log()
             from collections import defaultdict
             by_user = defaultdict(int)
@@ -58,13 +58,13 @@ class AuditRepository(BaseRepository):
         stats['daily'] = rows
         return stats
     def delete_old_logs(self, days: int = 90):
-        if self.db.is_remote():
+        if self.data.is_remote():
             self.db.get_rest_client().delete_old_audit_logs(days)
         else:
             cutoff = (datetime.datetime.now() - datetime.timedelta(days=days)).isoformat()
             self._execute("DELETE FROM audit_log WHERE timestamp < ?", (cutoff,))
             self._commit()
     def export_all(self) -> List[Dict]:
-        if self.db.is_remote():
+        if self.data.is_remote():
             return self.db.get_rest_client().get_audit_log()
         return self._fetch_all("SELECT * FROM audit_log ORDER BY id DESC")

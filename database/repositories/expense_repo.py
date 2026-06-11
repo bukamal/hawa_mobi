@@ -6,7 +6,7 @@ from typing import List, Dict, Optional
 
 class ExpenseRepository(BaseRepository):
     def get_all(self, convert_to_display: bool = True) -> List[Dict]:
-        expenses = self.db.get_expenses()
+        expenses = self.data.get_expenses()
         if convert_to_display:
             for e in expenses:
                 e['amount_display'] = e.get('amount_original', e['amount'])
@@ -29,8 +29,8 @@ class ExpenseRepository(BaseRepository):
         data = {'company_name': company_name, 'amount': amount_usd, 'type': type_val, 'date': date, 'notes': notes,
                 'currency': currency_code, 'created_by': user_id, 'created_at': now, 'updated_by': user_id, 'updated_at': now,
                 'amount_original': amount, 'currency_original': currency_code, 'exchange_rate_to_usd': rate, 'status': status, 'payment_due_date': payment_due_date, 'payment_reminder_note': payment_note}
-        if self.db.is_remote():
-            return self.db.add_expense(data)
+        if self.data.is_remote():
+            return self.data.add_expense(data)
         else:
             user = UserSession.get_current()
             audit = {'user_id': user_id, 'username': user['username'] if user else '', 'action': "إضافة قيد", 'table_name': 'expenses', 'record_id': None,
@@ -62,8 +62,8 @@ class ExpenseRepository(BaseRepository):
         data = {'company_name': company_name, 'amount': amount_usd, 'type': type_val, 'date': date, 'notes': notes,
                 'currency': currency_code, 'updated_by': user_id, 'updated_at': now,
                 'amount_original': amount, 'currency_original': currency_code, 'exchange_rate_to_usd': rate, 'status': status, 'payment_due_date': payment_due_date, 'payment_reminder_note': payment_note}
-        if self.db.is_remote():
-            self.db.update_expense(expense_id, data)
+        if self.data.is_remote():
+            self.data.update_expense(expense_id, data)
         else:
             user = UserSession.get_current()
             audit = {'user_id': user_id, 'username': user['username'] if user else '', 'action': "تعديل قيد", 'table_name': 'expenses', 'record_id': expense_id,
@@ -90,8 +90,8 @@ class ExpenseRepository(BaseRepository):
         if user_id is None:
             u = UserSession.get_current()
             user_id = u['id'] if u else None
-        if self.db.is_remote():
-            self.db.delete_expense(expense_id)
+        if self.data.is_remote():
+            self.data.delete_expense(expense_id)
         else:
             conn = self.db.get_connection()
             row = conn.execute('SELECT company_name, amount_original, currency_original FROM expenses WHERE id=?', (expense_id,)).fetchone()
@@ -105,9 +105,8 @@ class ExpenseRepository(BaseRepository):
             u = UserSession.get_current()
             self.db._log_audit_local(user_id, u['username'] if u else '', "حذف قيد", 'expenses', expense_id, details)
     def get_pending_payment_reminders(self) -> List[Dict]:
-        if self.db.is_remote():
-            # REST endpoint غير متوفر حالياً؛ أعِد قائمة فارغة بدل كسر APK.
-            return []
+        if self.data.is_remote():
+            return self.db.get_rest_client().get_pending_payment_reminders()
         conn = self.db.get_connection()
         rows = conn.execute("""
             SELECT r.*, e.company_name, e.amount_original, e.currency_original, e.type
@@ -119,8 +118,8 @@ class ExpenseRepository(BaseRepository):
         return [dict(row) for row in rows]
 
     def count_waiting_payment(self) -> int:
-        if self.db.is_remote():
-            return 0
+        if self.data.is_remote():
+            return self.db.get_rest_client().count_waiting_payment()
         row = self.db.get_connection().execute("SELECT COUNT(*) AS c FROM expenses WHERE status='waiting_payment'").fetchone()
         return int(row['c'] if row else 0)
 

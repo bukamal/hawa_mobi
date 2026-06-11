@@ -6,6 +6,7 @@ from auth.session import UserSession
 from i18n.translator import translate
 from currency import currency
 from collections import defaultdict
+from views.ui_kit import show_snackbar, page_header, search_field, summary_bar, metric_tile, empty_state, action_text_button, data_card
 
 class AccountsMobileView(ft.Column):
     def __init__(self, page):
@@ -15,37 +16,17 @@ class AccountsMobileView(ft.Column):
         self.spacing = 10
         self.scroll = ft.ScrollMode.AUTO
 
-        self.search_field = ft.TextField(
-            label=translate('search'),
-            prefix_icon=ft.Icons.SEARCH,
-            on_change=self._refresh_cards,
-            border_radius=30,
-            filled=True,
-            bgcolor=ft.Colors.WHITE,
-            text_size=14
-        )
+        self.search_field = search_field(translate('search'), self._refresh_cards)
 
         self.net_text = ft.Text("0", size=22, weight=ft.FontWeight.BOLD, color=ft.Colors.INDIGO)
         self.companies_count_text = ft.Text("0", size=22, weight=ft.FontWeight.BOLD, color=ft.Colors.BLUE)
         self.records_count_text = ft.Text("0", size=22, weight=ft.FontWeight.BOLD, color=ft.Colors.ORANGE)
 
-        self.summary_bar = ft.Container(
-            content=ft.Row([
-                ft.Column([ft.Text("صافي", size=11, color=ft.Colors.GREY_600), self.net_text],
-                          horizontal_alignment=ft.CrossAxisAlignment.CENTER, expand=True),
-                ft.VerticalDivider(width=1, color=ft.Colors.GREY_300),
-                ft.Column([ft.Text("الشركات", size=11, color=ft.Colors.GREY_600), self.companies_count_text],
-                          horizontal_alignment=ft.CrossAxisAlignment.CENTER, expand=True),
-                ft.VerticalDivider(width=1, color=ft.Colors.GREY_300),
-                ft.Column([ft.Text("القيود", size=11, color=ft.Colors.GREY_600), self.records_count_text],
-                          horizontal_alignment=ft.CrossAxisAlignment.CENTER, expand=True),
-            ], alignment=ft.MainAxisAlignment.SPACE_AROUND),
-            bgcolor=ft.Colors.INDIGO_50,
-            border_radius=15,
-            padding=15,
-            margin=ft.Margin(left=10, right=10, top=0, bottom=10),
-            visible=False
-        )
+        self.summary_bar = summary_bar([
+            metric_tile("صافي", self.net_text),
+            metric_tile("الشركات", self.companies_count_text),
+            metric_tile("القيود", self.records_count_text),
+        ], visible=False)
 
         self.cards_container = ft.Column(spacing=10, scroll=ft.ScrollMode.AUTO, expand=True)
 
@@ -62,7 +43,8 @@ class AccountsMobileView(ft.Column):
         )
 
         self.controls = [
-            ft.Container(content=self.search_field, padding=ft.Padding(left=10, right=10, top=10, bottom=0)),
+            page_header(translate('accounts'), icon=ft.Icons.ACCOUNT_BALANCE, subtitle="الشركات والقيود المالية"),
+            ft.Container(content=self.search_field, padding=ft.Padding(left=10, right=10, top=0, bottom=0)),
             self.summary_bar,
             self.cards_container
         ]
@@ -71,10 +53,7 @@ class AccountsMobileView(ft.Column):
         self._refresh_cards(None)
 
     def _show_snackbar(self, message, is_error=False):
-        snack = ft.SnackBar(content=ft.Text(message, size=13), bgcolor=ft.Colors.RED if is_error else ft.Colors.GREEN, duration=3000)
-        self._page.overlay.append(snack)
-        snack.open = True
-        self._page.update()
+        show_snackbar(self._page, message, is_error)
 
     def _refresh_cards(self, e):
         try:
@@ -173,16 +152,7 @@ class AccountsMobileView(ft.Column):
             self.summary_bar.visible = True
         else:
             self.summary_bar.visible = False
-            cards.append(ft.Container(
-                content=ft.Column([
-                    ft.Icon(ft.Icons.SEARCH_OFF, size=64, color=ft.Colors.GREY_400),
-                    ft.Text("لا توجد بيانات", size=16, color=ft.Colors.GREY_600),
-                    ft.Text("اضغط + لإضافة قيد جديد", size=12, color=ft.Colors.GREY_400)
-                ], alignment=ft.MainAxisAlignment.CENTER, horizontal_alignment=ft.CrossAxisAlignment.CENTER),
-                alignment=ft.Alignment.CENTER,
-                expand=True,
-                padding=50
-            ))
+            cards.append(empty_state("لا توجد بيانات", "اضغط + لإضافة قيد جديد", icon=ft.Icons.SEARCH_OFF))
 
         self.cards_container.controls = cards
         self._page.update()

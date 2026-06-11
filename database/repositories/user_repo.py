@@ -6,24 +6,24 @@ from typing import List, Dict, Optional
 
 class UserRepository(BaseRepository):
     def get_all(self) -> List[Dict]:
-        if self.db.is_remote(): return self.db.get_rest_client().get_users()
+        if self.data.is_remote(): return self.data.get_users()
         return self._fetch_all("SELECT id, username, full_name, role, created_at, last_login, force_password_change FROM users ORDER BY id")
     def get_by_id(self, user_id: int) -> Optional[Dict]:
-        if self.db.is_remote():
+        if self.data.is_remote():
             users = self.get_all()
             for u in users:
                 if u['id'] == user_id: return u
             return None
         return self._fetch_one("SELECT * FROM users WHERE id=?", (user_id,))
     def get_by_username(self, username: str) -> Optional[Dict]:
-        if self.db.is_remote():
+        if self.data.is_remote():
             users = self.get_all()
             for u in users:
                 if u['username'] == username: return u
             return None
         return self._fetch_one("SELECT * FROM users WHERE username=?", (username,))
     def authenticate(self, username: str, password: str) -> Optional[Dict]:
-        if self.db.is_remote():
+        if self.data.is_remote():
             raise NotImplementedError("Use RestClient.login() for remote")
         user = self.get_by_username(username)
         if user and verify_password(password, user['password_hash'], user['salt']):
@@ -33,9 +33,9 @@ class UserRepository(BaseRepository):
             return user
         return None
     def create(self, username: str, password: str, full_name: str, role: str) -> int:
-        if self.db.is_remote():
+        if self.data.is_remote():
             data = {'username': username, 'password': password, 'full_name': full_name, 'role': role}
-            return self.db.get_rest_client().add_user(data)
+            return self.data.add_user(data)
         pwd_hash, salt = hash_password(password)
         now = datetime.datetime.now().isoformat()
         conn = self.db.get_connection()
@@ -47,7 +47,7 @@ class UserRepository(BaseRepository):
         self.db._log_audit_local(curr['id'] if curr else None, curr['username'] if curr else '', "إضافة مستخدم", 'users', uid, f"المستخدم: {username}")
         return uid
     def update(self, user_id: int, full_name: str, role: str):
-        if self.db.is_remote():
+        if self.data.is_remote():
             self.db.get_rest_client().update_user(user_id, {'full_name': full_name, 'role': role})
             return
         conn = self.db.get_connection()
@@ -56,7 +56,7 @@ class UserRepository(BaseRepository):
         curr = UserSession.get_current()
         self.db._log_audit_local(curr['id'] if curr else None, curr['username'] if curr else '', "تعديل مستخدم", 'users', user_id, f"الاسم: {full_name}, صلاحية: {role}")
     def change_password(self, user_id: int, old_password: str, new_password: str) -> bool:
-        if self.db.is_remote():
+        if self.data.is_remote():
             try:
                 self.db.get_rest_client().change_password(old_password, new_password)
                 return True
@@ -72,7 +72,7 @@ class UserRepository(BaseRepository):
         return True
     def delete(self, user_id: int) -> bool:
         if user_id == 1: return False
-        if self.db.is_remote():
+        if self.data.is_remote():
             try: self.db.get_rest_client().delete_user(user_id); return True
             except: return False
         user = self.get_by_id(user_id)
@@ -83,7 +83,7 @@ class UserRepository(BaseRepository):
         self.db._log_audit_local(curr['id'] if curr else None, curr['username'] if curr else '', "حذف مستخدم", 'users', user_id, f"المستخدم: {user['username']}")
         return True
     def set_force_password_change(self, user_id: int, force: bool):
-        if self.db.is_remote(): return
+        if self.data.is_remote(): return
         val = 1 if force else 0
         self._execute("UPDATE users SET force_password_change=? WHERE id=?", (val, user_id))
         self._commit()

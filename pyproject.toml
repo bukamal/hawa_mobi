@@ -6,8 +6,6 @@ requires-python = ">=3.10"
 dependencies = [
     "flet==0.85.2",
     "requests>=2.25.0",
-    "Flask>=3.0.0",
-    "waitress>=3.0.0",
 ]
 
 [build-system]
@@ -15,10 +13,10 @@ requires = ["setuptools>=65", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools]
-py-modules = ["main", "config", "currency", "run_server", "flask_server"]
+py-modules = ["main", "config", "currency"]
 
 [tool.setuptools.packages.find]
-include = ["auth*", "database*", "i18n*", "views*"]
+include = ["auth*", "database*", "i18n*", "views*", "services*"]
 
 [tool.flet]
 org = "com.hawaa"

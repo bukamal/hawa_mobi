@@ -5,6 +5,7 @@ from database import ExpenseRepository
 from auth.session import UserSession
 from i18n.translator import translate
 from currency import currency
+from views.ui_kit import show_snackbar, empty_state, data_card, action_text_button
 
 class CompanyDetailsMobileView(ft.Column):
     def __init__(self, page, company_name, records=None, on_changed=None):
@@ -28,10 +29,7 @@ class CompanyDetailsMobileView(ft.Column):
         self._load_data()
 
     def _show_snackbar(self, message, is_error=False):
-        snack = ft.SnackBar(content=ft.Text(message, size=13), bgcolor=ft.Colors.RED if is_error else ft.Colors.GREEN, duration=3000)
-        self._page.overlay.append(snack)
-        snack.open = True
-        self._page.update()
+        show_snackbar(self._page, message, is_error)
 
     def _load_data(self):
         display_curr = currency.get_display_currency()
@@ -115,7 +113,7 @@ class CompanyDetailsMobileView(ft.Column):
             cards.append(card)
 
         if not cards:
-            cards.append(ft.Container(content=ft.Text("لا توجد قيود", color=ft.Colors.GREY_400), alignment=ft.Alignment.CENTER, padding=30))
+            cards.append(empty_state("لا توجد قيود", icon=ft.Icons.RECEIPT_LONG, padding=30))
 
         self.records_list.controls = cards
         self._page.update()

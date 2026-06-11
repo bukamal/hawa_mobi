@@ -305,29 +305,35 @@ class SettingsMobileView(ft.Column):
             ft.Row([test_btn, save_btn], spacing=10)
         ], spacing=15)
 
-    def _test_connection(self, e):
-        url = self.server_url.value.strip()
-        if not url.startswith("http"):
-            url = "http://" + url
+    def _normalize_server_url(self):
+        from services.network_service import NetworkService
+        return NetworkService.normalize_server_url(self.server_url.value or "")
+
+    def _is_forbidden_client_url(self, url: str) -> bool:
         try:
-            import requests
-            resp = requests.get(f"{url}/health", timeout=3)
-            if resp.status_code == 200 and resp.json().get("status") == "alive":
-                self._show_snackbar(f"✅ متصل بخادم {url}", is_error=False)
-            else:
-                self._show_snackbar("❌ الخادم لا يستجيب بشكل صحيح", True)
+            from services.network_service import NetworkService
+            NetworkService.normalize_server_url(url)
+            return False
+        except ValueError:
+            return True
+
+    def _test_connection(self, e):
+        try:
+            from services.network_service import NetworkService
+            result = NetworkService.check_connection(self.server_url.value or "")
+            self._show_snackbar(("✅ " if result.ok else "❌ ") + result.message, is_error=not result.ok)
         except Exception as ex:
-            self._show_snackbar(f"❌ خطأ: {str(ex)}", True)
+            self._show_snackbar(f"❌ فشل الاتصال: {str(ex)}", True)
 
     def _save_network(self, e):
         mode_map = {"محلي": "local", "عميل": "client"}
         new_mode = mode_map.get(self.mode_dropdown.value, "local")
-        from database.connection import set_setting
-        set_setting("network/mode", new_mode)
-        set_setting("network/server_url", self.server_url.value.strip())
-        db = DatabaseConnection()
-        db.refresh_mode()
-        self._show_snackbar("تم حفظ إعدادات الشبكة", is_error=False)
+        try:
+            from services.network_service import NetworkService
+            NetworkService.save_mode(new_mode, self.server_url.value or "")
+            self._show_snackbar("تم حفظ إعدادات الشبكة", is_error=False)
+        except Exception as ex:
+            self._show_snackbar(f"❌ {str(ex)}", True)
 
     def _backup_tab(self):
         backup_btn = ft.FilledButton(

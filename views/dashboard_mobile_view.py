@@ -6,6 +6,7 @@ from i18n.translator import translate
 from datetime import datetime, timedelta
 from collections import defaultdict
 from views.flet_compat import open_control
+from views.ui_kit import show_snackbar, page_header, data_card, empty_state
 
 class DashboardMobileView(ft.Column):
     def __init__(self, page):
@@ -56,10 +57,9 @@ class DashboardMobileView(ft.Column):
         self.cards_container = ft.Column(spacing=10, scroll=ft.ScrollMode.AUTO)
 
         self.controls = [
-            ft.Row([ft.Text(translate('dashboard'), size=20, weight=ft.FontWeight.BOLD), self.refresh_btn],
-                   alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
-            self.period_filter,
-            self.custom_date_row,
+            page_header(translate('dashboard'), icon=ft.Icons.DASHBOARD, trailing=self.refresh_btn),
+            ft.Container(content=self.period_filter, padding=ft.Padding(left=10, right=10, top=0, bottom=0)),
+            ft.Container(content=self.custom_date_row, padding=ft.Padding(left=10, right=10, top=0, bottom=0)),
             ft.Row([self.transactions_count_text], alignment=ft.MainAxisAlignment.CENTER),
             ft.Divider(),
             self.cards_container
@@ -68,10 +68,7 @@ class DashboardMobileView(ft.Column):
         self._load_data()
 
     def _show_snackbar(self, message, is_error=False):
-        snack = ft.SnackBar(content=ft.Text(message, size=13), bgcolor=ft.Colors.RED if is_error else ft.Colors.GREEN, duration=3000)
-        self._page.overlay.append(snack)
-        snack.open = True
-        self._page.update()
+        show_snackbar(self._page, message, is_error)
 
     def _open_start_date_picker(self, e):
         open_control(self._page, self.start_date_picker_obj)
