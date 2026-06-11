@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 import flet as ft
+from views.flet_compat import open_control, close_control
 from database import ExpenseRepository
 from auth.session import UserSession
 from i18n.translator import translate
@@ -70,7 +71,10 @@ class AccountsMobileView(ft.Column):
         self._refresh_cards(None)
 
     def _show_snackbar(self, message, is_error=False):
-        self._page.open(ft.SnackBar(content=ft.Text(message, size=13), bgcolor=ft.Colors.RED if is_error else ft.Colors.GREEN, duration=3000))
+        snack = ft.SnackBar(content=ft.Text(message, size=13), bgcolor=ft.Colors.RED if is_error else ft.Colors.GREEN, duration=3000)
+        self._page.overlay.append(snack)
+        snack.open = True
+        self._page.update()
 
     def _refresh_cards(self, e):
         try:
@@ -81,10 +85,13 @@ class AccountsMobileView(ft.Column):
             return
 
         search = self.search_field.value.strip().lower() if self.search_field.value else ""
-        groups = defaultdict(lambda: {'incoming':0.0, 'outgoing':0.0, 'records':[]})
+        groups = defaultdict(lambda: {'incoming':0.0, 'outgoing':0.0, 'records':[], 'waiting_payment':0})
         for ex in expenses:
             if search and search not in ex['company_name'].lower(): continue
-            groups[ex['company_name']][ex['type']] += ex['amount']
+            if ex.get('status') == 'waiting_payment':
+                groups[ex['company_name']]['waiting_payment'] += 1
+            else:
+                groups[ex['company_name']][ex['type']] += float(ex.get('amount') or 0)
             groups[ex['company_name']]['records'].append(ex)
 
         display_curr = currency.get_display_currency()
@@ -133,6 +140,13 @@ class AccountsMobileView(ft.Column):
                                 ft.Text(str(len(vals['records'])), size=14, weight=ft.FontWeight.BOLD)
                             ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, expand=True),
                         ], alignment=ft.MainAxisAlignment.SPACE_AROUND),
+                        ft.Container(
+                            content=ft.Text(f"⏳ بانتظار الدفع: {vals['waiting_payment']}", size=12, color=ft.Colors.ORANGE_900),
+                            bgcolor=ft.Colors.ORANGE_50,
+                            border_radius=12,
+                            padding=ft.Padding(left=10, right=10, top=6, bottom=6),
+                            visible=vals['waiting_payment'] > 0,
+                        ),
                         ft.Row([
                             ft.TextButton(
                                 content=ft.Row([ft.Icon(ft.Icons.INFO_OUTLINE, size=18), ft.Text("تفاصيل", size=12)]),
@@ -182,7 +196,7 @@ class AccountsMobileView(ft.Column):
             inset_padding=20,
             scrollable=True
         )
-        self._page.open(dialog)
+        open_control(self._page, dialog)
 
     def _close_dialog(self, dialog):
         dialog.open = False
@@ -193,5 +207,10 @@ class AccountsMobileView(ft.Column):
             self._show_snackbar("ليس لديك صلاحية لإضافة قيود", True)
             return
         from views.dialogs.add_edit_expense_dialog import AddEditExpenseDialog
-        dialog = AddEditExpenseDialog(page=self._page, on_save=lambda _: self._refresh_cards(None), company_name=company_name)
-        self._page.open(dialog)
+        try:
+            dialog = AddEditExpenseDialog(page=self._page, on_save=lambda _: self._refresh_cards(None), company_name=company_name)
+            open_control(self._page, dialog)
+        except Exception as e:
+            self._show_snackbar(f"خطأ في إنشاء الحوار: {str(e)}", True)
+            import traceback
+            traceback.print_exc()

@@ -14,31 +14,35 @@ jobs:
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
+          python-version: '3.12'
 
       - name: Install system dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y openjdk-17-jdk curl unzip zip git
 
-      - name: Setup Flutter
-        uses: subosito/flutter-action@v2
-        with:
-          flutter-version: '3.27.4'
-          channel: 'stable'
-
-      - name: Accept Android licenses
-        run: yes | flutter doctor --android-licenses || true
-
       - name: Install Python dependencies
         run: |
-          pip install --upgrade pip
-          pip install flet==0.85.2 requests bcrypt
+          python -m pip install --upgrade pip
+          python -m pip install -e .
+          python - <<'PY'
+          import flet, sys
+          print('Python:', sys.version)
+          print('Flet:', getattr(flet, '__version__', 'unknown'))
+          try:
+              import flet.version
+              print('Recommended Flutter:', getattr(flet.version, 'flutter_version', 'unknown'))
+          except Exception as e:
+              print('Flutter version lookup failed:', e)
+          PY
+
+      - name: Static Python check
+        run: |
+          python -m compileall .
 
       - name: Clear Flet cache
         run: |
-          rm -rf ~/.flet
-          rm -rf ~/.cache/flet
+          rm -rf ~/.flet ~/.cache/flet build/flutter build/apk
 
       - name: Build APK
         run: |
@@ -51,6 +55,7 @@ jobs:
           APK_PATH=$(find build -name "*.apk" -type f | head -n 1)
           if [ -z "$APK_PATH" ]; then
             echo "❌ No APK found!"
+            find build -maxdepth 5 -type f || true
             exit 1
           fi
           echo "✅ Found APK at: $APK_PATH"

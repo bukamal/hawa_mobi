@@ -5,13 +5,10 @@ from currency import currency
 from i18n.translator import translate, set_language
 from config import get_company_info, save_company_info
 from database.connection import DatabaseConnection
-from auth.activation import check_network_activation, activate_network
-import socket
-import requests
+import datetime
 import os
 import shutil
 import csv
-import datetime
 import asyncio
 
 class SettingsMobileView(ft.Column):
@@ -22,7 +19,6 @@ class SettingsMobileView(ft.Column):
         self.spacing = 15
         self.scroll = ft.ScrollMode.AUTO
         self.repo = SettingsRepository()
-        self.server_running = False
         self.rate_fields = {}
 
         self.controls = [
@@ -36,7 +32,10 @@ class SettingsMobileView(ft.Column):
         ]
 
     def _show_snackbar(self, message, is_error=False):
-        self._page.open(ft.SnackBar(content=ft.Text(message, size=13), bgcolor=ft.Colors.RED if is_error else ft.Colors.GREEN, duration=3000))
+        snack = ft.SnackBar(content=ft.Text(message, size=13), bgcolor=ft.Colors.RED if is_error else ft.Colors.GREEN, duration=3000)
+        self._page.overlay.append(snack)
+        snack.open = True
+        self._page.update()
 
     def _currency_tab(self):
         field_width = 280
@@ -182,7 +181,6 @@ class SettingsMobileView(ft.Column):
                 ('USD', 1.0), ('SAR', 3.75), ('SYP', 14000.0), ('EUR', 0.92),
                 ('GBP', 0.79), ('AED', 3.67), ('QAR', 3.64), ('KWD', 0.31), ('OMR', 0.38)
             ]
-            from database.connection import DatabaseConnection
             db = DatabaseConnection()
             now = datetime.datetime.now().isoformat()
             for code, rate in default_rates:
@@ -206,6 +204,7 @@ class SettingsMobileView(ft.Column):
             self._show_snackbar(f"خطأ: {str(ex)}", True)
 
     def _fetch_online_rates(self, e):
+        import requests
         try:
             resp = requests.get("https://api.exchangerate-api.com/v4/latest/USD", timeout=10)
             if resp.status_code == 200:
@@ -236,7 +235,9 @@ class SettingsMobileView(ft.Column):
         info = {'name': self.company_name.value, 'address': self.company_address.value, 'phone': self.company_phone.value, 'email': self.company_email.value, 'logo_path': self.company_logo.value}
         save_company_info(info)
         self._show_snackbar("تم حفظ معلومات الشركة", is_error=False)
-    def _browse_logo(self, e): self._show_snackbar("استخدم مسار الملف مباشرة")
+
+    def _browse_logo(self, e):
+        self._show_snackbar("استخدم مسار الملف مباشرة")
 
     def _lang_theme_tab(self):
         cur_lang = self.repo.get('language','ar')
@@ -263,6 +264,7 @@ class SettingsMobileView(ft.Column):
         self.repo.set('language', new_lang)
         set_language(new_lang)
         self._show_snackbar("سيتم تطبيق اللغة بعد إعادة التشغيل", is_error=False)
+
     def _save_theme(self, e):
         theme = 'light' if self.theme_dropdown.value == 'فاتح' else 'dark'
         self.repo.set('theme', theme)
@@ -271,40 +273,20 @@ class SettingsMobileView(ft.Column):
         self._page.update()
 
     def _network_tab(self):
-        try:
-            hostname = socket.gethostname()
-            local_ip = socket.gethostbyname(hostname)
-        except:
-            local_ip = "غير متوفر"
-        ip_text = ft.Text(f"عنوان الجهاز: {local_ip}", color=ft.Colors.GREY_600, size=12)
-
         db = DatabaseConnection()
         current_mode = db.mode
 
         self.mode_dropdown = ft.Dropdown(
             label="وضع التشغيل",
-            value="محلي" if current_mode=="local" else "عميل" if current_mode=="client" else "خادم",
-            options=[ft.dropdown.Option("محلي"), ft.dropdown.Option("عميل"), ft.dropdown.Option("خادم")],
+            value="محلي" if current_mode == "local" else "عميل",
+            options=[ft.dropdown.Option("محلي"), ft.dropdown.Option("عميل")],
             width=250
         )
-        self.mode_dropdown.on_change = self._on_mode_change
-
-        self.server_url = ft.TextField(label="عنوان الخادم (للعميل)", value=db.server_url, width=350, hint_text="http://192.168.1.100:8001")
-        self.server_port = ft.TextField(label="منفذ الخادم (للوضع خادم)", value="8001", width=150, keyboard_type=ft.KeyboardType.NUMBER)
-
-        self.start_server_btn = ft.FilledButton(
-            content=ft.Row([ft.Icon(ft.Icons.PLAY_ARROW), ft.Text("تشغيل الخادم")]),
-            bgcolor=ft.Colors.GREEN,
-            color=ft.Colors.WHITE,
-            on_click=self._start_server_with_activation,
-            visible=(current_mode == "server")
-        )
-        self.stop_server_btn = ft.FilledButton(
-            content=ft.Row([ft.Icon(ft.Icons.STOP), ft.Text("إيقاف الخادم")]),
-            bgcolor=ft.Colors.RED,
-            color=ft.Colors.WHITE,
-            on_click=self._stop_server,
-            visible=False
+        self.server_url = ft.TextField(
+            label="عنوان الخادم (للعميل)",
+            value=db.server_url,
+            width=350,
+            hint_text="http://192.168.1.100:8000"
         )
         test_btn = ft.FilledButton(
             content=ft.Row([ft.Icon(ft.Icons.NETWORK_CHECK), ft.Text("اختبار الاتصال")]),
@@ -314,209 +296,37 @@ class SettingsMobileView(ft.Column):
             content=ft.Text("حفظ"),
             bgcolor=ft.Colors.INDIGO,
             color=ft.Colors.WHITE,
-            on_click=self._save_network_with_activation
+            on_click=self._save_network
         )
-
-        net_activated, _ = check_network_activation()
-        activation_status = ft.Text(
-            f"حالة ميزة الشبكة: {'مفعلة ✓' if net_activated else 'غير مفعلة ✗'}",
-            color=ft.Colors.GREEN if net_activated else ft.Colors.RED,
-            size=12
-        )
-
         return ft.Column([
-            ip_text, ft.Divider(),
             self.mode_dropdown,
             self.server_url,
-            ft.Row([self.server_port, self.start_server_btn, self.stop_server_btn], spacing=10),
-            ft.Row([test_btn, save_btn], spacing=10),
-            ft.Divider(),
-            activation_status
+            ft.Row([test_btn, save_btn], spacing=10)
         ], spacing=15)
-
-    def _require_network_activation(self, callback, *args, **kwargs):
-        ok, _ = check_network_activation()
-        if ok:
-            callback(*args, **kwargs)
-            return
-        
-        page_width = self._page.width or 400
-        dialog_width = min(320, page_width - 60)
-        field_width = dialog_width - 40
-        
-        info_text = ft.Text(
-            "ميزة الشبكة (العميل/الخادم) غير مفعلة.\nأدخل مفتاح التفعيل الخاص بالشبكة:",
-            size=13,
-            color=ft.Colors.GREY_700,
-            text_align=ft.TextAlign.CENTER
-        )
-        
-        key_field = ft.TextField(
-            label="مفتاح التفعيل",
-            hint_text="XXXX-XXXX-XXXX-XXXX",
-            width=field_width,
-            password=True,
-            can_reveal_password=True,
-            text_align=ft.TextAlign.CENTER,
-            border_radius=10
-        )
-        
-        status = ft.Text("", color=ft.Colors.RED, size=12, text_align=ft.TextAlign.CENTER)
-        
-        def do_activate(e):
-            key = key_field.value.strip()
-            if not key:
-                status.value = "الرجاء إدخال مفتاح التفعيل"
-                dialog.update()
-                return
-            success, msg = activate_network(key)
-            if success:
-                self._show_snackbar("تم تفعيل ميزة الشبكة بنجاح", is_error=False)
-                dialog.open = False
-                self._page.update()
-                callback(*args, **kwargs)
-            else:
-                status.value = f"فشل التفعيل: {msg}"
-                dialog.update()
-        
-        activate_btn = ft.FilledButton(
-            content=ft.Text("تفعيل"),
-            on_click=do_activate,
-            bgcolor=ft.Colors.INDIGO,
-            color=ft.Colors.WHITE,
-            expand=True
-        )
-        cancel_btn = ft.TextButton(
-            content=ft.Text("إلغاء"),
-            on_click=lambda e: setattr(dialog, 'open', False)
-        )
-        
-        content = ft.Column(
-            controls=[
-                ft.Icon(ft.Icons.LOCK, size=48, color=ft.Colors.INDIGO),
-                info_text,
-                ft.Container(height=10),
-                key_field,
-                status,
-                ft.Row([cancel_btn, activate_btn], spacing=15, alignment=ft.MainAxisAlignment.SPACE_AROUND)
-            ],
-            spacing=15,
-            width=dialog_width,
-            scroll=ft.ScrollMode.AUTO,
-            horizontal_alignment=ft.CrossAxisAlignment.CENTER
-        )
-        
-        dialog = ft.AlertDialog(
-            title=ft.Text("تفعيل ميزة الشبكة", size=18, weight=ft.FontWeight.BOLD),
-            content=content,
-            inset_padding=20,
-            shape=ft.RoundedRectangleBorder(radius=15)
-        )
-        
-        self._page.open(dialog)
-
-    def _start_server_with_activation(self, e):
-        self._require_network_activation(self._start_server, e)
-
-    def _save_network_with_activation(self, e):
-        mode = self.mode_dropdown.value
-        if mode in ("عميل", "خادم"):
-            self._require_network_activation(self._save_network, e)
-        else:
-            self._save_network(e)
 
     def _test_connection(self, e):
         url = self.server_url.value.strip()
         if not url.startswith("http"):
             url = "http://" + url
         try:
+            import requests
             resp = requests.get(f"{url}/health", timeout=3)
             if resp.status_code == 200 and resp.json().get("status") == "alive":
                 self._show_snackbar(f"✅ متصل بخادم {url}", is_error=False)
             else:
-                self._show_snackbar("❌ الخادم لا يستجيب", True)
+                self._show_snackbar("❌ الخادم لا يستجيب بشكل صحيح", True)
         except Exception as ex:
             self._show_snackbar(f"❌ خطأ: {str(ex)}", True)
 
     def _save_network(self, e):
-        from database.connection import set_setting, get_setting
-        mode_map = {"محلي":"local", "عميل":"client", "خادم":"server"}
+        mode_map = {"محلي": "local", "عميل": "client"}
         new_mode = mode_map.get(self.mode_dropdown.value, "local")
-        old_mode = get_setting("network/mode", "local")
-        
-        if new_mode == "server":
-            try:
-                port = int(self.server_port.value)
-            except:
-                port = 8001
-            # استيراد شرطي داخل الدالة
-            try:
-                from flask_server import start_flask_server
-                if not start_flask_server(port):
-                    self._show_snackbar("الخادم يعمل بالفعل", True)
-                    return
-                else:
-                    self._show_snackbar(f"✅ تم تشغيل الخادم على المنفذ {port}", is_error=False)
-            except ImportError:
-                self._show_snackbar("مكتبات الخادم غير مثبتة. قم بتثبيت Flask والمكتبات المطلوبة.", True)
-                return
-        else:
-            if old_mode == "server":
-                try:
-                    from flask_server import stop_flask_server
-                    stop_flask_server()
-                    self._show_snackbar("تم إيقاف الخادم", is_error=False)
-                except ImportError:
-                    pass
-        
+        from database.connection import set_setting
         set_setting("network/mode", new_mode)
         set_setting("network/server_url", self.server_url.value.strip())
-        self._show_snackbar("سيتم تطبيق الإعدادات بعد إعادة التشغيل", is_error=False)
-        self._page.update()
-
-    def _on_mode_change(self, e):
-        if self.mode_dropdown.value == "خادم":
-            self.start_server_btn.visible = True
-            self.stop_server_btn.visible = False
-        else:
-            self.start_server_btn.visible = False
-            self.stop_server_btn.visible = False
-        self._page.update()
-
-    def _start_server(self, e):
-        try:
-            port = int(self.server_port.value)
-        except:
-            self._show_snackbar("منفذ غير صالح", True)
-            return
-        try:
-            from flask_server import start_flask_server
-            if start_flask_server(port):
-                self._show_snackbar(f"✅ خادم يعمل على المنفذ {port}", is_error=False)
-                self.start_server_btn.visible = False
-                self.stop_server_btn.visible = True
-                self._page.update()
-            else:
-                self._show_snackbar("الخادم يعمل بالفعل", True)
-        except ImportError:
-            self._show_snackbar("مكتبات الخادم غير مثبتة", True)
-        except Exception as ex:
-            self._show_snackbar(f"فشل التشغيل: {str(ex)}", True)
-
-    def _stop_server(self, e):
-        try:
-            from flask_server import stop_flask_server
-            if stop_flask_server():
-                self._show_snackbar("تم إيقاف الخادم", is_error=False)
-                self.start_server_btn.visible = True
-                self.stop_server_btn.visible = False
-                self._page.update()
-            else:
-                self._show_snackbar("الخادم غير قيد التشغيل", True)
-        except ImportError:
-            self._show_snackbar("مكتبات الخادم غير مثبتة", True)
-        except Exception as ex:
-            self._show_snackbar(f"خطأ: {str(ex)}", True)
+        db = DatabaseConnection()
+        db.refresh_mode()
+        self._show_snackbar("تم حفظ إعدادات الشبكة", is_error=False)
 
     def _backup_tab(self):
         backup_btn = ft.FilledButton(
@@ -570,6 +380,9 @@ class SettingsMobileView(ft.Column):
         try:
             from database.connection import DatabaseConnection
             db = DatabaseConnection()
+            if db.is_remote():
+                self._show_snackbar("لا يمكن التصدير في وضع العميل", True)
+                return
             conn = db.get_connection()
             tables = ['expenses', 'users', 'audit_log']
             downloads = os.path.expanduser("~/storage/downloads") if os.name != 'nt' else os.path.expanduser("~/Downloads")
@@ -603,8 +416,7 @@ class SettingsMobileView(ft.Column):
 
     def _reset_db_dialog(self, e):
         def confirm_reset(e):
-            if e.control.text == "نعم":
-                self._perform_reset()
+            self._perform_reset()
             self._close_dialog(dlg)
         dlg = ft.AlertDialog(
             title=ft.Text("⚠️ تحذير نهائي", color=ft.Colors.RED),
@@ -614,7 +426,9 @@ class SettingsMobileView(ft.Column):
                 ft.TextButton("لا", on_click=lambda e: self._close_dialog(dlg))
             ]
         )
-        self._page.open(dlg)
+        self._page.dialog = dlg
+        dlg.open = True
+        self._page.update()
 
     def _perform_reset(self):
         try:

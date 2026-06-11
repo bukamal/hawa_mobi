@@ -1,3 +1,0 @@
-﻿id,username,password_hash,salt,full_name,role,created_at,last_login,force_password_change
-1,admin,20a70dde1dc945224d2e50d2b1305d3ee629a4dc65f2e9fc5ae4fd8e34cc9aab,30360fe909b1f66ac8dd1a4be00ad8c4,المدير العام,admin,2026-06-05T22:42:52.180488,2026-06-06T16:42:14.558197,1
-2,manhal,7c520ef4f305ac2bf44f36614143011e98cc1df8660a3c61fb539bfe93d21c81,304255fc43a47c820b81647c044f5520,,user,2026-06-06T14:20:07.926167,2026-06-07T23:43:33.521297,0

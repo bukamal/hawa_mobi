@@ -4,22 +4,6 @@ import os
 import sys
 import traceback
 import asyncio
-
-# ========== إعداد التسجيل (logging) أولاً ==========
-from logger import logger
-
-try:
-    logger.info("بدء تشغيل تطبيق هوى الشام")
-    logger.info(f"المسار الحالي: {os.getcwd()}")
-    logger.info(f"المتغيرات البيئية: HAWAA_DATA_DIR={os.environ.get('HAWAA_DATA_DIR')}")
-except Exception as e:
-    print(f"فشل إعداد التسجيل: {e}")
-
-# ========== تحديد مسار ثابت (نفس مسار قاعدة البيانات) ==========
-_FIXED_DATA_DIR = os.path.expanduser('~/.hawaa')
-os.environ['HAWAA_DATA_DIR'] = _FIXED_DATA_DIR
-
-# ========== استيراد الوحدات ==========
 import flet as ft
 import sqlite3
 
@@ -32,45 +16,48 @@ from views.splash_view import SplashView
 from views.app_layout import AppLayout
 from database import SettingsRepository
 from database.connection import get_local_db_path
+from views.flet_compat import open_control, close_control, apply_arabic_ui_defaults
 
-# ========== إعدادات Termux ==========
+print("[INFO] بدء تشغيل تطبيق هوى الشام")
+
+_FIXED_DATA_DIR = os.environ.get('FLET_APP_STORAGE_DATA') or os.path.expanduser('~/.hawaa')
+os.environ.setdefault('HAWAA_DATA_DIR', _FIXED_DATA_DIR)
+
 if os.path.exists("/data/data/com.termux"):
     os.environ.setdefault('DISPLAY', ':1')
     os.environ.setdefault('FLET_SERVER_PORT', '8551')
     os.environ.setdefault('FLET_SERVER_IP', '127.0.0.1')
-    logger.info("تم الكشف عن بيئة Termux")
+    print("[INFO] تم الكشف عن بيئة Termux")
+
+def close_dialog(dialog):
+    if dialog:
+        dialog.open = False
+        if hasattr(dialog, 'page') and dialog.page:
+            dialog.page.update()
 
 def handle_exception(page: ft.Page, error: Exception, message: str = "خطأ غير متوقع"):
-    """عرض الخطأ في واجهة المستخدم وتسجيله في الملف"""
     error_details = traceback.format_exc()
-    logger.error(f"{message}: {str(error)}\n{error_details}")
-    
+    print(f"[ERROR] {message}: {str(error)}\n{error_details}")
     try:
         dlg = ft.AlertDialog(
             title=ft.Text("❗ خطأ", size=20, weight=ft.FontWeight.BOLD, color=ft.Colors.RED),
             content=ft.Column([
                 ft.Text(message, size=14, weight=ft.FontWeight.BOLD),
                 ft.Text(str(error), size=12, color=ft.Colors.RED),
-                ft.Text("راجع ملف السجل لمزيد من التفاصيل", size=12, color=ft.Colors.GREY_600),
+                ft.Text("راجع مخرجات الطرفية لمزيد من التفاصيل", size=12, color=ft.Colors.GREY_600),
             ], tight=True, spacing=10),
             actions=[ft.TextButton("إغلاق", on_click=lambda e: close_dialog(dlg))],
         )
-        page.overlay.append(dlg)
-        page.open(dlg)
+        open_control(page, dlg)
     except Exception as e:
-        logger.error(f"فشل عرض الخطأ في الواجهة: {e}")
-
-def close_dialog(dialog):
-    dialog.open = False
-    if dialog.page:
-        dialog.page.update()
+        print(f"[ERROR] فشل عرض الخطأ في الواجهة: {e}")
 
 def main(page: ft.Page):
-    logger.info("تم استدعاء main()، تهيئة الصفحة...")
+    print("[INFO] تم استدعاء main()")
     
     try:
         ensure_db()
-        logger.info("تم التأكد من قاعدة البيانات")
+        print("[INFO] تم التأكد من قاعدة البيانات")
         
         db_path = get_local_db_path()
         try:
@@ -81,17 +68,19 @@ def main(page: ft.Page):
             defaults = [
                 ('language', 'ar'), ('theme', 'light'), ('base_currency', 'USD'),
                 ('display_currency', 'USD'), ('currency_decimals', '2'),
-                ('number_format', 'western'), ('abbreviate_numbers', 'false')
+                ('number_format', 'western'), ('abbreviate_numbers', 'false'),
+                ('network/mode', 'local'), ('network/server_url', 'http://localhost:8000')
             ]
             conn.executemany("INSERT OR IGNORE INTO settings (key, value) VALUES (?,?)", defaults)
             conn.commit()
-            logger.info("تم إنشاء جدول settings وإدراج القيم الافتراضية")
+            print("[INFO] تم إنشاء جدول settings")
         finally:
             conn.close()
     except Exception as e:
         handle_exception(page, e, "فشل في تهيئة قاعدة البيانات")
         return
 
+    apply_arabic_ui_defaults(page)
     page.title = translate('app_title')
     page.theme_mode = ft.ThemeMode.LIGHT
     page.rtl = True
@@ -103,43 +92,34 @@ def main(page: ft.Page):
     set_language(repo.get('language', 'ar'))
     theme = repo.get('theme', 'light')
     page.theme_mode = ft.ThemeMode.LIGHT if theme == 'light' else ft.ThemeMode.DARK
-    logger.info(f"تم ضبط اللغة: {repo.get('language', 'ar')}، المظهر: {theme}")
 
     def show_splash():
         page.controls.clear()
         splash = SplashView(page=page, on_complete=check_license, on_error=lambda msg: show_error(msg))
         page.add(splash)
-        logger.info("شاشة البداية معروضة")
 
     def check_license():
-        logger.info("التحقق من الترخيص...")
         try:
-            activated, msg = check_activation()
+            activated, _ = check_activation()
             if activated:
-                logger.info("الترخيص صالح")
                 show_login()
             else:
-                logger.warning(f"الترخيص غير صالح: {msg}")
                 show_activation()
         except Exception as e:
-            logger.error(f"خطأ في التحقق من الترخيص: {e}")
-            show_error(str(e))
+            handle_exception(page, e, "خطأ في التحقق من الترخيص")
 
     def show_activation():
         page.controls.clear()
         from views.activation_view import ActivationView
         activation = ActivationView(page=page, on_success=show_login, on_cancel=close_app)
         page.add(activation)
-        logger.info("شاشة التفعيل معروضة")
 
     def show_login():
         page.controls.clear()
         login = LoginView(page=page, on_login_success=on_login_success, on_exit=close_app)
         page.add(login)
-        logger.info("شاشة تسجيل الدخول معروضة")
 
     def on_login_success(user):
-        logger.info(f"تسجيل دخول ناجح: {user.get('username')}")
         if UserSession.force_password_change():
             show_change_password()
         else:
@@ -148,18 +128,15 @@ def main(page: ft.Page):
     def show_change_password():
         from views.dialogs.change_password_dialog import ChangePasswordDialog
         dialog = ChangePasswordDialog(page=page, on_save=lambda: show_main_app())
-        page.open(dialog)
-        logger.info("فتح حوار تغيير كلمة المرور")
+        open_control(page, dialog)
 
     def show_main_app():
-        logger.info("فتح التطبيق الرئيسي")
         page.controls.clear()
         app = AppLayout(page=page, on_logout=close_app)
         page.add(app)
         start_license_checker(24, on_license_invalid)
 
     def on_license_invalid():
-        logger.warning("الترخيص أصبح غير صالح أثناء التشغيل")
         def close_app_after_dialog(e):
             asyncio.create_task(close_app_async())
         dlg = ft.AlertDialog(
@@ -168,31 +145,21 @@ def main(page: ft.Page):
             actions=[ft.TextButton("إغلاق", on_click=close_app_after_dialog)],
             actions_alignment=ft.MainAxisAlignment.CENTER,
         )
-        page.open(dlg)
+        open_control(page, dlg)
 
     async def close_app_async():
-        logger.info("إغلاق التطبيق...")
         stop_license_checker()
-        # استيراد flask_server شرطي فقط إذا كان موجوداً
-        try:
-            # نتحقق مما إذا كان وضع الخادم مفعلاً قبل الاستيراد
-            from database.connection import get_setting
-            if get_setting("network/mode") == "server":
-                from flask_server import stop_flask_server
-                stop_flask_server()
-        except Exception as e:
-            logger.warning(f"تعذر إيقاف خادم Flask: {e}")
         try:
             if hasattr(page.window, 'close') and callable(page.window.close):
                 page.window.close()
         except Exception as e:
-            logger.error(f"خطأ أثناء إغلاق النافذة: {e}")
+            print(f"[ERROR] خطأ أثناء الإغلاق: {e}")
 
     def close_app():
         asyncio.create_task(close_app_async())
 
     def show_error(message):
-        logger.error(f"عرض خطأ فادح: {message}")
+        print(f"[ERROR] عرض خطأ فادح: {message}")
         page.controls.clear()
         page.add(
             ft.Container(
@@ -213,5 +180,5 @@ def main(page: ft.Page):
         handle_exception(page, e, "خطأ في تشغيل التطبيق")
 
 if __name__ == "__main__":
-    sys.excepthook = lambda exctype, value, tb: logger.critical("Unhandled exception", exc_info=(exctype, value, tb))
-    ft.app(target=main)
+    sys.excepthook = lambda exctype, value, tb: print(f"[CRITICAL] Unhandled exception: {value}")
+    ft.run(main)

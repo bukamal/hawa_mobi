@@ -5,6 +5,7 @@ from database import ExpenseRepository
 from auth.session import UserSession
 from i18n.translator import translate
 from currency import currency
+from views.flet_compat import open_control, close_control
 
 class AddEditExpenseDialog(ft.AlertDialog):
     def __init__(self, page, on_save=None, expense=None, company_name=None):
@@ -13,29 +14,17 @@ class AddEditExpenseDialog(ft.AlertDialog):
         self.on_save = on_save
         self.expense = expense
 
-        # معالجة آمنة لـ company_name
+        # معالجة آمنة لـ company_name (قد يكون كائن Event أو سلسلة)
         predefined = None
-        if company_name is not None:
-            if hasattr(company_name, 'name') and hasattr(company_name, 'data'):
-                predefined = None
-            elif hasattr(company_name, 'value'):
-                predefined = company_name.value
-            elif isinstance(company_name, str):
-                predefined = company_name
-            else:
-                try:
-                    s = str(company_name)
-                    if s.startswith('Event('):
-                        predefined = None
-                    else:
-                        predefined = s
-                except:
-                    predefined = None
-        self.predefined_company = predefined if predefined else None
+        if company_name is not None and isinstance(company_name, str):
+            predefined = company_name
+        self.predefined_company = predefined
 
-        page_width = page.width or 400
+        # الحصول على أبعاد آمنة للشاشة
+        page_width = self._page.width or 400
+        page_height = self._page.height or 600
         dialog_width = min(380, page_width - 40)
-        dialog_height = min(520, page.height - 100 if page.height else 600)
+        dialog_height = min(520, page_height - 100)
 
         is_disabled = (self.predefined_company is not None and self.predefined_company.strip() != "") and (self.expense is None)
 
@@ -55,7 +44,7 @@ class AddEditExpenseDialog(ft.AlertDialog):
 
         self.currency_dropdown = ft.Dropdown(
             label=translate('currency'),
-            value=expense.get('currency_original','SAR') if expense else currency.get_display_currency(),
+            value=expense.get('currency_original', 'SAR') if expense else currency.get_display_currency(),
             options=[ft.dropdown.Option(c) for c in ["USD","SAR","SYP","EUR","GBP","AED","QAR","KWD","OMR"]],
             width=120
         )
@@ -69,7 +58,7 @@ class AddEditExpenseDialog(ft.AlertDialog):
 
         self.date_picker_field = ft.TextField(
             label=translate('date'),
-            value=expense['date'] if expense else "",
+            value=expense['date'] if expense else datetime.datetime.now().strftime("%Y-%m-%d"),
             hint_text="YYYY-MM-DD",
             width=150,
             read_only=True,
@@ -91,6 +80,30 @@ class AddEditExpenseDialog(ft.AlertDialog):
             width=dialog_width - 20
         )
 
+        default_due = expense.get('payment_due_date') if expense else datetime.datetime.now().strftime("%Y-%m-%d")
+        self.payment_due_field = ft.TextField(
+            label="تاريخ تنبيه الدفع",
+            value=default_due or datetime.datetime.now().strftime("%Y-%m-%d"),
+            hint_text="YYYY-MM-DD",
+            width=150,
+        )
+        self.payment_note_field = ft.TextField(
+            label="ملاحظة تنبيه الدفع",
+            value=(expense.get('payment_reminder_note') if expense else "") or "بانتظار إدخال الدفعة الأولى",
+            width=dialog_width - 20,
+        )
+        self.zero_amount_notice = ft.Container(
+            content=ft.Text(
+                "📝 عند حفظ مبلغ صفر ستُحفظ العملية بانتظار الدفع ولن تؤثر على الأرصدة حتى تسجيل مبلغ مالي.",
+                size=12,
+                color=ft.Colors.ORANGE_900,
+            ),
+            bgcolor=ft.Colors.ORANGE_50,
+            border_radius=10,
+            padding=10,
+            visible=False,
+        )
+
         self.exchange_rate_text = ft.Text("", size=12, color=ft.Colors.GREY_600, italic=True)
         self.converted_amount_text = ft.Text("", size=14, weight=ft.FontWeight.BOLD, color=ft.Colors.INDIGO)
 
@@ -101,6 +114,9 @@ class AddEditExpenseDialog(ft.AlertDialog):
                 ft.Row([self.type_dropdown, self.date_picker_field], spacing=10, wrap=True),
                 ft.Container(content=self.exchange_rate_text, margin=ft.Margin(top=5, bottom=5, left=0, right=0)),
                 ft.Container(content=self.converted_amount_text, alignment=ft.Alignment.CENTER),
+                self.zero_amount_notice,
+                ft.Row([self.payment_due_field], spacing=10, wrap=True),
+                self.payment_note_field,
                 self.notes_field
             ],
             spacing=15,
@@ -133,7 +149,7 @@ class AddEditExpenseDialog(ft.AlertDialog):
         self._update_conversion(None)
 
     def _open_date_picker(self, e):
-        self._page.open(self.date_picker)
+        open_control(self._page, self.date_picker)
 
     def _on_date_change(self, e):
         if self.date_picker.value:
@@ -141,22 +157,25 @@ class AddEditExpenseDialog(ft.AlertDialog):
             self._page.update()
 
     def _close(self):
-        self.open = False
-        self._page.update()
+        close_control(self._page, self)
 
     def _show_snackbar(self, message, is_error=False):
-        self._page.open(ft.SnackBar(content=ft.Text(message, size=13), bgcolor=ft.Colors.RED if is_error else ft.Colors.GREEN, duration=3000))
+        snack = ft.SnackBar(content=ft.Text(message, size=13), bgcolor=ft.Colors.RED if is_error else ft.Colors.GREEN, duration=3000)
+        self._page.overlay.append(snack)
+        snack.open = True
+        self._page.update()
 
     def _update_conversion(self, e):
         try:
             amount = float(self.amount_field.value or 0)
             curr = self.currency_dropdown.value
-            rate_to_usd = currency.get_rate_to_usd(curr)
+            rate_to_usd = float(currency.get_rate_to_usd(curr) or 1.0)
             usd_value = amount / rate_to_usd if rate_to_usd != 0 else 0
+            self.zero_amount_notice.visible = (amount == 0)
             self.exchange_rate_text.value = f"سعر الصرف: 1 {curr} = {rate_to_usd:.4f} USD"
             display_curr = currency.get_display_currency()
             if display_curr != curr:
-                rate_to_display = currency.get_rate_to_usd(display_curr)
+                rate_to_display = float(currency.get_rate_to_usd(display_curr) or 1.0)
                 display_value = usd_value * rate_to_display if rate_to_display != 0 else 0
                 self.converted_amount_text.value = f"≈ {display_value:.2f} {display_curr}"
             else:
@@ -173,16 +192,18 @@ class AddEditExpenseDialog(ft.AlertDialog):
             return
         try:
             amount = float(self.amount_field.value)
-            if amount <= 0:
+            if amount < 0:
                 raise ValueError
         except:
-            self._show_snackbar("المبلغ غير صالح")
+            self._show_snackbar("المبلغ غير صالح. يُسمح بالصفر فقط لحفظ العملية بانتظار الدفع.")
             return
 
         type_val = 'incoming' if self.type_dropdown.value == translate('incoming') else 'outgoing'
         date = self.date_picker_field.value or ""
         notes = self.notes_field.value or ""
         currency_code = self.currency_dropdown.value
+        payment_due_date = (self.payment_due_field.value or '').strip() if amount == 0 else None
+        payment_note = (self.payment_note_field.value or '').strip() if amount == 0 else None
 
         user = UserSession.get_current()
         user_id = user['id'] if user else None
@@ -190,12 +211,12 @@ class AddEditExpenseDialog(ft.AlertDialog):
         repo = ExpenseRepository()
         try:
             if self.expense:
-                repo.update(self.expense['id'], company, amount, type_val, date, notes, currency_code, user_id)
+                repo.update(self.expense['id'], company, amount, type_val, date, notes, currency_code, user_id, payment_due_date, payment_note)
             else:
-                repo.add(company, amount, type_val, date, notes, currency_code, user_id)
+                repo.add(company, amount, type_val, date, notes, currency_code, user_id, payment_due_date, payment_note)
             self._close()
             if self.on_save:
                 self.on_save(None)
-            self._show_snackbar("تم الحفظ بنجاح", is_error=False)
+            self._show_snackbar("📝 تم حفظ العملية بانتظار الدفع" if amount == 0 else "تم الحفظ بنجاح", is_error=False)
         except Exception as ex:
             self._show_snackbar(f"فشل الحفظ: {str(ex)}", True)

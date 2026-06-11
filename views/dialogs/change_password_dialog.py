@@ -53,7 +53,10 @@ class ChangePasswordDialog(ft.AlertDialog):
         self._page.update()
 
     def _show_snackbar(self, message, is_error=False):
-        self._page.open(ft.SnackBar(content=ft.Text(message, size=13), bgcolor=ft.Colors.RED if is_error else ft.Colors.GREEN, duration=3000))
+        snack = ft.SnackBar(content=ft.Text(message, size=13), bgcolor=ft.Colors.RED if is_error else ft.Colors.GREEN, duration=3000)
+        self._page.overlay.append(snack)
+        snack.open = True
+        self._page.update()
 
     def _save(self, e):
         old = self.old_password.value

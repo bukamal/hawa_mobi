@@ -2,68 +2,21 @@
 import sqlite3
 import threading
 import os
-import json
 import sys
 from typing import List, Dict
 
-# مسار ثابت لجميع البيئات (نستخدمه في وضع الويب وسطح المكتب)
-_SETTINGS_FILE = None
-_DB_PATH = None
-
-def _get_data_dir():
-    """يُرجع مجلد البيانات (مسار آمن لجميع المنصات)"""
-    env_dir = os.environ.get('HAWAA_DATA_DIR')
-    if env_dir:
-        return env_dir
-    if os.name == 'nt' or sys.platform == 'darwin':
-        # Windows أو macOS
-        return os.path.expanduser('~/.hawaa')
-    else:
-        # Linux / Android
-        home = os.environ.get('HOME', '/data/data/com.hawaa/files')
-        return os.path.join(home, '.hawaa')
-
-def _get_settings_file():
-    global _SETTINGS_FILE
-    if _SETTINGS_FILE is None:
-        data_dir = _get_data_dir()
-        _SETTINGS_FILE = os.path.join(data_dir, 'settings.json')
-    return _SETTINGS_FILE
-
-def _load_settings():
-    path = _get_settings_file()
-    if os.path.exists(path):
-        try:
-            with open(path, 'r', encoding='utf-8') as f:
-                return json.load(f)
-        except:
-            pass
-    return {}
-
-def _save_settings(settings):
-    path = _get_settings_file()
-    try:
-        os.makedirs(os.path.dirname(path), exist_ok=True)
-        with open(path, 'w', encoding='utf-8') as f:
-            json.dump(settings, f, ensure_ascii=False, indent=2)
-    except Exception:
-        pass
-
-def get_setting(key: str, default=None):
-    return _load_settings().get(key, default)
-
-def set_setting(key: str, value):
-    s = _load_settings()
-    s[key] = value
-    _save_settings(s)
+def get_data_dir():
+    """Return a writable persistent data directory on desktop and packaged Android."""
+    data_dir = (
+        os.environ.get('HAWAA_DATA_DIR')
+        or os.environ.get('FLET_APP_STORAGE_DATA')
+        or os.path.expanduser('~/.hawaa')
+    )
+    os.makedirs(data_dir, exist_ok=True)
+    return data_dir
 
 def get_local_db_path():
-    global _DB_PATH
-    if _DB_PATH is None:
-        data_dir = _get_data_dir()
-        os.makedirs(data_dir, exist_ok=True)
-        _DB_PATH = os.path.join(data_dir, 'hawaa_data.db')
-    return _DB_PATH
+    return os.path.join(get_data_dir(), 'hawaa_data.db')
 
 class DatabaseConnection:
     _instance = None
@@ -79,15 +32,28 @@ class DatabaseConnection:
         return cls._instance
 
     def _init_mode(self):
-        self.mode = get_setting("network/mode", "local")
-        self.server_url = get_setting("network/server_url", "http://localhost:8000")
+        self.mode = self._get_setting_from_db("network/mode", "local")
+        self.server_url = self._get_setting_from_db("network/server_url", "http://localhost:8000")
         self._rest_client = None
         if self.mode == "client":
-            try:
-                from database.connection_rest import RestClient
-                self._rest_client = RestClient(self.server_url)
-            except:
-                pass
+            from database.connection_rest import RestClient
+            self._rest_client = RestClient(self.server_url)
+
+    def _get_setting_from_db(self, key: str, default=None):
+        try:
+            conn = self.get_connection()
+            row = conn.execute("SELECT value FROM settings WHERE key=?", (key,)).fetchone()
+            return row['value'] if row else default
+        except:
+            return default
+
+    def _save_setting_to_db(self, key: str, value: str):
+        try:
+            conn = self.get_connection()
+            conn.execute("INSERT OR REPLACE INTO settings (key, value) VALUES (?,?)", (key, value))
+            conn.commit()
+        except:
+            pass
 
     def is_remote(self) -> bool:
         return self.mode == "client"
@@ -111,6 +77,9 @@ class DatabaseConnection:
 
     def _log_audit_local(self, user_id, username, action, table_name, record_id, details):
         if self.mode == "client":
+            # في وضع العميل، نرسل سجل التدقيق عبر REST
+            if self._rest_client:
+                self._rest_client.add_audit_log(user_id, username, action, table_name, record_id, details)
             return
         conn = self.get_connection()
         now = __import__('datetime').datetime.now().isoformat()
@@ -131,7 +100,8 @@ class DatabaseConnection:
                     audit_data.get('record_id'), audit_data.get('details')
                 )
             return cursor
-        raise NotImplementedError("Use REST client methods in client mode")
+        # وضع العميل: العمليات عبر REST (لا يوجد execute مباشر)
+        raise NotImplementedError("Use REST client methods for write operations in client mode")
 
     def executemany(self, sql: str, params_list, audit_data=None):
         if self.mode != "client":
@@ -163,7 +133,7 @@ class DatabaseConnection:
             self._local_conn.close()
             self._local_conn = None
 
-    # ========== CRUD helpers ==========
+    # ========== CRUD helpers (تدعم local و client) ==========
     def get_expenses(self) -> List[Dict]:
         if self.mode == "client":
             return self._rest_client.get_expenses()
@@ -176,11 +146,11 @@ class DatabaseConnection:
             return self._rest_client.add_expense(data)
         conn = self.get_connection()
         now = __import__('datetime').datetime.now().isoformat()
-        cursor = conn.execute('''INSERT INTO expenses (company_name, amount, type, date, notes, currency, created_by, created_at, updated_by, updated_at, amount_original, currency_original, exchange_rate_to_usd)
-                                 VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)''',
+        cursor = conn.execute('''INSERT INTO expenses (company_name, amount, type, date, notes, currency, created_by, created_at, updated_by, updated_at, amount_original, currency_original, exchange_rate_to_usd, status, payment_due_date, payment_reminder_note)
+                                 VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)''',
                              (data['company_name'], data['amount'], data['type'], data['date'], data.get('notes',''), data['currency'],
                               data.get('created_by',1), now, data.get('updated_by',1), now,
-                              data.get('amount_original', data['amount']), data.get('currency_original', data['currency']), data.get('exchange_rate_to_usd',1.0)))
+                              data.get('amount_original', data['amount']), data.get('currency_original', data['currency']), data.get('exchange_rate_to_usd',1.0), data.get('status','approved'), data.get('payment_due_date'), data.get('payment_reminder_note')))
         conn.commit()
         return cursor.lastrowid
 
@@ -190,10 +160,10 @@ class DatabaseConnection:
             return
         conn = self.get_connection()
         now = __import__('datetime').datetime.now().isoformat()
-        conn.execute('''UPDATE expenses SET company_name=?, amount=?, type=?, date=?, notes=?, currency=?, updated_by=?, updated_at=?, amount_original=?, currency_original=?, exchange_rate_to_usd=? WHERE id=?''',
+        conn.execute('''UPDATE expenses SET company_name=?, amount=?, type=?, date=?, notes=?, currency=?, updated_by=?, updated_at=?, amount_original=?, currency_original=?, exchange_rate_to_usd=?, status=?, payment_due_date=?, payment_reminder_note=? WHERE id=?''',
                      (data['company_name'], data['amount'], data['type'], data['date'], data.get('notes',''), data['currency'],
                       data.get('updated_by',1), now, data.get('amount_original', data['amount']), data.get('currency_original', data['currency']),
-                      data.get('exchange_rate_to_usd',1.0), expense_id))
+                      data.get('exchange_rate_to_usd',1.0), data.get('status','approved'), data.get('payment_due_date'), data.get('payment_reminder_note'), expense_id))
         conn.commit()
 
     def delete_expense(self, expense_id: int):
@@ -231,11 +201,10 @@ class DatabaseConnection:
         return [dict(row) for row in rows]
 
     def get_setting(self, key: str, default=None):
-        if self.mode == "client":
-            if self._rest_client is None or self._rest_client.token is None:
-                return default
+        if self.mode == "client" and self._rest_client and self._rest_client.token:
             val = self._rest_client.get_setting(key)
-            return val if val is not None else default
+            if val is not None:
+                return val
         conn = self.get_connection()
         row = conn.execute("SELECT value FROM settings WHERE key=?", (key,)).fetchone()
         return row['value'] if row else default
@@ -249,9 +218,7 @@ class DatabaseConnection:
         conn.commit()
 
     def get_all_currencies(self):
-        if self.mode == "client":
-            if self._rest_client is None or self._rest_client.token is None:
-                return []
+        if self.mode == "client" and self._rest_client and self._rest_client.token:
             return self._rest_client.get_all_currencies()
         conn = self.get_connection()
         rows = conn.execute("SELECT currency_code, rate_to_usd, updated_at FROM exchange_rates ORDER BY currency_code").fetchall()
@@ -270,3 +237,13 @@ class DatabaseConnection:
     def vacuum(self):
         if self.mode != "client" and self._local_conn:
             self._local_conn.execute("VACUUM")
+
+    def refresh_mode(self):
+        """إعادة تحميل وضع التشغيل من قاعدة البيانات (بعد تغيير الإعدادات)"""
+        self.mode = self._get_setting_from_db("network/mode", "local")
+        self.server_url = self._get_setting_from_db("network/server_url", "http://localhost:8000")
+        if self.mode == "client":
+            from database.connection_rest import RestClient
+            self._rest_client = RestClient(self.server_url)
+        else:
+            self._rest_client = None

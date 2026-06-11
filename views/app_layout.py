@@ -18,6 +18,37 @@ class AppLayout(ft.Column):
         self.controls = [self.content_area, self.nav_bar]
         self._page.drawer = self.drawer
         self.switch_page('accounts')
+        self._show_payment_alert_if_needed()
+
+
+    def _show_payment_alert_if_needed(self):
+        try:
+            from database import ExpenseRepository
+            repo = ExpenseRepository()
+            waiting = repo.count_waiting_payment()
+            reminders = repo.get_pending_payment_reminders()
+            if waiting <= 0 and not reminders:
+                return
+            overdue = 0
+            try:
+                from datetime import datetime
+                today = datetime.now().strftime('%Y-%m-%d')
+                overdue = len([r for r in reminders if r.get('reminder_date') and r.get('reminder_date') < today])
+            except Exception:
+                overdue = 0
+            message = f"⏳ يوجد {waiting} عملية بانتظار الدفع"
+            if overdue:
+                message += f" | ⚠️ متأخرة: {overdue}"
+            snack = ft.SnackBar(
+                content=ft.Text(message, size=13),
+                bgcolor=ft.Colors.ORANGE,
+                duration=5000,
+            )
+            self._page.overlay.append(snack)
+            snack.open = True
+            self._page.update()
+        except Exception as ex:
+            print(f"[WARN] تعذر عرض تنبيهات الدفع: {ex}")
 
     def _build_nav_bar(self):
         user_role = UserSession.get_current().get('role') if UserSession.get_current() else 'user'
@@ -100,25 +131,28 @@ class AppLayout(ft.Column):
     def _change_password(self, e):
         from views.dialogs.change_password_dialog import ChangePasswordDialog
         dialog = ChangePasswordDialog(page=self._page, on_save=lambda: None)
-        self._page.open(dialog)
+        self._page.dialog = dialog
+        dialog.open = True
+        self._page.update()
 
     def _logout(self, e):
-        dlg = None  # سيتم تعيينه لاحقاً
+        dlg = None
         def confirm_logout(e):
-            if e.control.text == "نعم":
-                from database.connection import DatabaseConnection
-                db = DatabaseConnection()
-                if db.is_remote():
-                    try: db.get_rest_client().logout()
-                    except: pass
-                UserSession.logout()
-                if self.on_logout:
-                    self.on_logout()
-                else:
-                    self._page.controls.clear()
-                    from views.login_view import LoginView
-                    login = LoginView(page=self._page, on_login_success=lambda u: self._rebuild_after_login(), on_exit=self.on_logout)
-                    self._page.add(login)
+            from database.connection import DatabaseConnection
+            db = DatabaseConnection()
+            if db.is_remote():
+                try:
+                    db.get_rest_client().logout()
+                except Exception:
+                    pass
+            UserSession.logout()
+            if self.on_logout:
+                self.on_logout()
+            else:
+                self._page.controls.clear()
+                from views.login_view import LoginView
+                login = LoginView(page=self._page, on_login_success=lambda u: self._rebuild_after_login(), on_exit=self.on_logout)
+                self._page.add(login)
             if dlg:
                 dlg.open = False
                 self._page.update()
@@ -130,7 +164,9 @@ class AppLayout(ft.Column):
                 ft.TextButton("لا", on_click=lambda e: self._close_dialog(dlg))
             ]
         )
-        self._page.open(dlg)
+        self._page.dialog = dlg
+        dlg.open = True
+        self._page.update()
 
     def _close_dialog(self, dialog):
         dialog.open = False

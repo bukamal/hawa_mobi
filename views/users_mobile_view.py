@@ -30,7 +30,10 @@ class UsersMobileView(ft.Column):
         self._load_users()
 
     def _show_snackbar(self, message, is_error=False):
-        self._page.open(ft.SnackBar(content=ft.Text(message, size=13), bgcolor=ft.Colors.RED if is_error else ft.Colors.GREEN, duration=3000))
+        snack = ft.SnackBar(content=ft.Text(message, size=13), bgcolor=ft.Colors.RED if is_error else ft.Colors.GREEN, duration=3000)
+        self._page.overlay.append(snack)
+        snack.open = True
+        self._page.update()
 
     def _load_users(self):
         try:
@@ -51,7 +54,7 @@ class UsersMobileView(ft.Column):
                                     content=ft.Text(role_text, size=11, color=ft.Colors.WHITE),
                                     bgcolor=role_color,
                                     border_radius=15,
-                                    padding=ft.padding.symmetric(horizontal=10, vertical=4)
+                                    padding=10
                                 )
                             ]),
                             ft.Text(u['full_name'] or '', size=13, color=ft.Colors.GREY_600),
@@ -85,22 +88,25 @@ class UsersMobileView(ft.Column):
     def _add_user(self, e):
         from views.dialogs.user_dialog import UserDialog
         dialog = UserDialog(page=self._page, on_save=lambda: self._load_users())
-        self._page.open(dialog)
+        self._page.dialog = dialog
+        dialog.open = True
+        self._page.update()
 
     def _edit_user(self, user_id):
         from views.dialogs.user_dialog import UserDialog
         dialog = UserDialog(page=self._page, user_id=user_id, on_save=lambda: self._load_users())
-        self._page.open(dialog)
+        self._page.dialog = dialog
+        dialog.open = True
+        self._page.update()
 
     def _delete_user(self, user_id):
         def confirm_delete(e):
-            if e.control.text == "نعم":
-                repo = UserRepository()
-                if repo.delete(user_id):
-                    self._show_snackbar("تم حذف المستخدم", is_error=False)
-                    self._load_users()
-                else:
-                    self._show_snackbar("فشل الحذف", True)
+            repo = UserRepository()
+            if repo.delete(user_id):
+                self._show_snackbar("تم حذف المستخدم", is_error=False)
+                self._load_users()
+            else:
+                self._show_snackbar("فشل الحذف", True)
             self._close_dialog(dlg)
         dlg = ft.AlertDialog(
             title=ft.Text(translate('confirm_delete')),
@@ -110,7 +116,9 @@ class UsersMobileView(ft.Column):
                 ft.TextButton("لا", on_click=lambda e: self._close_dialog(dlg))
             ]
         )
-        self._page.open(dlg)
+        self._page.dialog = dlg
+        dlg.open = True
+        self._page.update()
 
     def _close_dialog(self, dialog):
         dialog.open = False

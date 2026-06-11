@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 import flet as ft
 import asyncio
+from views.flet_compat import ARABIC_FONT_FAMILY
 
 class SplashView(ft.Container):
     def __init__(self, page, on_complete, on_error):
@@ -11,10 +12,10 @@ class SplashView(ft.Container):
         self.expand = True
         self.alignment = ft.Alignment.CENTER
         self.bgcolor = ft.Colors.INDIGO
-        self.logo = ft.Text("🏢 هوى الشام", size=36, weight=ft.FontWeight.BOLD, color=ft.Colors.WHITE, text_align=ft.TextAlign.CENTER)
-        self.subtitle = ft.Text("نظام الحسابات الداخلية", size=14, color=ft.Colors.WHITE_70, text_align=ft.TextAlign.CENTER)
+        self.logo = ft.Text("هوى الشام", size=36, weight=ft.FontWeight.BOLD, color=ft.Colors.WHITE, text_align=ft.TextAlign.CENTER, font_family=ARABIC_FONT_FAMILY)
+        self.subtitle = ft.Text("نظام الحسابات الداخلية", size=14, color=ft.Colors.WHITE_70, text_align=ft.TextAlign.CENTER, font_family=ARABIC_FONT_FAMILY)
         self.progress = ft.ProgressBar(width=300, bgcolor=ft.Colors.WHITE_24, color=ft.Colors.WHITE, value=0)
-        self.status = ft.Text("جاري تهيئة النظام...", size=12, color=ft.Colors.WHITE_70, text_align=ft.TextAlign.CENTER)
+        self.status = ft.Text("جاري تهيئة النظام...", size=12, color=ft.Colors.WHITE_70, text_align=ft.TextAlign.CENTER, font_family=ARABIC_FONT_FAMILY)
         self.content = ft.Column(
             controls=[self.logo, ft.Container(height=10), self.subtitle, ft.Container(height=30),
                       self.progress, ft.Container(height=10), self.status],

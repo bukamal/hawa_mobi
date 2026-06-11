@@ -5,6 +5,7 @@ from currency import currency
 from i18n.translator import translate
 from datetime import datetime, timedelta
 from collections import defaultdict
+from views.flet_compat import open_control
 
 class DashboardMobileView(ft.Column):
     def __init__(self, page):
@@ -67,13 +68,16 @@ class DashboardMobileView(ft.Column):
         self._load_data()
 
     def _show_snackbar(self, message, is_error=False):
-        self._page.open(ft.SnackBar(content=ft.Text(message, size=13), bgcolor=ft.Colors.RED if is_error else ft.Colors.GREEN, duration=3000))
+        snack = ft.SnackBar(content=ft.Text(message, size=13), bgcolor=ft.Colors.RED if is_error else ft.Colors.GREEN, duration=3000)
+        self._page.overlay.append(snack)
+        snack.open = True
+        self._page.update()
 
     def _open_start_date_picker(self, e):
-        self._page.open(self.start_date_picker_obj)
+        open_control(self._page, self.start_date_picker_obj)
 
     def _open_end_date_picker(self, e):
-        self._page.open(self.end_date_picker_obj)
+        open_control(self._page, self.end_date_picker_obj)
 
     def _on_start_date_change(self, e):
         if self.start_date_picker_obj.value:
@@ -158,8 +162,11 @@ class DashboardMobileView(ft.Column):
                     continue
                 filtered.append(ex)
 
-            total_in_usd = sum(e['amount'] for e in filtered if e['type'] == 'incoming')
-            total_out_usd = sum(e['amount'] for e in filtered if e['type'] == 'outgoing')
+            approved_filtered = [e for e in filtered if e.get('status', 'approved') != 'waiting_payment']
+            waiting_payment = [e for e in filtered if e.get('status') == 'waiting_payment']
+
+            total_in_usd = sum(float(e['amount']) for e in approved_filtered if e['type'] == 'incoming')
+            total_out_usd = sum(float(e['amount']) for e in approved_filtered if e['type'] == 'outgoing')
             net_usd = total_in_usd - total_out_usd
             display_curr = currency.get_display_currency()
             total_in = currency.convert(total_in_usd, 'USD', display_curr)
@@ -168,12 +175,12 @@ class DashboardMobileView(ft.Column):
 
             companies = set(e['company_name'] for e in filtered)
             users = user_repo.get_all()
-            avg = sum(e['amount'] for e in filtered) / len(filtered) if filtered else 0
+            avg = sum(float(e['amount']) for e in approved_filtered) / len(approved_filtered) if approved_filtered else 0
             avg_display = currency.convert(avg, 'USD', display_curr)
 
             company_net = defaultdict(float)
-            for e in filtered:
-                val = e['amount'] if e['type'] == 'incoming' else -e['amount']
+            for e in approved_filtered:
+                val = float(e['amount']) if e['type'] == 'incoming' else -float(e['amount'])
                 company_net[e['company_name']] += val
             top_company = max(company_net.items(), key=lambda x: x[1]) if company_net else ("—", 0)
             top_display = currency.convert(top_company[1], 'USD', display_curr)
@@ -189,11 +196,12 @@ class DashboardMobileView(ft.Column):
                 self._create_card("عدد المستخدمين", str(len(users)), ft.Colors.ORANGE, ft.Icons.PEOPLE),
                 self._create_card("متوسط القيد", currency.format_amount(avg_display, display_curr), ft.Colors.PURPLE, ft.Icons.CALCULATE),
                 self._create_card("أعلى شركة", f"{top_company[0]}\n({currency.format_amount(top_display, display_curr)})", ft.Colors.TEAL, ft.Icons.EMOJI_EVENTS),
-                self._create_card("سعر الصرف", rate_text, ft.Colors.INDIGO, ft.Icons.MONEY)
+                self._create_card("سعر الصرف", rate_text, ft.Colors.INDIGO, ft.Icons.MONEY),
+                self._create_card("بانتظار الدفع", str(len(waiting_payment)), ft.Colors.ORANGE, ft.Icons.PAYMENTS)
             ]
             self.cards_container.controls = cards
 
-            self.transactions_count_text.value = f"📊 عدد القيود في هذه الفترة: {len(filtered)}"
+            self.transactions_count_text.value = f"📊 عدد القيود في هذه الفترة: {len(filtered)} | ⏳ بانتظار الدفع: {len(waiting_payment)}"
             self._page.update()
         except Exception as ex:
             self._show_snackbar(f"خطأ في تحديث لوحة التحكم: {str(ex)}", True)

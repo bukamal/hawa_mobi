@@ -3,7 +3,6 @@ from typing import Tuple, Optional, Callable
 
 SERVER_URL = 'https://license.manhal-almasriiii199119.workers.dev/activate'
 LICENSE_FILE = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'license.dat')
-NETWORK_LICENSE_FILE = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'network_license.dat')
 
 def get_device_id() -> str:
     try: username = getpass.getuser()
@@ -49,27 +48,6 @@ def check_activation() -> Tuple[bool, str]:
         device_id = get_device_id()
         data = _decrypt_license(encrypted, device_id)
         if not data or data.get('device') != device_id: return False, "ترخيص غير صالح"
-        return True, ""
-    except Exception as e: return False, str(e)
-
-def activate_network(license_key: str) -> Tuple[bool, str]:
-    device_id = get_device_id()
-    try:
-        resp = requests.post(SERVER_URL, json={'licenseCode': license_key, 'fingerprint': device_id, 'feature': 'network'}, timeout=15)
-        if resp.status_code != 200: return False, resp.text or "فشل تفعيل الشبكة"
-        result = resp.json()
-        data = {'key': license_key, 'device': device_id, 'expiration': result.get('expirationDate'), 'activated_at': __import__('datetime').datetime.now().isoformat()}
-        with open(NETWORK_LICENSE_FILE, 'w') as f: f.write(_encrypt_license(data, device_id))
-        return True, ""
-    except Exception as e: return False, str(e)
-
-def check_network_activation() -> Tuple[bool, str]:
-    if not os.path.exists(NETWORK_LICENSE_FILE): return False, "ميزة الشبكة غير مفعلة"
-    try:
-        with open(NETWORK_LICENSE_FILE, 'r') as f: encrypted = f.read().strip()
-        device_id = get_device_id()
-        data = _decrypt_license(encrypted, device_id)
-        if not data or data.get('device') != device_id: return False, "ترخيص الشبكة غير صالح"
         return True, ""
     except Exception as e: return False, str(e)
 

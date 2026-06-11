@@ -35,7 +35,10 @@ class AuditLogMobileView(ft.Column):
         self._refresh(None)
 
     def _show_snackbar(self, message, is_error=False):
-        self._page.open(ft.SnackBar(content=ft.Text(message, size=13), bgcolor=ft.Colors.RED if is_error else ft.Colors.GREEN, duration=3000))
+        snack = ft.SnackBar(content=ft.Text(message, size=13), bgcolor=ft.Colors.RED if is_error else ft.Colors.GREEN, duration=3000)
+        self._page.overlay.append(snack)
+        snack.open = True
+        self._page.update()
 
     def _load_users(self):
         try:
@@ -64,7 +67,7 @@ class AuditLogMobileView(ft.Column):
                         content=ft.Column([
                             ft.Row([
                                 ft.Text(log.get('username',''), size=14, weight=ft.FontWeight.BOLD, expand=True),
-                                ft.Container(content=ft.Text(log.get('action',''), size=10, color=ft.Colors.WHITE), bgcolor=action_color, border_radius=10, padding=ft.padding.symmetric(horizontal=8, vertical=3))
+                                ft.Container(content=ft.Text(log.get('action',''), size=10, color=ft.Colors.WHITE), bgcolor=action_color, border_radius=10, padding=8)
                             ]),
                             ft.Row([
                                 ft.Text(f"جدول: {log.get('table_name','')}", size=11, color=ft.Colors.GREY_600),
@@ -91,17 +94,18 @@ class AuditLogMobileView(ft.Column):
 
     def _delete_old(self, e):
         def confirm(e):
-            if e.control.text == "نعم":
-                try:
-                    AuditRepository().delete_old_logs(90)
-                    self._show_snackbar("تم حذف السجلات القديمة", is_error=False)
-                    self._refresh(None)
-                except Exception as ex:
-                    self._show_snackbar(f"خطأ: {str(ex)}", True)
+            try:
+                AuditRepository().delete_old_logs(90)
+                self._show_snackbar("تم حذف السجلات القديمة", is_error=False)
+                self._refresh(None)
+            except Exception as ex:
+                self._show_snackbar(f"خطأ: {str(ex)}", True)
             self._close_dialog(dlg)
         dlg = ft.AlertDialog(title=ft.Text("تأكيد الحذف"), content=ft.Text("هل أنت متأكد من حذف السجلات الأقدم من 90 يوماً؟"),
                              actions=[ft.TextButton("نعم", on_click=confirm), ft.TextButton("لا", on_click=lambda e: self._close_dialog(dlg))])
-        self._page.open(dlg)
+        self._page.dialog = dlg
+        dlg.open = True
+        self._page.update()
 
     def _close_dialog(self, dialog):
         dialog.open = False
