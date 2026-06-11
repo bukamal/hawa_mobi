@@ -31,9 +31,15 @@ if os.path.exists("/data/data/com.termux"):
 
 def close_dialog(dialog):
     if dialog:
-        dialog.open = False
-        if hasattr(dialog, 'page') and dialog.page:
-            dialog.page.update()
+        # Use the active page from the dialog if available; otherwise closing is best-effort.
+        page = getattr(dialog, 'page', None)
+        if page is not None:
+            close_control(page, dialog)
+        else:
+            try:
+                dialog.open = False
+            except Exception:
+                pass
 
 def handle_exception(page: ft.Page, error: Exception, message: str = "خطأ غير متوقع"):
     error_details = traceback.format_exc()

@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 import flet as ft
+from views.flet_compat import open_control, close_control
 from database import SettingsRepository
 from currency import currency
 from i18n.translator import translate, set_language
@@ -426,9 +427,7 @@ class SettingsMobileView(ft.Column):
                 ft.TextButton("لا", on_click=lambda e: self._close_dialog(dlg))
             ]
         )
-        self._page.dialog = dlg
-        dlg.open = True
-        self._page.update()
+        open_control(self._page, dlg)
 
     def _perform_reset(self):
         try:
@@ -457,5 +456,4 @@ class SettingsMobileView(ft.Column):
         self._page.window.close()
 
     def _close_dialog(self, dialog):
-        dialog.open = False
-        self._page.update()
+        close_control(self._page, dialog)

@@ -12,7 +12,18 @@ class AddEditExpenseDialog(ft.AlertDialog):
         super().__init__()
         self._page = page
         self.on_save = on_save
-        self.expense = expense
+        self.expense = expense or None
+        # لا تعتمد على truthiness لكائن القيد. مبلغ 0 أو كائنات صفوف SQLite/REST
+        # قد تسبب التباساً في مسار create/update. ثبّت المعرّف صراحة.
+        self.expense_id = None
+        if self.expense is not None:
+            try:
+                self.expense_id = int(self.expense.get('id'))
+            except Exception:
+                try:
+                    self.expense_id = int(self.expense['id'])
+                except Exception:
+                    self.expense_id = None
 
         # معالجة آمنة لـ company_name (قد يكون كائن Event أو سلسلة)
         predefined = None
@@ -26,7 +37,7 @@ class AddEditExpenseDialog(ft.AlertDialog):
         dialog_width = min(380, page_width - 40)
         dialog_height = min(520, page_height - 100)
 
-        is_disabled = (self.predefined_company is not None and self.predefined_company.strip() != "") and (self.expense is None)
+        is_disabled = (self.predefined_company is not None and self.predefined_company.strip() != "") and (self.expense_id is None)
 
         self.company_field = ft.TextField(
             label=translate('company_name'),
@@ -69,7 +80,6 @@ class AddEditExpenseDialog(ft.AlertDialog):
             first_date=datetime.datetime(2020, 1, 1),
             last_date=datetime.datetime.now() + datetime.timedelta(days=365*10)
         )
-        self._page.overlay.append(self.date_picker)
 
         self.notes_field = ft.TextField(
             label=translate('notes'),
@@ -126,7 +136,7 @@ class AddEditExpenseDialog(ft.AlertDialog):
         )
 
         self.title = ft.Text(
-            translate('add') if not expense else translate('edit'),
+            translate('edit') if self.expense_id is not None else translate('add'),
             size=18,
             weight=ft.FontWeight.BOLD
         )
@@ -157,6 +167,13 @@ class AddEditExpenseDialog(ft.AlertDialog):
             self._page.update()
 
     def _close(self):
+        # Close the owned DatePicker first, then the dialog itself.
+        # Otherwise APK/Web builds may keep a stale overlay entry and the dialog
+        # appears to remain open after Cancel/Save.
+        try:
+            close_control(self._page, self.date_picker)
+        except Exception:
+            pass
         close_control(self._page, self)
 
     def _show_snackbar(self, message, is_error=False):
@@ -210,8 +227,8 @@ class AddEditExpenseDialog(ft.AlertDialog):
 
         repo = ExpenseRepository()
         try:
-            if self.expense:
-                repo.update(self.expense['id'], company, amount, type_val, date, notes, currency_code, user_id, payment_due_date, payment_note)
+            if self.expense_id is not None:
+                repo.update(self.expense_id, company, amount, type_val, date, notes, currency_code, user_id, payment_due_date, payment_note)
             else:
                 repo.add(company, amount, type_val, date, notes, currency_code, user_id, payment_due_date, payment_note)
             self._close()

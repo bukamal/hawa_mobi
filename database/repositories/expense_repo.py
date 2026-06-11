@@ -51,6 +51,9 @@ class ExpenseRepository(BaseRepository):
             self.db._log_audit_local(audit['user_id'], audit['username'], audit['action'], audit['table_name'], audit['record_id'], audit['details'])
             return new_id
     def update(self, expense_id: int, company_name: str, amount: float, type_val: str, date: str, notes: str, currency_code: str, user_id: int, payment_due_date: Optional[str] = None, payment_note: Optional[str] = None):
+        if expense_id is None:
+            raise ValueError("لا يمكن تعديل قيد دون معرّف id")
+        expense_id = int(expense_id)
         rate = float(currency.get_rate_to_usd(currency_code) or 1.0)
         amount = float(amount or 0)
         amount_usd = amount / rate if currency_code != 'USD' and rate != 0 else amount
@@ -66,9 +69,12 @@ class ExpenseRepository(BaseRepository):
             audit = {'user_id': user_id, 'username': user['username'] if user else '', 'action': "تعديل قيد", 'table_name': 'expenses', 'record_id': expense_id,
                      'details': f"الشركة: {company_name}, المبلغ: {amount} {currency_code}"}
             conn = self.db.get_connection()
-            conn.execute('''UPDATE expenses SET company_name=?, amount=?, type=?, date=?, notes=?, currency=?, updated_by=?, updated_at=?, amount_original=?, currency_original=?, exchange_rate_to_usd=?, status=?, payment_due_date=?, payment_reminder_note=? WHERE id=?''',
+            cur = conn.execute('''UPDATE expenses SET company_name=?, amount=?, type=?, date=?, notes=?, currency=?, updated_by=?, updated_at=?, amount_original=?, currency_original=?, exchange_rate_to_usd=?, status=?, payment_due_date=?, payment_reminder_note=? WHERE id=?''',
                          (data['company_name'], data['amount'], data['type'], data['date'], data['notes'], data['currency'],
                           data['updated_by'], data['updated_at'], data['amount_original'], data['currency_original'], data['exchange_rate_to_usd'], data['status'], data['payment_due_date'], data['payment_reminder_note'], expense_id))
+            if cur.rowcount != 1:
+                conn.rollback()
+                raise ValueError(f"لم يتم العثور على القيد المطلوب تعديله id={expense_id}")
             if status == 'waiting_payment' and payment_due_date:
                 conn.execute("DELETE FROM payment_reminders WHERE expense_id=? AND is_done=0", (expense_id,))
                 conn.execute("INSERT INTO payment_reminders (expense_id, reminder_date, note, is_done, created_at) VALUES (?,?,?,?,?)",
@@ -78,6 +84,9 @@ class ExpenseRepository(BaseRepository):
             conn.commit()
             self.db._log_audit_local(audit['user_id'], audit['username'], audit['action'], audit['table_name'], audit['record_id'], audit['details'])
     def delete(self, expense_id: int, user_id: int = None):
+        if expense_id is None:
+            raise ValueError("لا يمكن حذف قيد دون معرّف id")
+        expense_id = int(expense_id)
         if user_id is None:
             u = UserSession.get_current()
             user_id = u['id'] if u else None
@@ -87,7 +96,11 @@ class ExpenseRepository(BaseRepository):
             conn = self.db.get_connection()
             row = conn.execute('SELECT company_name, amount_original, currency_original FROM expenses WHERE id=?', (expense_id,)).fetchone()
             details = f"الشركة: {row['company_name']}, المبلغ: {row['amount_original']} {row['currency_original']}" if row else ""
-            conn.execute('DELETE FROM expenses WHERE id=?', (expense_id,))
+            cur = conn.execute('DELETE FROM expenses WHERE id=?', (expense_id,))
+            if cur.rowcount != 1:
+                conn.rollback()
+                raise ValueError(f"لم يتم العثور على القيد المطلوب حذفه id={expense_id}")
+            conn.execute('DELETE FROM payment_reminders WHERE expense_id=?', (expense_id,))
             conn.commit()
             u = UserSession.get_current()
             self.db._log_audit_local(user_id, u['username'] if u else '', "حذف قيد", 'expenses', expense_id, details)

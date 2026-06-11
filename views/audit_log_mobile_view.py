@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 import flet as ft
+from views.flet_compat import open_control, close_control
 from database import AuditRepository, UserRepository
 from i18n.translator import translate
 from datetime import datetime, timedelta
@@ -103,10 +104,7 @@ class AuditLogMobileView(ft.Column):
             self._close_dialog(dlg)
         dlg = ft.AlertDialog(title=ft.Text("تأكيد الحذف"), content=ft.Text("هل أنت متأكد من حذف السجلات الأقدم من 90 يوماً؟"),
                              actions=[ft.TextButton("نعم", on_click=confirm), ft.TextButton("لا", on_click=lambda e: self._close_dialog(dlg))])
-        self._page.dialog = dlg
-        dlg.open = True
-        self._page.update()
+        open_control(self._page, dlg)
 
     def _close_dialog(self, dialog):
-        dialog.open = False
-        self._page.update()
+        close_control(self._page, dialog)

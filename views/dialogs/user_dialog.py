@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 import flet as ft
+from views.flet_compat import open_control, close_control
 from database import UserRepository
 from auth.session import UserSession
 from i18n.translator import translate
@@ -83,8 +84,7 @@ class UserDialog(ft.AlertDialog):
             self._load_user()
 
     def _close(self):
-        self.open = False
-        self._page.update()
+        close_control(self._page, self)
 
     def _show_snackbar(self, message, is_error=False):
         snack = ft.SnackBar(content=ft.Text(message, size=13), bgcolor=ft.Colors.RED if is_error else ft.Colors.GREEN, duration=3000)
@@ -137,6 +137,4 @@ class UserDialog(ft.AlertDialog):
     def _change_password(self, e):
         from views.dialogs.change_password_dialog import ChangePasswordDialog
         dialog = ChangePasswordDialog(page=self._page, user_id=self.user_id, on_save=lambda: None)
-        self._page.dialog = dialog
-        dialog.open = True
-        self._page.update()
+        open_control(self._page, dialog)

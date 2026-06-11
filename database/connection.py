@@ -32,7 +32,7 @@ class DatabaseConnection:
         return cls._instance
 
     def _init_mode(self):
-        self.mode = self._get_setting_from_db("network/mode", "local")
+        self.mode = "local" if os.environ.get("HAWAA_SERVER_PROCESS") == "1" else self._get_setting_from_db("network/mode", "local")
         self.server_url = self._get_setting_from_db("network/server_url", "http://localhost:8000")
         self._rest_client = None
         if self.mode == "client":
@@ -160,10 +160,13 @@ class DatabaseConnection:
             return
         conn = self.get_connection()
         now = __import__('datetime').datetime.now().isoformat()
-        conn.execute('''UPDATE expenses SET company_name=?, amount=?, type=?, date=?, notes=?, currency=?, updated_by=?, updated_at=?, amount_original=?, currency_original=?, exchange_rate_to_usd=?, status=?, payment_due_date=?, payment_reminder_note=? WHERE id=?''',
+        cur = conn.execute('''UPDATE expenses SET company_name=?, amount=?, type=?, date=?, notes=?, currency=?, updated_by=?, updated_at=?, amount_original=?, currency_original=?, exchange_rate_to_usd=?, status=?, payment_due_date=?, payment_reminder_note=? WHERE id=?''',
                      (data['company_name'], data['amount'], data['type'], data['date'], data.get('notes',''), data['currency'],
                       data.get('updated_by',1), now, data.get('amount_original', data['amount']), data.get('currency_original', data['currency']),
-                      data.get('exchange_rate_to_usd',1.0), data.get('status','approved'), data.get('payment_due_date'), data.get('payment_reminder_note'), expense_id))
+                      data.get('exchange_rate_to_usd',1.0), data.get('status','approved'), data.get('payment_due_date'), data.get('payment_reminder_note'), int(expense_id)))
+        if cur.rowcount != 1:
+            conn.rollback()
+            raise ValueError(f"Expense not found: {expense_id}")
         conn.commit()
 
     def delete_expense(self, expense_id: int):
@@ -171,7 +174,11 @@ class DatabaseConnection:
             self._rest_client.delete_expense(expense_id)
             return
         conn = self.get_connection()
-        conn.execute("DELETE FROM expenses WHERE id = ?", (expense_id,))
+        cur = conn.execute("DELETE FROM expenses WHERE id = ?", (int(expense_id),))
+        if cur.rowcount != 1:
+            conn.rollback()
+            raise ValueError(f"Expense not found: {expense_id}")
+        conn.execute("DELETE FROM payment_reminders WHERE expense_id = ?", (int(expense_id),))
         conn.commit()
 
     def get_users(self) -> List[Dict]:
@@ -240,10 +247,48 @@ class DatabaseConnection:
 
     def refresh_mode(self):
         """إعادة تحميل وضع التشغيل من قاعدة البيانات (بعد تغيير الإعدادات)"""
-        self.mode = self._get_setting_from_db("network/mode", "local")
+        self.mode = "local" if os.environ.get("HAWAA_SERVER_PROCESS") == "1" else self._get_setting_from_db("network/mode", "local")
         self.server_url = self._get_setting_from_db("network/server_url", "http://localhost:8000")
         if self.mode == "client":
             from database.connection_rest import RestClient
             self._rest_client = RestClient(self.server_url)
         else:
             self._rest_client = None
+
+# ---- Module-level compatibility helpers ----
+# Some views import set_setting/get_setting directly from database.connection.
+# Keep these wrappers so old and new code paths both work.
+def _get_local_setting_direct(key: str, default=None):
+    conn = sqlite3.connect(get_local_db_path(), isolation_level=None)
+    conn.row_factory = sqlite3.Row
+    try:
+        row = conn.execute("SELECT value FROM settings WHERE key=?", (key,)).fetchone()
+        return row['value'] if row else default
+    finally:
+        conn.close()
+
+
+def _set_local_setting_direct(key: str, value: str):
+    conn = sqlite3.connect(get_local_db_path(), isolation_level=None)
+    try:
+        conn.execute("CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT)")
+        conn.execute("INSERT OR REPLACE INTO settings (key, value) VALUES (?,?)", (key, str(value)))
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def get_setting(key: str, default=None):
+    if str(key).startswith('network/'):
+        return _get_local_setting_direct(key, default)
+    return DatabaseConnection().get_setting(key, default)
+
+
+def set_setting(key: str, value: str):
+    # network/mode and network/server_url are bootstrap settings. They must be
+    # written locally even while the app is currently in client mode, otherwise
+    # switching back/forth can try to call a remote server before the mode exists.
+    if str(key).startswith('network/'):
+        _set_local_setting_direct(key, value)
+        return
+    return DatabaseConnection().set_setting(key, value)

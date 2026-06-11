@@ -191,7 +191,7 @@ class AccountsMobileView(ft.Column):
         from views.company_details_mobile_view import CompanyDetailsMobileView
         dialog = ft.AlertDialog(
             title=ft.Row([ft.Icon(ft.Icons.BUSINESS, color=ft.Colors.INDIGO), ft.Text(company_name, size=18, weight=ft.FontWeight.BOLD, expand=True)]),
-            content=ft.Container(content=CompanyDetailsMobileView(self._page, company_name, records), height=500, width=400),
+            content=ft.Container(content=CompanyDetailsMobileView(self._page, company_name, records, on_changed=lambda: self._refresh_cards(None)), height=500, width=400),
             actions=[ft.TextButton("إغلاق", on_click=lambda e: self._close_dialog(dialog))],
             inset_padding=20,
             scrollable=True
@@ -199,8 +199,7 @@ class AccountsMobileView(ft.Column):
         open_control(self._page, dialog)
 
     def _close_dialog(self, dialog):
-        dialog.open = False
-        self._page.update()
+        close_control(self._page, dialog)
 
     def _add_record(self, company_name=None):
         if UserSession.get_current() and UserSession.get_current().get('role') == 'viewer':

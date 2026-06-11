@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 import flet as ft
+from views.flet_compat import open_control, close_control
 from auth.session import UserSession
 from i18n.translator import translate
 
@@ -131,9 +132,7 @@ class AppLayout(ft.Column):
     def _change_password(self, e):
         from views.dialogs.change_password_dialog import ChangePasswordDialog
         dialog = ChangePasswordDialog(page=self._page, on_save=lambda: None)
-        self._page.dialog = dialog
-        dialog.open = True
-        self._page.update()
+        open_control(self._page, dialog)
 
     def _logout(self, e):
         dlg = None
@@ -154,8 +153,7 @@ class AppLayout(ft.Column):
                 login = LoginView(page=self._page, on_login_success=lambda u: self._rebuild_after_login(), on_exit=self.on_logout)
                 self._page.add(login)
             if dlg:
-                dlg.open = False
-                self._page.update()
+                close_control(self._page, dlg)
         dlg = ft.AlertDialog(
             title=ft.Text(translate('logout')),
             content=ft.Text("هل تريد تسجيل الخروج؟"),
@@ -164,13 +162,10 @@ class AppLayout(ft.Column):
                 ft.TextButton("لا", on_click=lambda e: self._close_dialog(dlg))
             ]
         )
-        self._page.dialog = dlg
-        dlg.open = True
-        self._page.update()
+        open_control(self._page, dlg)
 
     def _close_dialog(self, dialog):
-        dialog.open = False
-        self._page.update()
+        close_control(self._page, dialog)
 
     def _rebuild_after_login(self):
         self._page.controls.clear()

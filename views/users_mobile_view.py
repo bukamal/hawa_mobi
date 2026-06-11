@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 import flet as ft
+from views.flet_compat import open_control, close_control
 from database import UserRepository
 from auth.session import UserSession
 from i18n.translator import translate
@@ -88,16 +89,12 @@ class UsersMobileView(ft.Column):
     def _add_user(self, e):
         from views.dialogs.user_dialog import UserDialog
         dialog = UserDialog(page=self._page, on_save=lambda: self._load_users())
-        self._page.dialog = dialog
-        dialog.open = True
-        self._page.update()
+        open_control(self._page, dialog)
 
     def _edit_user(self, user_id):
         from views.dialogs.user_dialog import UserDialog
         dialog = UserDialog(page=self._page, user_id=user_id, on_save=lambda: self._load_users())
-        self._page.dialog = dialog
-        dialog.open = True
-        self._page.update()
+        open_control(self._page, dialog)
 
     def _delete_user(self, user_id):
         def confirm_delete(e):
@@ -116,10 +113,7 @@ class UsersMobileView(ft.Column):
                 ft.TextButton("لا", on_click=lambda e: self._close_dialog(dlg))
             ]
         )
-        self._page.dialog = dlg
-        dlg.open = True
-        self._page.update()
+        open_control(self._page, dlg)
 
     def _close_dialog(self, dialog):
-        dialog.open = False
-        self._page.update()
+        close_control(self._page, dialog)

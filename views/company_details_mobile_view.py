@@ -7,15 +7,15 @@ from i18n.translator import translate
 from currency import currency
 
 class CompanyDetailsMobileView(ft.Column):
-    def __init__(self, page, company_name, records=None):
+    def __init__(self, page, company_name, records=None, on_changed=None):
         super().__init__()
         self._page = page
         self.company_name = company_name
-        if records is None:
-            repo = ExpenseRepository()
-            self.records = repo.get_by_company(company_name, convert_to_display=False)
-        else:
-            self.records = records
+        self.on_changed = on_changed
+        # لا تستخدم القائمة الممرّرة كحقيقة بعد فتح النافذة؛ قد تكون snapshot قديمة
+        # من شاشة الحسابات. اجلب دائماً من قاعدة البيانات عند بناء التفاصيل.
+        repo = ExpenseRepository()
+        self.records = repo.get_by_company(company_name, convert_to_display=False)
         self.records = sorted(self.records, key=lambda x: x['date'])
         self.spacing = 10
         self.expand = True
@@ -144,9 +144,7 @@ class CompanyDetailsMobileView(ft.Column):
             content=ft.Text(f"حذف قيد بمبلغ {record['amount_original']} {record['currency_original']}؟"),
             actions=[btn_yes, btn_no]
         )
-        self._page.overlay.append(dlg)
-        dlg.open = True
-        self._page.update()
+        open_control(self._page, dlg)
 
     def _reload(self):
         try:
@@ -154,6 +152,8 @@ class CompanyDetailsMobileView(ft.Column):
             self.records = repo.get_by_company(self.company_name, convert_to_display=False)
             self.records = sorted(self.records, key=lambda x: x['date'])
             self._load_data()
+            if self.on_changed:
+                self.on_changed()
         except Exception as ex:
             self._show_snackbar(f"خطأ: {str(ex)}", True)
 
