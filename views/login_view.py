@@ -7,6 +7,7 @@ from database import UserRepository
 from database.connection import DatabaseConnection, get_setting, set_setting
 from auth.session import UserSession
 from i18n.translator import translate, set_language
+from views.ui_kit import app_brand
 
 
 class LoginView(ft.Container):
@@ -39,8 +40,7 @@ class LoginView(ft.Container):
             content=ft.Container(
                 content=ft.Column(
                     controls=[
-                        ft.Text('🏢 هوى الشام', size=32, weight=ft.FontWeight.BOLD, color=ft.Colors.INDIGO),
-                        ft.Text('نظام الحسابات الداخلية', size=13, color=ft.Colors.GREY_600),
+                        app_brand('هوى الشام', 'نظام الحسابات الداخلية', size=82, dark=True),
                         self.network_status,
                         ft.Container(height=14),
                         self.username,

@@ -2,6 +2,7 @@
 import flet as ft
 from views.flet_compat import open_control, close_control
 from views.ui_runtime import make_status_bar, loading_view, error_view, safe_update
+from views.ui_kit import app_brand
 from auth.session import UserSession
 from i18n.translator import translate
 
@@ -85,8 +86,7 @@ class AppLayout(ft.Column):
         controls = [
             ft.Container(
                 content=ft.Column([
-                    ft.Text("🏢 هوى الشام", size=24, weight=ft.FontWeight.BOLD, color=ft.Colors.INDIGO),
-                    ft.Text("نظام الحسابات الداخلية", size=12, color=ft.Colors.GREY_600),
+                    app_brand('هوى الشام', 'نظام الحسابات الداخلية', size=64, dark=True),
                 ], horizontal_alignment=ft.CrossAxisAlignment.CENTER),
                 padding=20,
                 bgcolor=ft.Colors.INDIGO_50,

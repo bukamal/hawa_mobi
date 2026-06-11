@@ -4,6 +4,7 @@ from __future__ import annotations
 import asyncio
 import flet as ft
 from auth.activation import activate, get_device_id, get_license_details
+from views.ui_kit import app_brand
 
 
 class ActivationView(ft.Container):
@@ -31,9 +32,7 @@ class ActivationView(ft.Container):
             content=ft.Container(
                 content=ft.Column(
                     controls=[
-                        ft.Text('🔐', size=48),
-                        ft.Text('تفعيل نظام هوى الشام', size=22, weight=ft.FontWeight.BOLD, color=ft.Colors.INDIGO),
-                        ft.Text('أدخل مفتاح الترخيص للتفعيل عبر الإنترنت', size=12, color=ft.Colors.GREY_600),
+                        app_brand('تفعيل هوى الشام', 'أدخل مفتاح الترخيص للتفعيل عبر الإنترنت', size=78, dark=True),
                         ft.Container(height=12),
                         self.license_info,
                         self.device_text,

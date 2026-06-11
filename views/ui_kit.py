@@ -15,6 +15,55 @@ MUTED = ft.Colors.GREY_600
 BORDER = ft.Colors.GREY_200
 
 
+
+def safe_border_all(width=1, color=BORDER):
+    """Flet-compatible all-sides border. Compatible with older Flet builds."""
+    side = ft.BorderSide(width, color)
+    return ft.Border(left=side, top=side, right=side, bottom=side)
+
+
+def safe_border_bottom(width=1, color=BORDER):
+    """Flet-compatible bottom border. Compatible with older Flet builds."""
+    return ft.Border(bottom=ft.BorderSide(width, color))
+
+
+
+def app_mark(size=86, color=PRIMARY, dark=False):
+    """Vector-like application mark: H + flight. No runtime asset dependency."""
+    fg = ft.Colors.WHITE if not dark else color
+    bg = color if not dark else ft.Colors.WHITE
+    border = safe_border_all(1, ft.Colors.WHITE_24 if not dark else ft.Colors.INDIGO_100)
+    return ft.Container(
+        width=size,
+        height=size,
+        border_radius=size // 4,
+        bgcolor=bg,
+        border=border,
+        shadow=ft.BoxShadow(blur_radius=16, spread_radius=1, color=ft.Colors.BLACK26),
+        content=ft.Stack([
+            ft.Text('H', size=int(size * 0.58), weight=ft.FontWeight.BOLD, color=fg, left=int(size * 0.15), top=int(size * 0.11)),
+            ft.Icon(ft.Icons.FLIGHT, size=int(size * 0.50), color=fg, left=int(size * 0.43), top=int(size * 0.31), rotate=ft.Rotate(angle=0.78)),
+            ft.Container(width=int(size * 0.42), height=3, bgcolor=ft.Colors.AMBER, left=int(size * 0.50), top=int(size * 0.52), rotate=ft.Rotate(angle=-0.50), border_radius=2),
+        ]),
+    )
+
+
+def app_brand(title='هوى الشام', subtitle='نظام الحسابات الداخلية', size=86, color=PRIMARY, dark=False):
+    text_color = ft.Colors.WHITE if not dark else ft.Colors.GREY_900
+    sub_color = ft.Colors.WHITE_70 if not dark else MUTED
+    return ft.Column(
+        controls=[
+            app_mark(size=size, color=color, dark=dark),
+            ft.Text(title, size=24 if size < 90 else 32, weight=ft.FontWeight.BOLD, color=text_color, text_align=ft.TextAlign.CENTER),
+            ft.Text(subtitle, size=12 if size < 90 else 14, color=sub_color, text_align=ft.TextAlign.CENTER),
+        ],
+        spacing=8,
+        alignment=ft.MainAxisAlignment.CENTER,
+        horizontal_alignment=ft.CrossAxisAlignment.CENTER,
+        tight=True,
+    )
+
+
 def show_snackbar(page, message, is_error=False, duration=3000):
     snack = ft.SnackBar(
         content=ft.Text(str(message), size=13),

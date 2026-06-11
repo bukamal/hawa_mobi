@@ -9,6 +9,7 @@ from auth.activation import check_activation
 from auth.session import UserSession
 from database.connection import DatabaseConnection, get_local_db_path
 from views.flet_compat import ARABIC_FONT_FAMILY
+from views.ui_kit import app_brand
 
 
 class SplashView(ft.Container):
@@ -20,13 +21,12 @@ class SplashView(ft.Container):
         self.expand = True
         self.alignment = ft.Alignment.CENTER
         self.bgcolor = ft.Colors.INDIGO
-        self.logo = ft.Text('هوى الشام', size=36, weight=ft.FontWeight.BOLD, color=ft.Colors.WHITE, text_align=ft.TextAlign.CENTER, font_family=ARABIC_FONT_FAMILY)
-        self.subtitle = ft.Text('نظام الحسابات الداخلية', size=14, color=ft.Colors.WHITE_70, text_align=ft.TextAlign.CENTER, font_family=ARABIC_FONT_FAMILY)
+        self.brand = app_brand('هوى الشام', 'نظام الحسابات الداخلية', size=104, dark=False)
         self.progress = ft.ProgressBar(width=300, bgcolor=ft.Colors.WHITE_24, color=ft.Colors.WHITE, value=0)
         self.status = ft.Text('جاري تهيئة النظام...', size=12, color=ft.Colors.WHITE_70, text_align=ft.TextAlign.CENTER, font_family=ARABIC_FONT_FAMILY)
         self.detail = ft.Text('', size=11, color=ft.Colors.WHITE_60, text_align=ft.TextAlign.CENTER, font_family=ARABIC_FONT_FAMILY)
         self.content = ft.Column(
-            controls=[self.logo, ft.Container(height=10), self.subtitle, ft.Container(height=30), self.progress, ft.Container(height=10), self.status, self.detail],
+            controls=[self.brand, ft.Container(height=30), self.progress, ft.Container(height=10), self.status, self.detail],
             alignment=ft.MainAxisAlignment.CENTER,
             horizontal_alignment=ft.CrossAxisAlignment.CENTER,
         )

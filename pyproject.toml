@@ -19,6 +19,7 @@ py-modules = ["main", "config", "currency"]
 include = ["auth*", "database*", "i18n*", "views*", "services*"]
 
 [tool.flet]
+icon = "assets/app_icon.png"
 org = "com.hawaa"
 product = "هوى الشام"
 company = "Hawaa"
@@ -30,3 +31,6 @@ android_permissions = [
 [tool.flet.app]
 path = "."
 module = "main"
+
+[tool.setuptools.package-data]
+"*" = ["assets/*.png", "assets/icons/*.png", "assets/brand/*.png"]

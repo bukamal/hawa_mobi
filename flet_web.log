@@ -1,0 +1,4 @@
+/usr/local/lib/python3.14/dist-packages/flet/utils/deprecated_enum.py:46: DeprecationWarning: Colors.BLACK26 is deprecated. Use Colors.BLACK_26 instead.
+  member = cls._resolve_deprecated(name)
+/usr/local/lib/python3.14/dist-packages/flet/utils/deprecated_enum.py:46: DeprecationWarning: Colors.BLACK26 is deprecated. Use Colors.BLACK_26 instead.
+  member = cls._resolve_deprecated(name)
