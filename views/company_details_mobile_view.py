@@ -37,10 +37,20 @@ class CompanyDetailsMobileView(ft.Column):
 
         self.report_actions = ft.Row([
             ft.FilledButton(
-                content=ft.Row([ft.Icon(ft.Icons.PRINT), ft.Text("كشف HTML للطباعة")], tight=True),
+                content=ft.Row([ft.Icon(ft.Icons.PRINT), ft.Text("كشف للطباعة")], tight=True),
                 on_click=self._export_printable_statement,
                 bgcolor=ft.Colors.INDIGO,
                 color=ft.Colors.WHITE,
+            ),
+            ft.FilledButton(
+                content=ft.Row([ft.Icon(ft.Icons.SHARE), ft.Text("مشاركة")], tight=True),
+                on_click=self._share_statement,
+                bgcolor=ft.Colors.GREEN,
+                color=ft.Colors.WHITE,
+            ),
+            ft.TextButton(
+                content=ft.Row([ft.Icon(ft.Icons.CHAT), ft.Text("واتساب")], tight=True),
+                on_click=self._share_statement_whatsapp,
             ),
             ft.TextButton(
                 content=ft.Row([ft.Icon(ft.Icons.TABLE_VIEW), ft.Text("CSV")], tight=True),
@@ -144,6 +154,29 @@ class CompanyDetailsMobileView(ft.Column):
                 pass
         except Exception as ex:
             self._show_snackbar(f"خطأ في إنشاء الكشف: {str(ex)}", True)
+
+
+    def _share_statement(self, e):
+        try:
+            from reports.account_statement import export_account_statement_html
+            from reports.share import build_statement_message, share_file
+            path = export_account_statement_html(self.company_name, self.records)
+            message = build_statement_message(self.company_name, path)
+            ok = share_file(self._page, path, message, open_whatsapp=False)
+            self._show_snackbar("تم تجهيز الكشف للمشاركة" if ok else f"تم إنشاء الكشف: {path}", False)
+        except Exception as ex:
+            self._show_snackbar(f"خطأ في مشاركة الكشف: {str(ex)}", True)
+
+    def _share_statement_whatsapp(self, e):
+        try:
+            from reports.account_statement import export_account_statement_html
+            from reports.share import build_statement_message, share_file
+            path = export_account_statement_html(self.company_name, self.records)
+            message = build_statement_message(self.company_name, path)
+            ok = share_file(self._page, path, message, open_whatsapp=True)
+            self._show_snackbar("تم فتح المشاركة/واتساب" if ok else f"تم إنشاء الكشف: {path}", False)
+        except Exception as ex:
+            self._show_snackbar(f"خطأ في مشاركة واتساب: {str(ex)}", True)
 
     def _export_csv_statement(self, e):
         try:
