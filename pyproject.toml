@@ -19,7 +19,6 @@ py-modules = ["main", "config", "currency"]
 include = ["auth*", "database*", "i18n*", "views*", "services*", "reports*"]
 
 [tool.flet]
-icon = "assets/app_icon.png"
 org = "com.hawaa"
 product = "هوى الشام"
 company = "Hawaa"
@@ -33,4 +32,14 @@ path = "."
 module = "main"
 
 [tool.setuptools.package-data]
-"*" = ["assets/*.png", "assets/icons/*.png", "assets/brand/*.png"]
+"*" = ["assets/*.png", "assets/icons/*.png", "assets/brand/*.png", "assets/android_res/*/*.png"]
+
+[tool.flet.splash]
+color = "#082040"
+dark_color = "#082040"
+android = true
+ios = true
+web = true
+
+[tool.flet.android]
+adaptive_icon_background = "#082040"

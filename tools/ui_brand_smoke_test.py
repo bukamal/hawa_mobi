@@ -7,6 +7,10 @@ assets = [
     ROOT / 'assets' / 'app_icon.png',
     ROOT / 'assets' / 'app_logo.png',
     ROOT / 'assets' / 'app_logo_small.png',
+    ROOT / 'assets' / 'icon.png',
+    ROOT / 'assets' / 'icon_android.png',
+    ROOT / 'assets' / 'icon_web.png',
+    ROOT / 'assets' / 'splash_android.png',
     ROOT / 'assets' / 'icons' / 'app_icon_192.png',
     ROOT / 'assets' / 'icons' / 'app_icon_512.png',
 ]
@@ -28,5 +32,7 @@ for rel in ['views/splash_view.py', 'views/login_view.py', 'views/activation_vie
     assert 'app_brand' in content, f'app_brand not used in {rel}'
 
 pyproject = (ROOT / 'pyproject.toml').read_text(encoding='utf-8')
-assert 'icon = "assets/app_icon.png"' in pyproject
+assert 'icon_android.png' not in pyproject  # Flet uses assets/icon_android.png by convention
+assert '[tool.flet.splash]' in pyproject
+assert 'adaptive_icon_background' in pyproject
 print('✅ ui_brand_smoke_test passed')
