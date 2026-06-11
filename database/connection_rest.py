@@ -4,7 +4,13 @@ from typing import List, Dict
 
 class RestClient:
     def __init__(self, server_url: str):
-        self.server_url = server_url.rstrip('/')
+        # Accept either bare server URL (http://host:8000) or a mistakenly
+        # entered API base URL (http://host:8000/api).  Internally we always
+        # keep the server root so endpoint paths remain stable.
+        root = (server_url or '').strip().rstrip('/')
+        if root.endswith('/api'):
+            root = root[:-4].rstrip('/')
+        self.server_url = root
         self.token = None
 
     def set_token(self, token: str):
@@ -12,11 +18,22 @@ class RestClient:
 
     def _headers(self):
         headers = {'Content-Type': 'application/json'}
-        if self.token:
-            headers['Authorization'] = f'Bearer {self.token}'
+        token = self.token
+        if not token:
+            try:
+                from auth.session import UserSession
+                token = UserSession.get_auth_token()
+                if token:
+                    self.token = token
+            except Exception:
+                token = None
+        if token:
+            headers['Authorization'] = f'Bearer {token}'
         return headers
 
     def _request(self, method, endpoint, data=None, retries=3, backoff=1.0):
+        if not self.server_url:
+            raise Exception('عنوان الخادم غير مضبوط')
         url = f"{self.server_url}{endpoint}"
         for attempt in range(retries):
             try:
@@ -26,21 +43,37 @@ class RestClient:
                     time.sleep(wait)
                     continue
                 if resp.status_code >= 400:
-                    raise Exception(f"API error {resp.status_code}: {resp.text}")
+                    hint = ''
+                    if resp.status_code == 404 and endpoint.startswith('/api/'):
+                        hint = ' — تحقق أن عنوان الخادم لا ينتهي بـ /api وأنك تشغّل server/run_server.py من النسخة الحالية.'
+                    raise Exception(f"API error {resp.status_code}: {resp.text}{hint}")
                 return resp.json() if resp.text else None
-            except Exception as e:
+            except Exception:
                 if attempt == retries-1:
                     raise
                 time.sleep(backoff * (2**attempt))
 
 
     def health(self) -> Dict:
-        return self._request('GET', '/api/health', retries=1)
+        try:
+            return self._request('GET', '/api/health', retries=1)
+        except Exception as e:
+            # Compatibility with older server builds that exposed /health.
+            if 'API error 404' in str(e):
+                return self._request('GET', '/health', retries=1)
+            raise
 
     def login(self, username: str, password: str) -> Dict:
         res = self._request('POST', '/api/login', {'username': username, 'password': password})
-        self.set_token(res['token'])
-        return res['user']
+        token = res.get('token') or res.get('access_token')
+        if not token:
+            raise Exception('لم يرجع الخادم رمز دخول token')
+        self.set_token(token)
+        user = dict(res.get('user') or {})
+        user['_auth_token'] = token
+        if res.get('expires_in') is not None:
+            user['_token_expires_in'] = res.get('expires_in')
+        return user
 
     def logout(self):
         self._request('POST', '/api/logout')

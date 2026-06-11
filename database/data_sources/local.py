@@ -113,8 +113,13 @@ class LocalDataSource:
         return [dict(row) for row in rows]
 
     def get_setting(self, key: str, default=None):
-        row = self.get_connection().execute("SELECT value FROM settings WHERE key=?", (key,)).fetchone()
-        return row["value"] if row else default
+        conn = self.get_connection()
+        try:
+            conn.execute("CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT)")
+            row = conn.execute("SELECT value FROM settings WHERE key=?", (key,)).fetchone()
+            return row["value"] if row else default
+        except Exception:
+            return default
 
     def set_setting(self, key: str, value: str) -> None:
         conn = self.get_connection()

@@ -149,38 +149,82 @@ class DashboardMobileView(ft.Column):
             approved_filtered = [e for e in filtered if e.get('status', 'approved') != 'waiting_payment']
             waiting_payment = [e for e in filtered if e.get('status') == 'waiting_payment']
 
-            total_in_usd = sum(float(e['amount']) for e in approved_filtered if e['type'] == 'incoming')
-            total_out_usd = sum(float(e['amount']) for e in approved_filtered if e['type'] == 'outgoing')
-            net_usd = total_in_usd - total_out_usd
             display_curr = currency.get_display_currency()
-            total_in = currency.convert(total_in_usd, 'USD', display_curr)
-            total_out = currency.convert(total_out_usd, 'USD', display_curr)
-            net = currency.convert(net_usd, 'USD', display_curr)
+
+            def original_amount(e):
+                return float(e.get('amount_original', e.get('amount', 0)) or 0)
+
+            def original_currency(e):
+                return (e.get('currency_original') or e.get('currency') or 'USD').upper()
+
+            totals_by_currency = defaultdict(lambda: {'incoming': 0.0, 'outgoing': 0.0, 'net': 0.0, 'count': 0})
+            historical_base = {'incoming': 0.0, 'outgoing': 0.0, 'net': 0.0}
+            for e in approved_filtered:
+                curr = original_currency(e)
+                amount_orig = original_amount(e)
+                amount_base = float(e.get('amount', 0) or 0)  # محفوظ تاريخياً بالدولار عند إدخال القيد
+                if e.get('type') == 'incoming':
+                    totals_by_currency[curr]['incoming'] += amount_orig
+                    totals_by_currency[curr]['net'] += amount_orig
+                    historical_base['incoming'] += amount_base
+                    historical_base['net'] += amount_base
+                else:
+                    totals_by_currency[curr]['outgoing'] += amount_orig
+                    totals_by_currency[curr]['net'] -= amount_orig
+                    historical_base['outgoing'] += amount_base
+                    historical_base['net'] -= amount_base
+                totals_by_currency[curr]['count'] += 1
+
+            def format_currency_lines(kind: str, with_direction: bool = False) -> str:
+                if not totals_by_currency:
+                    return '—'
+                lines = []
+                for curr in sorted(totals_by_currency):
+                    val = totals_by_currency[curr][kind]
+                    if abs(val) < 1e-9 and kind != 'net':
+                        continue
+                    text = currency.format_amount(abs(val) if kind == 'net' else val, curr)
+                    if with_direction:
+                        side = 'لنا' if val >= 0 else 'له'
+                        text = f"{text} {side}"
+                    lines.append(text)
+                return '\n'.join(lines) if lines else '—'
+
+            base_in = currency.convert(historical_base['incoming'], 'USD', display_curr)
+            base_out = currency.convert(historical_base['outgoing'], 'USD', display_curr)
+            base_net = currency.convert(historical_base['net'], 'USD', display_curr)
 
             companies = set(e['company_name'] for e in filtered)
-            users = user_repo.get_all()
-            avg = sum(float(e['amount']) for e in approved_filtered) / len(approved_filtered) if approved_filtered else 0
-            avg_display = currency.convert(avg, 'USD', display_curr)
+            try:
+                users = user_repo.get_all()
+                users_count = len(users)
+            except Exception as user_ex:
+                users_count = '—'
+                print(f"[WARN] تعذر تحميل المستخدمين في لوحة التحكم: {user_ex}")
 
-            company_net = defaultdict(float)
+            avg_base = (historical_base['incoming'] + historical_base['outgoing']) / len(approved_filtered) if approved_filtered else 0
+            avg_display = currency.convert(avg_base, 'USD', display_curr)
+
+            company_net_base = defaultdict(float)
             for e in approved_filtered:
-                val = float(e['amount']) if e['type'] == 'incoming' else -float(e['amount'])
-                company_net[e['company_name']] += val
-            top_company = max(company_net.items(), key=lambda x: x[1]) if company_net else ("—", 0)
+                val = float(e.get('amount', 0) or 0)
+                company_net_base[e['company_name']] += val if e.get('type') == 'incoming' else -val
+            top_company = max(company_net_base.items(), key=lambda x: x[1]) if company_net_base else ("—", 0)
             top_display = currency.convert(top_company[1], 'USD', display_curr)
 
             rate = currency.get_rate_to_usd(display_curr)
             rate_text = f"1 {display_curr} = {rate:.4f} USD" if display_curr != 'USD' else "1 USD = 1.00 USD"
 
             cards = [
-                self._create_card(translate('total_incoming'), currency.format_amount(total_in, display_curr), ft.Colors.GREEN),
-                self._create_card(translate('total_outgoing'), currency.format_amount(total_out, display_curr), ft.Colors.RED),
-                self._create_card(translate('net_profit'), currency.format_amount(net, display_curr), ft.Colors.GREEN if net >= 0 else ft.Colors.RED),
+                self._create_card('لنا حسب العملة', format_currency_lines('incoming'), ft.Colors.GREEN),
+                self._create_card('له حسب العملة', format_currency_lines('outgoing'), ft.Colors.RED),
+                self._create_card('الصافي حسب العملة', format_currency_lines('net', with_direction=True), ft.Colors.GREEN if historical_base['net'] >= 0 else ft.Colors.RED),
+                self._create_card(f'إجمالي تقريبي بـ {display_curr}', f"لنا: {currency.format_amount(base_in, display_curr)}\nله: {currency.format_amount(base_out, display_curr)}\nالصافي: {currency.format_amount(base_net, display_curr)}\nمحسوب حسب أسعار الصرف التاريخية", ft.Colors.INDIGO, ft.Icons.CURRENCY_EXCHANGE),
                 self._create_card("عدد الشركات", str(len(companies)), ft.Colors.BLUE, ft.Icons.BUSINESS),
-                self._create_card("عدد المستخدمين", str(len(users)), ft.Colors.ORANGE, ft.Icons.PEOPLE),
-                self._create_card("متوسط القيد", currency.format_amount(avg_display, display_curr), ft.Colors.PURPLE, ft.Icons.CALCULATE),
-                self._create_card("أعلى شركة", f"{top_company[0]}\n({currency.format_amount(top_display, display_curr)})", ft.Colors.TEAL, ft.Icons.EMOJI_EVENTS),
-                self._create_card("سعر الصرف", rate_text, ft.Colors.INDIGO, ft.Icons.MONEY),
+                self._create_card("عدد المستخدمين", str(users_count), ft.Colors.ORANGE, ft.Icons.PEOPLE),
+                self._create_card("متوسط القيد التقريبي", currency.format_amount(avg_display, display_curr), ft.Colors.PURPLE, ft.Icons.CALCULATE),
+                self._create_card("أعلى شركة تقريبياً", f"{top_company[0]}\n({currency.format_amount(top_display, display_curr)})", ft.Colors.TEAL, ft.Icons.EMOJI_EVENTS),
+                self._create_card("سعر الصرف الحالي", rate_text, ft.Colors.INDIGO, ft.Icons.MONEY),
                 self._create_card("بانتظار الدفع", str(len(waiting_payment)), ft.Colors.ORANGE, ft.Icons.PAYMENTS)
             ]
             self.cards_container.controls = cards

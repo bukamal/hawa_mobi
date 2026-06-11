@@ -113,6 +113,7 @@ def _expense_payload(data: Dict[str, Any], *, update: bool = False) -> Dict[str,
 
 
 @app.get("/api/health")
+@app.get("/health")
 def health():
     ensure_db()
     payload = {

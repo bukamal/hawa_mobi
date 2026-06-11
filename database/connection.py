@@ -59,6 +59,14 @@ class DatabaseConnection:
         return self.mode == "client"
 
     def get_rest_client(self):
+        if self._rest_client:
+            try:
+                from auth.session import UserSession
+                token = UserSession.get_auth_token()
+                if token and not self._rest_client.token:
+                    self._rest_client.set_token(token)
+            except Exception:
+                pass
         return self._rest_client
 
     def set_token(self, token: str):
@@ -252,6 +260,13 @@ class DatabaseConnection:
         if self.mode == "client":
             from database.connection_rest import RestClient
             self._rest_client = RestClient(self.server_url)
+            try:
+                from auth.session import UserSession
+                token = UserSession.get_auth_token()
+                if token:
+                    self._rest_client.set_token(token)
+            except Exception:
+                pass
         else:
             self._rest_client = None
 

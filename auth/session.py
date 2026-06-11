@@ -15,19 +15,30 @@ class UserSession:
     """
 
     _current_user: Optional[Dict] = None
+    _auth_token: Optional[str] = None
     _login_at: float = 0.0
     _ttl_seconds: int = 8 * 60 * 60
 
     @classmethod
     def login(cls, user: Dict, ttl_seconds: int | None = None):
-        cls._current_user = dict(user or {})
+        clean_user = dict(user or {})
+        token = clean_user.pop('_auth_token', None) or clean_user.pop('auth_token', None) or clean_user.pop('token', None)
+        token_ttl = clean_user.pop('_token_expires_in', None)
+        cls._current_user = clean_user
+        cls._auth_token = token
         cls._login_at = time.time()
         if ttl_seconds is not None:
             cls._ttl_seconds = int(ttl_seconds)
+        elif token_ttl is not None:
+            try:
+                cls._ttl_seconds = int(token_ttl)
+            except Exception:
+                pass
 
     @classmethod
     def logout(cls):
         cls._current_user = None
+        cls._auth_token = None
         cls._login_at = 0.0
 
     @classmethod
@@ -35,6 +46,12 @@ class UserSession:
         if not cls.is_authenticated():
             return None
         return cls._current_user
+
+    @classmethod
+    def get_auth_token(cls) -> Optional[str]:
+        if not cls.is_authenticated():
+            return None
+        return cls._auth_token
 
     @classmethod
     def is_expired(cls) -> bool:
@@ -69,4 +86,5 @@ class UserSession:
             'username': (user or {}).get('username', ''),
             'role': (user or {}).get('role', ''),
             'expires_in_seconds': max(0, int(cls._ttl_seconds - (time.time() - cls._login_at))) if user else 0,
+            'has_auth_token': bool(cls._auth_token),
         }

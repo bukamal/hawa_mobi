@@ -33,6 +33,8 @@ def main() -> int:
     run_py("tools/ui_brand_smoke_test.py")
     run_py("tools/report_smoke_test.py")
     run_py("tools/report_share_smoke_test.py")
+    run_py("tools/auth_token_smoke_test.py")
+    run_py("tools/dashboard_currency_totals_smoke_test.py")
     print("✅ quality_gate passed")
     return 0
 
