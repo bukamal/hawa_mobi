@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 import flet as ft
 from views.flet_compat import open_control, close_control
+from views.ui_runtime import make_status_bar, loading_view, error_view, safe_update
 from auth.session import UserSession
 from i18n.translator import translate
 
@@ -12,15 +13,22 @@ class AppLayout(ft.Column):
         self.expand = True
         self.spacing = 0
 
+        self.status_area = ft.Container()
         self.content_area = ft.Container(expand=True, padding=10, bgcolor=ft.Colors.GREY_50)
         self.nav_bar = self._build_nav_bar()
         self.drawer = self._build_drawer()
 
-        self.controls = [self.content_area, self.nav_bar]
+        self.controls = [self.status_area, self.content_area, self.nav_bar]
         self._page.drawer = self.drawer
+        self._refresh_status_bar()
         self.switch_page('accounts')
         self._show_payment_alert_if_needed()
 
+
+    def _refresh_status_bar(self):
+        current = UserSession.get_current() or {}
+        user_label = current.get('full_name') or current.get('username') or 'جلسة نشطة'
+        self.status_area.content = make_status_bar(user_label)
 
     def _show_payment_alert_if_needed(self):
         try:
@@ -109,25 +117,31 @@ class AppLayout(ft.Column):
             self.switch_page(pages[index])
 
     def switch_page(self, page_id):
-        if page_id == 'dashboard':
-            from views.dashboard_mobile_view import DashboardMobileView
-            view = DashboardMobileView(self._page)
-        elif page_id == 'accounts':
-            from views.accounts_mobile_view import AccountsMobileView
-            view = AccountsMobileView(self._page)
-        elif page_id == 'users':
-            from views.users_mobile_view import UsersMobileView
-            view = UsersMobileView(self._page)
-        elif page_id == 'audit_log':
-            from views.audit_log_mobile_view import AuditLogMobileView
-            view = AuditLogMobileView(self._page)
-        elif page_id == 'settings':
-            from views.settings_mobile_view import SettingsMobileView
-            view = SettingsMobileView(self._page)
-        else:
-            view = ft.Text("الصفحة غير موجودة")
-        self.content_area.content = view
-        self._page.update()
+        self._refresh_status_bar()
+        self.content_area.content = loading_view("جاري فتح الشاشة...")
+        safe_update(self._page)
+        try:
+            if page_id == 'dashboard':
+                from views.dashboard_mobile_view import DashboardMobileView
+                view = DashboardMobileView(self._page)
+            elif page_id == 'accounts':
+                from views.accounts_mobile_view import AccountsMobileView
+                view = AccountsMobileView(self._page)
+            elif page_id == 'users':
+                from views.users_mobile_view import UsersMobileView
+                view = UsersMobileView(self._page)
+            elif page_id == 'audit_log':
+                from views.audit_log_mobile_view import AuditLogMobileView
+                view = AuditLogMobileView(self._page)
+            elif page_id == 'settings':
+                from views.settings_mobile_view import SettingsMobileView
+                view = SettingsMobileView(self._page)
+            else:
+                view = error_view("الصفحة غير موجودة")
+            self.content_area.content = view
+        except Exception as ex:
+            self.content_area.content = error_view(str(ex), on_retry=lambda e: self.switch_page(page_id))
+        safe_update(self._page)
 
     def _change_password(self, e):
         from views.dialogs.change_password_dialog import ChangePasswordDialog

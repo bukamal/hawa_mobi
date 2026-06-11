@@ -1,16 +1,17 @@
 # -*- coding: utf-8 -*-
 import flet as ft
 from views.flet_compat import open_control, close_control
+from views.ui_kit import page_header, summary_bar, metric_tile, data_card, pill, empty_state, action_text_button, show_snackbar
 from database import UserRepository
-from auth.session import UserSession
 from i18n.translator import translate
+
 
 class UsersMobileView(ft.Column):
     def __init__(self, page):
         super().__init__()
         self._page = page
         self.expand = True
-        self.spacing = 10
+        self.spacing = 8
         self.scroll = ft.ScrollMode.AUTO
 
         self.add_btn = ft.FloatingActionButton(
@@ -22,66 +23,78 @@ class UsersMobileView(ft.Column):
             mini=False,
             elevation=6,
             shape=ft.CircleBorder(),
-            margin=ft.Margin(left=0, right=16, top=0, bottom=80)
+            margin=ft.Margin(left=0, right=16, top=0, bottom=80),
         )
         self._page.floating_action_button = self.add_btn
 
-        self.users_list = ft.Column(spacing=10, scroll=ft.ScrollMode.AUTO)
-        self.controls = [self.users_list]
+        self.summary = ft.Container()
+        self.users_list = ft.Column(spacing=8, scroll=ft.ScrollMode.AUTO)
+        self.controls = [
+            page_header("إدارة المستخدمين", ft.Icons.GROUPS, subtitle="صلاحيات الدخول والحسابات"),
+            self.summary,
+            self.users_list,
+        ]
         self._load_users()
 
     def _show_snackbar(self, message, is_error=False):
-        snack = ft.SnackBar(content=ft.Text(message, size=13), bgcolor=ft.Colors.RED if is_error else ft.Colors.GREEN, duration=3000)
-        self._page.overlay.append(snack)
-        snack.open = True
-        self._page.update()
+        show_snackbar(self._page, message, is_error)
+
+    def _role_meta(self, role):
+        if role == 'admin':
+            return translate('admin'), ft.Colors.RED, ft.Icons.ADMIN_PANEL_SETTINGS
+        if role == 'user':
+            return translate('user'), ft.Colors.BLUE, ft.Icons.PERSON
+        return translate('viewer'), ft.Colors.GREY, ft.Icons.VISIBILITY
 
     def _load_users(self):
         try:
             repo = UserRepository()
             users = repo.get_all()
+            admin_count = sum(1 for u in users if u.get('role') == 'admin')
+            viewer_count = sum(1 for u in users if u.get('role') == 'viewer')
+            self.summary.content = summary_bar([
+                metric_tile("المستخدمون", ft.Text(str(len(users)), size=17, weight=ft.FontWeight.BOLD, color=ft.Colors.INDIGO)),
+                metric_tile("المدراء", ft.Text(str(admin_count), size=17, weight=ft.FontWeight.BOLD, color=ft.Colors.RED)),
+                metric_tile("مشاهدة فقط", ft.Text(str(viewer_count), size=17, weight=ft.FontWeight.BOLD, color=ft.Colors.GREY)),
+            ]).content
+            self.summary.bgcolor = ft.Colors.INDIGO_50
+            self.summary.border_radius = 15
+            self.summary.padding = 15
+            self.summary.margin = ft.Margin(left=10, right=10, top=0, bottom=8)
+
             cards = []
             for u in users:
-                role_text = translate('admin') if u['role'] == 'admin' else translate('user') if u['role'] == 'user' else translate('viewer')
-                role_color = ft.Colors.RED if u['role'] == 'admin' else ft.Colors.BLUE if u['role'] == 'user' else ft.Colors.GREY
-
-                card = ft.Card(
-                    content=ft.Container(
-                        content=ft.Column([
-                            ft.Row([
-                                ft.Icon(ft.Icons.PERSON, color=ft.Colors.INDIGO, size=24),
-                                ft.Text(u['username'], size=16, weight=ft.FontWeight.BOLD, expand=True),
-                                ft.Container(
-                                    content=ft.Text(role_text, size=11, color=ft.Colors.WHITE),
-                                    bgcolor=role_color,
-                                    border_radius=15,
-                                    padding=10
-                                )
-                            ]),
-                            ft.Text(u['full_name'] or '', size=13, color=ft.Colors.GREY_600),
-                            ft.Row([
-                                ft.Text(f"تسجيل: {u['created_at'][:10] if u['created_at'] else ''}", size=11, color=ft.Colors.GREY_500),
-                                ft.Text(f"دخول: {u['last_login'][:10] if u['last_login'] else ''}", size=11, color=ft.Colors.GREY_500)
-                            ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
-                            ft.Row([
-                                ft.TextButton(
-                                    content=ft.Row([ft.Icon(ft.Icons.EDIT, size=16), ft.Text("تعديل", size=11)]),
-                                    on_click=lambda e, uid=u['id']: self._edit_user(uid)
-                                ),
-                                ft.TextButton(
-                                    content=ft.Row([ft.Icon(ft.Icons.DELETE, size=16, color=ft.Colors.RED), ft.Text("حذف", size=11, color=ft.Colors.RED)]),
-                                    on_click=lambda e, uid=u['id']: self._delete_user(uid),
-                                    disabled=(u['id'] == 1)
-                                )
-                            ], alignment=ft.MainAxisAlignment.END)
-                        ], spacing=8),
-                        padding=15
-                    ),
+                role_text, role_color, role_icon = self._role_meta(u.get('role'))
+                created = (u.get('created_at') or '')[:10]
+                last_login = (u.get('last_login') or 'لم يسجل بعد')[:10]
+                card = data_card(
+                    ft.Column([
+                        ft.Row([
+                            ft.Container(
+                                content=ft.Icon(role_icon, color=role_color, size=22),
+                                bgcolor=ft.Colors.GREY_100,
+                                border_radius=14,
+                                padding=9,
+                            ),
+                            ft.Column([
+                                ft.Text(u.get('username', ''), size=16, weight=ft.FontWeight.BOLD),
+                                ft.Text(u.get('full_name') or "بدون اسم كامل", size=12, color=ft.Colors.GREY_600),
+                            ], spacing=2, expand=True),
+                            pill(role_text, color=ft.Colors.WHITE, bgcolor=role_color),
+                        ], vertical_alignment=ft.CrossAxisAlignment.CENTER),
+                        ft.Row([
+                            ft.Text(f"تاريخ الإنشاء: {created}", size=11, color=ft.Colors.GREY_500),
+                            ft.Text(f"آخر دخول: {last_login}", size=11, color=ft.Colors.GREY_500),
+                        ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
+                        ft.Row([
+                            action_text_button("تعديل", ft.Icons.EDIT, lambda e, uid=u['id']: self._edit_user(uid)),
+                            action_text_button("حذف", ft.Icons.DELETE, lambda e, uid=u['id']: self._delete_user(uid), color=ft.Colors.RED, visible=(u.get('id') != 1)),
+                        ], alignment=ft.MainAxisAlignment.END),
+                    ], spacing=9),
                     elevation=1,
-                    margin=ft.Margin(left=10, right=10, top=5, bottom=5)
                 )
                 cards.append(card)
-            self.users_list.controls = cards
+            self.users_list.controls = cards or [empty_state("لا يوجد مستخدمون", "استخدم زر الإضافة لإنشاء مستخدم جديد", ft.Icons.GROUP_OFF)]
             self._page.update()
         except Exception as ex:
             self._show_snackbar(f"خطأ في تحميل المستخدمين: {str(ex)}", True)
@@ -98,20 +111,19 @@ class UsersMobileView(ft.Column):
 
     def _delete_user(self, user_id):
         def confirm_delete(e):
-            repo = UserRepository()
-            if repo.delete(user_id):
-                self._show_snackbar("تم حذف المستخدم", is_error=False)
-                self._load_users()
-            else:
-                self._show_snackbar("فشل الحذف", True)
-            self._close_dialog(dlg)
+            try:
+                repo = UserRepository()
+                if repo.delete(user_id):
+                    self._show_snackbar("تم حذف المستخدم", is_error=False)
+                    self._load_users()
+                else:
+                    self._show_snackbar("فشل الحذف", True)
+            finally:
+                self._close_dialog(dlg)
         dlg = ft.AlertDialog(
             title=ft.Text(translate('confirm_delete')),
             content=ft.Text("هل أنت متأكد من حذف هذا المستخدم؟"),
-            actions=[
-                ft.TextButton("نعم", on_click=confirm_delete),
-                ft.TextButton("لا", on_click=lambda e: self._close_dialog(dlg))
-            ]
+            actions=[ft.TextButton("نعم", on_click=confirm_delete), ft.TextButton("لا", on_click=lambda e: self._close_dialog(dlg))],
         )
         open_control(self._page, dlg)
 

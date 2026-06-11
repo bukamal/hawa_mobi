@@ -1,11 +1,13 @@
 # -*- coding: utf-8 -*-
 import flet as ft
 from views.flet_compat import open_control, close_control
+from views.ui_kit import page_header, data_card, show_snackbar, empty_state, info_banner, responsive_wrap
 from database import SettingsRepository
 from currency import currency
 from i18n.translator import translate, set_language
 from config import get_company_info, save_company_info
 from database.connection import DatabaseConnection
+from views.ui_runtime import network_status_chip
 import datetime
 import os
 import shutil
@@ -23,20 +25,28 @@ class SettingsMobileView(ft.Column):
         self.rate_fields = {}
 
         self.controls = [
-            ft.Text(translate('settings'), size=20, weight=ft.FontWeight.BOLD),
-            ft.ExpansionTile(title=ft.Text("💰 العملات"), expanded=True, controls=[self._currency_tab()]),
-            ft.ExpansionTile(title=ft.Text("💱 أسعار الصرف"), controls=[self._rates_tab()]),
-            ft.ExpansionTile(title=ft.Text("🏢 الشركة"), controls=[self._company_tab()]),
-            ft.ExpansionTile(title=ft.Text("🌐 اللغة والمظهر"), controls=[self._lang_theme_tab()]),
-            ft.ExpansionTile(title=ft.Text("🌐 الشبكة"), controls=[self._network_tab()]),
-            ft.ExpansionTile(title=ft.Text("🔄 النسخ الاحتياطي"), controls=[self._backup_tab()]),
+            page_header(translate('settings'), ft.Icons.SETTINGS, subtitle="إعدادات النظام، الشبكة، النسخ الاحتياطي والعملات"),
+            self._settings_tile("💰 العملات", self._currency_tab(), expanded=True),
+            self._settings_tile("💱 أسعار الصرف", self._rates_tab()),
+            self._settings_tile("🏢 الشركة", self._company_tab()),
+            self._settings_tile("🌐 اللغة والمظهر", self._lang_theme_tab()),
+            self._settings_tile("🌐 الشبكة", self._network_tab()),
+            self._settings_tile("🔄 النسخ الاحتياطي", self._backup_tab()),
         ]
 
+    def _settings_tile(self, title, content, expanded=False):
+        return data_card(
+            ft.ExpansionTile(
+                title=ft.Text(title, size=15, weight=ft.FontWeight.BOLD),
+                expanded=expanded,
+                controls=[ft.Container(content=content, padding=ft.Padding(left=4, right=4, top=6, bottom=4))],
+            ),
+            padding=0,
+            elevation=1,
+        )
+
     def _show_snackbar(self, message, is_error=False):
-        snack = ft.SnackBar(content=ft.Text(message, size=13), bgcolor=ft.Colors.RED if is_error else ft.Colors.GREEN, duration=3000)
-        self._page.overlay.append(snack)
-        snack.open = True
-        self._page.update()
+        show_snackbar(self._page, message, is_error)
 
     def _currency_tab(self):
         field_width = 280
@@ -289,20 +299,31 @@ class SettingsMobileView(ft.Column):
             width=350,
             hint_text="http://192.168.1.100:8000"
         )
-        test_btn = ft.FilledButton(
+        self.network_test_btn = ft.FilledButton(
             content=ft.Row([ft.Icon(ft.Icons.NETWORK_CHECK), ft.Text("اختبار الاتصال")]),
             on_click=self._test_connection
         )
-        save_btn = ft.FilledButton(
+        self.network_save_btn = ft.FilledButton(
             content=ft.Text("حفظ"),
             bgcolor=ft.Colors.INDIGO,
             color=ft.Colors.WHITE,
             on_click=self._save_network
         )
         return ft.Column([
+            ft.Container(
+                content=ft.Row([
+                    ft.Text("الحالة الحالية", size=13, weight=ft.FontWeight.BOLD, expand=True),
+                    network_status_chip(),
+                ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
+                bgcolor=ft.Colors.WHITE,
+                border_radius=12,
+                padding=12,
+            ),
+            info_banner("نسخة APK تعمل كمحلي أو عميل فقط. شغّل الخادم من مجلد server/ على جهاز آخر.", icon=ft.Icons.PHONE_ANDROID),
             self.mode_dropdown,
             self.server_url,
-            ft.Row([test_btn, save_btn], spacing=10)
+            ft.Text("في وضع العميل استخدم IP جهاز الخادم داخل الشبكة، مثل http://192.168.1.100:8000، وليس localhost.", size=11, color=ft.Colors.GREY_600),
+            responsive_wrap([self.network_test_btn, self.network_save_btn], spacing=10)
         ], spacing=15)
 
     def _normalize_server_url(self):
@@ -319,21 +340,39 @@ class SettingsMobileView(ft.Column):
 
     def _test_connection(self, e):
         try:
+            if hasattr(self, 'network_test_btn'):
+                self.network_test_btn.disabled = True
+                self.network_test_btn.content = ft.Row([ft.ProgressRing(width=16, height=16), ft.Text("جاري الاختبار")])
+                self._page.update()
             from services.network_service import NetworkService
             result = NetworkService.check_connection(self.server_url.value or "")
             self._show_snackbar(("✅ " if result.ok else "❌ ") + result.message, is_error=not result.ok)
         except Exception as ex:
             self._show_snackbar(f"❌ فشل الاتصال: {str(ex)}", True)
+        finally:
+            if hasattr(self, 'network_test_btn'):
+                self.network_test_btn.disabled = False
+                self.network_test_btn.content = ft.Row([ft.Icon(ft.Icons.NETWORK_CHECK), ft.Text("اختبار الاتصال")])
+                self._page.update()
 
     def _save_network(self, e):
         mode_map = {"محلي": "local", "عميل": "client"}
         new_mode = mode_map.get(self.mode_dropdown.value, "local")
         try:
+            if hasattr(self, 'network_save_btn'):
+                self.network_save_btn.disabled = True
+                self.network_save_btn.content = ft.Row([ft.ProgressRing(width=16, height=16), ft.Text("جاري الحفظ")])
+                self._page.update()
             from services.network_service import NetworkService
             NetworkService.save_mode(new_mode, self.server_url.value or "")
             self._show_snackbar("تم حفظ إعدادات الشبكة", is_error=False)
         except Exception as ex:
             self._show_snackbar(f"❌ {str(ex)}", True)
+        finally:
+            if hasattr(self, 'network_save_btn'):
+                self.network_save_btn.disabled = False
+                self.network_save_btn.content = ft.Text("حفظ")
+                self._page.update()
 
     def _backup_tab(self):
         backup_btn = ft.FilledButton(

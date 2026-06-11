@@ -4,12 +4,15 @@
 The module is intentionally dependency-light and contains no database/network logic.
 It is safe for APK builds and keeps visual behavior consistent across screens.
 """
+from __future__ import annotations
+
 import flet as ft
 
 PRIMARY = ft.Colors.INDIGO
 PAGE_BG = ft.Colors.GREY_50
 CARD_BG = ft.Colors.WHITE
 MUTED = ft.Colors.GREY_600
+BORDER = ft.Colors.GREY_200
 
 
 def show_snackbar(page, message, is_error=False, duration=3000):
@@ -68,7 +71,7 @@ def summary_bar(items, visible=True, bgcolor=ft.Colors.INDIGO_50):
     controls = []
     for idx, item in enumerate(items):
         if idx:
-            controls.append(ft.VerticalDivider(width=1, color=ft.Colors.GREY_300))
+            controls.append(ft.VerticalDivider(width=1, color=BORDER))
         controls.append(item)
     return ft.Container(
         content=ft.Row(controls, alignment=ft.MainAxisAlignment.SPACE_AROUND),
@@ -113,4 +116,96 @@ def data_card(content, padding=15, elevation=2, margin=None):
         content=ft.Container(content=content, padding=padding, bgcolor=CARD_BG),
         elevation=elevation,
         margin=margin or ft.Margin(left=10, right=10, top=5, bottom=5),
+    )
+
+
+def pill(text, color=PRIMARY, bgcolor=None, icon=None, size=12, padding=None):
+    controls = []
+    if icon:
+        controls.append(ft.Icon(icon, size=14, color=color))
+    controls.append(ft.Text(str(text), size=size, weight=ft.FontWeight.BOLD, color=color))
+    return ft.Container(
+        content=ft.Row(controls, spacing=4, tight=True),
+        bgcolor=bgcolor or ft.Colors.INDIGO_50,
+        border_radius=20,
+        padding=padding or ft.Padding(left=10, right=10, top=5, bottom=5),
+    )
+
+
+def amount_pill(text, color, light_bg=None):
+    return pill(
+        text,
+        color=ft.Colors.WHITE,
+        bgcolor=light_bg or color,
+        size=12,
+        padding=ft.Padding(left=12, right=12, top=6, bottom=6),
+    )
+
+
+def stat_card(title, value, color=PRIMARY, icon=None, subtitle=None):
+    return data_card(
+        ft.Row([
+            ft.Column([
+                ft.Text(title, size=11, color=MUTED),
+                ft.Text(value, size=18, weight=ft.FontWeight.BOLD, color=color),
+                ft.Text(subtitle or "", size=11, color=ft.Colors.GREY_500, visible=bool(subtitle)),
+            ], expand=True, spacing=3),
+            ft.Container(
+                content=ft.Icon(icon or ft.Icons.INSIGHTS, color=color, size=24),
+                bgcolor=ft.Colors.GREY_100,
+                border_radius=14,
+                padding=10,
+            ),
+        ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
+        padding=14,
+        elevation=1,
+        margin=ft.Margin(left=10, right=10, top=3, bottom=3),
+    )
+
+
+def section_label(text, icon=None):
+    return ft.Row([
+        ft.Icon(icon, size=16, color=PRIMARY) if icon else ft.Container(width=0, height=0),
+        ft.Text(text, size=13, weight=ft.FontWeight.BOLD, color=ft.Colors.GREY_700),
+    ], spacing=6)
+
+
+def key_value_tile(label, value, color=None, expand=True):
+    return ft.Column([
+        ft.Text(label, size=11, color=MUTED),
+        ft.Text(str(value), size=14, color=color, weight=ft.FontWeight.BOLD),
+    ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, expand=expand, spacing=2)
+
+
+def responsive_wrap(controls, spacing=10, run_spacing=10):
+    """Wrap controls for narrow APK screens without horizontal overflow."""
+    return ft.Row(
+        controls=list(controls),
+        spacing=spacing,
+        run_spacing=run_spacing,
+        wrap=True,
+        alignment=ft.MainAxisAlignment.START,
+    )
+
+
+def set_control_busy(control, busy=True, label=None):
+    """Disable a button/control while an action is running. Returns the control."""
+    if control is None:
+        return None
+    try:
+        control.disabled = bool(busy)
+        if label is not None and hasattr(control, "text"):
+            control.text = label
+    except Exception:
+        pass
+    return control
+
+
+def info_banner(message, icon=ft.Icons.INFO_OUTLINE, color=PRIMARY, bgcolor=ft.Colors.INDIGO_50):
+    return ft.Container(
+        content=ft.Row([ft.Icon(icon, color=color, size=18), ft.Text(str(message), size=12, color=ft.Colors.GREY_700, expand=True)]),
+        bgcolor=bgcolor,
+        border_radius=12,
+        padding=12,
+        margin=ft.Margin(left=10, right=10, top=4, bottom=4),
     )

@@ -101,18 +101,24 @@ def main(page: ft.Page):
 
     def show_splash():
         page.controls.clear()
-        splash = SplashView(page=page, on_complete=check_license, on_error=lambda msg: show_error(msg))
+        splash = SplashView(page=page, on_complete=after_splash, on_error=lambda msg: show_error(msg, retry=show_splash))
         page.add(splash)
 
-    def check_license():
+    def after_splash(result=None):
         try:
-            activated, _ = check_activation()
-            if activated:
-                show_login()
-            else:
+            result = result or {}
+            if not result.get('activated'):
                 show_activation()
+                return
+            if result.get('session') and UserSession.is_authenticated():
+                if UserSession.force_password_change():
+                    show_change_password()
+                else:
+                    show_main_app()
+                return
+            show_login()
         except Exception as e:
-            handle_exception(page, e, "خطأ في التحقق من الترخيص")
+            handle_exception(page, e, "خطأ في التحقق من بدء التشغيل")
 
     def show_activation():
         page.controls.clear()
@@ -138,9 +144,14 @@ def main(page: ft.Page):
 
     def show_main_app():
         page.controls.clear()
-        app = AppLayout(page=page, on_logout=close_app)
+        app = AppLayout(page=page, on_logout=logout)
         page.add(app)
         start_license_checker(24, on_license_invalid)
+
+    def logout():
+        stop_license_checker()
+        UserSession.logout()
+        show_login()
 
     def on_license_invalid():
         def close_app_after_dialog(e):
@@ -164,19 +175,21 @@ def main(page: ft.Page):
     def close_app():
         asyncio.create_task(close_app_async())
 
-    def show_error(message):
+    def show_error(message, retry=None):
         print(f"[ERROR] عرض خطأ فادح: {message}")
         page.controls.clear()
+        controls = [
+            ft.Icon(ft.Icons.ERROR_OUTLINE, size=64, color=ft.Colors.RED),
+            ft.Text("تعذر بدء التطبيق", size=24, weight=ft.FontWeight.BOLD),
+            ft.Text(message, size=14, text_align=ft.TextAlign.CENTER),
+        ]
+        if retry:
+            controls.append(ft.FilledButton("إعادة المحاولة", on_click=lambda _: retry(), bgcolor=ft.Colors.INDIGO, color=ft.Colors.WHITE))
+        controls.append(ft.TextButton("إغلاق", on_click=lambda _: close_app()))
         page.add(
             ft.Container(
-                content=ft.Column([
-                    ft.Icon(ft.Icons.ERROR_OUTLINE, size=64, color=ft.Colors.RED),
-                    ft.Text("خطأ فادح", size=24, weight=ft.FontWeight.BOLD),
-                    ft.Text(message, size=14, text_align=ft.TextAlign.CENTER),
-                    ft.FilledButton("إغلاق", on_click=lambda _: close_app(),
-                                    bgcolor=ft.Colors.RED, color=ft.Colors.WHITE)
-                ], alignment=ft.MainAxisAlignment.CENTER, horizontal_alignment=ft.CrossAxisAlignment.CENTER),
-                alignment=ft.Alignment.CENTER, expand=True
+                content=ft.Column(controls, alignment=ft.MainAxisAlignment.CENTER, horizontal_alignment=ft.CrossAxisAlignment.CENTER),
+                alignment=ft.Alignment.CENTER, expand=True, padding=24
             )
         )
 

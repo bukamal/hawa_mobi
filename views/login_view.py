@@ -1,68 +1,48 @@
 # -*- coding: utf-8 -*-
+from __future__ import annotations
+
+import time
 import flet as ft
 from database import UserRepository
-from database.connection import DatabaseConnection
+from database.connection import DatabaseConnection, get_setting, set_setting
 from auth.session import UserSession
 from i18n.translator import translate, set_language
 
+
 class LoginView(ft.Container):
+    MAX_ATTEMPTS = 5
+    LOCK_SECONDS = 60
+
     def __init__(self, page, on_login_success, on_exit):
         super().__init__()
         self._page = page
         self.on_login_success = on_login_success
         self.on_exit = on_exit
+        self._busy = False
+        self._failed_attempts = 0
+        self._locked_until = 0.0
         self.expand = True
         self.alignment = ft.Alignment.CENTER
         self.padding = 30
-        
-        self.username = ft.Dropdown(
-            label=translate('username'),
-            hint_text="اختر أو اكتب اسم المستخدم",
-            width=300,
-            options=[],
-            editable=True
-        )
-        
-        self.password = ft.TextField(
-            label=translate('password'),
-            password=True,
-            can_reveal_password=True,
-            width=300
-        )
+
+        self.network_status = ft.Text('', size=12, color=ft.Colors.GREY_700, text_align=ft.TextAlign.CENTER)
+        self.username = ft.Dropdown(label=translate('username'), hint_text='اختر أو اكتب اسم المستخدم', width=300, options=[], editable=True)
+        self.password = ft.TextField(label=translate('password'), password=True, can_reveal_password=True, width=300)
         self.password.on_submit = self._do_login
-        
-        self.error_msg = ft.Text("", color=ft.Colors.RED, size=12)
-        
-        self.login_btn = ft.FilledButton(
-            content=ft.Text(translate('login'), size=16, weight=ft.FontWeight.BOLD),
-            width=300,
-            height=45,
-            bgcolor=ft.Colors.INDIGO,
-            color=ft.Colors.WHITE,
-            on_click=self._do_login
-        )
-        
-        self.lang_dropdown = ft.Dropdown(
-            label="اللغة",
-            width=120,
-            value="العربية",
-            options=[
-                ft.dropdown.Option("العربية"),
-                ft.dropdown.Option("English"),
-                ft.dropdown.Option("Français")
-            ]
-        )
+        self.error_msg = ft.Text('', color=ft.Colors.RED, size=12, text_align=ft.TextAlign.CENTER)
+        self.login_btn = ft.FilledButton(content=ft.Text(translate('login'), size=16, weight=ft.FontWeight.BOLD), width=300, height=45, bgcolor=ft.Colors.INDIGO, color=ft.Colors.WHITE, on_click=self._do_login)
+        self.lang_dropdown = ft.Dropdown(label='اللغة', width=120, value='العربية', options=[ft.dropdown.Option('العربية'), ft.dropdown.Option('English'), ft.dropdown.Option('Français')])
         self.lang_dropdown.on_change = self._change_language
-        
-        self.remember = ft.Checkbox(label="تذكرني", value=False)
-        
+        self.remember = ft.Checkbox(label='تذكر اسم المستخدم', value=(get_setting('login/remember_username', 'false') == 'true'))
+
         self.content = ft.Card(
             content=ft.Container(
                 content=ft.Column(
                     controls=[
-                        ft.Text("🏢 هوى الشام", size=32, weight=ft.FontWeight.BOLD, color=ft.Colors.INDIGO),
-                        ft.Text("نظام الحسابات الداخلية", size=13, color=ft.Colors.GREY_600),
-                        ft.Container(height=20),
+                        ft.Text('🏢 هوى الشام', size=32, weight=ft.FontWeight.BOLD, color=ft.Colors.INDIGO),
+                        ft.Text('نظام الحسابات الداخلية', size=13, color=ft.Colors.GREY_600),
+                        self.network_status,
+                        ft.Container(height=14),
                         self.username,
                         ft.Container(height=10),
                         self.password,
@@ -71,72 +51,129 @@ class LoginView(ft.Container):
                         self.login_btn,
                         ft.Container(height=10),
                         ft.Row([self.remember, self.lang_dropdown], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
-                        ft.TextButton(content=ft.Text("🔄 تبديل الحساب / مسح البيانات", size=12), on_click=self._switch_account)
+                        ft.TextButton(content=ft.Text('🔄 تبديل الحساب / مسح التذكر', size=12), on_click=self._switch_account),
                     ],
                     alignment=ft.MainAxisAlignment.CENTER,
                     horizontal_alignment=ft.CrossAxisAlignment.CENTER,
-                    tight=True
+                    tight=True,
                 ),
                 padding=30,
-                width=380
+                width=390,
             ),
-            elevation=5
+            elevation=5,
         )
         self._populate_users()
+        self._update_network_status()
+
+    def _update_network_status(self):
+        db = DatabaseConnection()
+        if db.is_remote():
+            self.network_status.value = f'وضع عميل شبكة: {db.server_url}'
+            self.network_status.color = ft.Colors.BLUE_700
+        else:
+            self.network_status.value = 'وضع محلي على هذا الجهاز'
+            self.network_status.color = ft.Colors.GREEN_700
 
     def _populate_users(self):
         db = DatabaseConnection()
+        remembered = get_setting('login/last_username', '') if self.remember.value else ''
         if db.is_remote():
-            self.username.options = [ft.dropdown.Option("")]; self.username.value = ""
+            self.username.options = [ft.dropdown.Option(remembered or '')]
+            self.username.value = remembered or ''
         else:
             try:
-                repo = UserRepository()
-                users = repo.get_all()
+                users = UserRepository().get_all()
                 self.username.options = [ft.dropdown.Option(u['username']) for u in users]
-            except: pass
+                if remembered:
+                    self.username.value = remembered
+            except Exception:
+                self.username.options = []
 
     def _change_language(self, e):
-        lang_map = {"العربية":"ar","English":"en","Français":"fr"}
-        set_language(lang_map.get(self.lang_dropdown.value,"ar"))
+        lang_map = {'العربية': 'ar', 'English': 'en', 'Français': 'fr'}
+        set_language(lang_map.get(self.lang_dropdown.value, 'ar'))
         self.username.label = translate('username')
         self.password.label = translate('password')
         self.login_btn.content.value = translate('login')
         self._page.update()
 
     def _switch_account(self, e):
-        self.username.value = ""; self.password.value = ""; self.remember.value = False
-        self.error_msg.value = "تم مسح بيانات المستخدم"; self.error_msg.color = ft.Colors.GREEN
+        self.username.value = ''
+        self.password.value = ''
+        self.remember.value = False
+        set_setting('login/remember_username', 'false')
+        set_setting('login/last_username', '')
+        self.error_msg.value = 'تم مسح اسم المستخدم المحفوظ'
+        self.error_msg.color = ft.Colors.GREEN
         self._populate_users()
         self._page.update()
 
+    def _set_busy(self, busy: bool):
+        self._busy = busy
+        self.login_btn.disabled = busy
+        try:
+            self.login_btn.content.value = 'جاري الدخول...' if busy else translate('login')
+        except Exception:
+            pass
+        self.username.disabled = busy
+        self.password.disabled = busy
+
+    def _locked_message(self) -> str | None:
+        remaining = int(self._locked_until - time.time())
+        if remaining > 0:
+            return f'تم قفل تسجيل الدخول مؤقتاً. حاول بعد {remaining} ثانية.'
+        return None
+
+    def _record_failure(self):
+        self._failed_attempts += 1
+        if self._failed_attempts >= self.MAX_ATTEMPTS:
+            self._locked_until = time.time() + self.LOCK_SECONDS
+            self._failed_attempts = 0
+
     def _do_login(self, e):
-        username = (self.username.value or "").strip()
-        password = self.password.value or ""
-        if not username or not password:
-            self.error_msg.value = "يرجى إدخال اسم المستخدم وكلمة المرور"
+        if self._busy:
+            return
+        locked = self._locked_message()
+        if locked:
+            self.error_msg.value = locked
             self.error_msg.color = ft.Colors.RED
             self._page.update()
             return
-        db = DatabaseConnection()
-        if db.is_remote():
-            try:
-                rest = db.get_rest_client()
-                user = rest.login(username, password)
-                UserSession.login(user)
-                self.on_login_success(user)
-            except Exception as e:
-                self.error_msg.value = f"فشل تسجيل الدخول: {str(e)}"
-                self.error_msg.color = ft.Colors.RED
-                self.password.value = ""
-                self._page.update()
-        else:
-            repo = UserRepository()
-            user = repo.authenticate(username, password)
-            if user:
-                UserSession.login(user)
-                self.on_login_success(user)
+        username = (self.username.value or '').strip()
+        password = self.password.value or ''
+        if not username or not password:
+            self.error_msg.value = 'يرجى إدخال اسم المستخدم وكلمة المرور'
+            self.error_msg.color = ft.Colors.RED
+            self._page.update()
+            return
+        self._set_busy(True)
+        self.error_msg.value = 'جاري التحقق...'
+        self.error_msg.color = ft.Colors.BLUE
+        self._page.update()
+        try:
+            db = DatabaseConnection()
+            if db.is_remote():
+                user = db.get_rest_client().login(username, password)
             else:
-                self.error_msg.value = "اسم المستخدم أو كلمة المرور غير صحيحة"
+                user = UserRepository().authenticate(username, password)
+            if not user:
+                self._record_failure()
+                self.error_msg.value = 'اسم المستخدم أو كلمة المرور غير صحيحة'
                 self.error_msg.color = ft.Colors.RED
-                self.password.value = ""
+                self.password.value = ''
+                return
+            UserSession.login(user)
+            set_setting('login/remember_username', 'true' if self.remember.value else 'false')
+            set_setting('login/last_username', username if self.remember.value else '')
+            self.on_login_success(user)
+        except Exception as exc:
+            self._record_failure()
+            self.error_msg.value = f'فشل تسجيل الدخول: {exc}'
+            self.error_msg.color = ft.Colors.RED
+            self.password.value = ''
+        finally:
+            self._set_busy(False)
+            try:
                 self._page.update()
+            except Exception:
+                pass

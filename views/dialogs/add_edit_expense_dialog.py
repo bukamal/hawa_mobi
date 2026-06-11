@@ -6,6 +6,7 @@ from auth.session import UserSession
 from i18n.translator import translate
 from currency import currency
 from views.flet_compat import open_control, close_control
+from views.dialogs.dialog_kit import dialog_title, dialog_body, cancel_button, save_button, show_snackbar, set_button_busy, normalize_text, parse_non_negative_amount
 
 class AddEditExpenseDialog(ft.AlertDialog):
     def __init__(self, page, on_save=None, expense=None, company_name=None):
@@ -117,7 +118,7 @@ class AddEditExpenseDialog(ft.AlertDialog):
         self.exchange_rate_text = ft.Text("", size=12, color=ft.Colors.GREY_600, italic=True)
         self.converted_amount_text = ft.Text("", size=14, weight=ft.FontWeight.BOLD, color=ft.Colors.INDIGO)
 
-        content = ft.Column(
+        content = dialog_body(
             controls=[
                 self.company_field,
                 ft.Row([self.amount_field, self.currency_dropdown], spacing=10, wrap=True),
@@ -131,24 +132,19 @@ class AddEditExpenseDialog(ft.AlertDialog):
             ],
             spacing=15,
             width=dialog_width - 10,
-            scroll=ft.ScrollMode.AUTO,
             height=dialog_height - 100
         )
 
-        self.title = ft.Text(
+        self._saving = False
+        self.save_btn = save_button(translate('save'), self._save)
+        self.title = dialog_title(
             translate('edit') if self.expense_id is not None else translate('add'),
-            size=18,
-            weight=ft.FontWeight.BOLD
+            ft.Icons.EDIT_NOTE
         )
         self.content = content
         self.actions = [
-            ft.TextButton(translate('cancel'), on_click=lambda e: self._close()),
-            ft.FilledButton(
-                translate('save'),
-                on_click=self._save,
-                bgcolor=ft.Colors.INDIGO,
-                color=ft.Colors.WHITE
-            )
+            cancel_button(translate('cancel'), lambda e: self._close()),
+            self.save_btn
         ]
         self.actions_alignment = ft.MainAxisAlignment.END
         self.inset_padding = 20
@@ -177,10 +173,7 @@ class AddEditExpenseDialog(ft.AlertDialog):
         close_control(self._page, self)
 
     def _show_snackbar(self, message, is_error=False):
-        snack = ft.SnackBar(content=ft.Text(message, size=13), bgcolor=ft.Colors.RED if is_error else ft.Colors.GREEN, duration=3000)
-        self._page.overlay.append(snack)
-        snack.open = True
-        self._page.update()
+        show_snackbar(self._page, message, is_error)
 
     def _update_conversion(self, e):
         try:
@@ -203,16 +196,16 @@ class AddEditExpenseDialog(ft.AlertDialog):
         self._page.update()
 
     def _save(self, e):
-        company = self.company_field.value.strip()
+        if self._saving:
+            return
+        company = normalize_text(self.company_field.value)
         if not company:
             self._show_snackbar("اسم الشركة مطلوب")
             return
         try:
-            amount = float(self.amount_field.value)
-            if amount < 0:
-                raise ValueError
-        except:
-            self._show_snackbar("المبلغ غير صالح. يُسمح بالصفر فقط لحفظ العملية بانتظار الدفع.")
+            amount = parse_non_negative_amount(self.amount_field.value)
+        except Exception as ex:
+            self._show_snackbar(f"{str(ex)}. يُسمح بالصفر فقط لحفظ العملية بانتظار الدفع.", True)
             return
 
         type_val = 'incoming' if self.type_dropdown.value == translate('incoming') else 'outgoing'
@@ -226,6 +219,12 @@ class AddEditExpenseDialog(ft.AlertDialog):
         user_id = user['id'] if user else None
 
         repo = ExpenseRepository()
+        self._saving = True
+        set_button_busy(self.save_btn, True, translate('save'))
+        try:
+            self._page.update()
+        except Exception:
+            pass
         try:
             if self.expense_id is not None:
                 repo.update(self.expense_id, company, amount, type_val, date, notes, currency_code, user_id, payment_due_date, payment_note)
@@ -237,3 +236,10 @@ class AddEditExpenseDialog(ft.AlertDialog):
             self._show_snackbar("📝 تم حفظ العملية بانتظار الدفع" if amount == 0 else "تم الحفظ بنجاح", is_error=False)
         except Exception as ex:
             self._show_snackbar(f"فشل الحفظ: {str(ex)}", True)
+        finally:
+            self._saving = False
+            set_button_busy(self.save_btn, False, translate('save'))
+            try:
+                self._page.update()
+            except Exception:
+                pass

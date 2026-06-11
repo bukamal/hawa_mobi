@@ -6,7 +6,7 @@ from i18n.translator import translate
 from datetime import datetime, timedelta
 from collections import defaultdict
 from views.flet_compat import open_control
-from views.ui_kit import show_snackbar, page_header, data_card, empty_state
+from views.ui_kit import show_snackbar, page_header, stat_card, empty_state
 
 class DashboardMobileView(ft.Column):
     def __init__(self, page):
@@ -125,21 +125,8 @@ class DashboardMobileView(ft.Column):
             return None, None
 
     def _create_card(self, title, value, color=ft.Colors.INDIGO, icon=None):
-        return ft.Card(
-            content=ft.Container(
-                content=ft.Row([
-                    ft.Column([
-                        ft.Text(title, size=11, color=ft.Colors.GREY_600),
-                        ft.Text(value, size=18, weight=ft.FontWeight.BOLD, color=color)
-                    ], expand=True),
-                    ft.Icon(icon or (ft.Icons.TRENDING_UP if color == ft.Colors.GREEN else ft.Icons.TRENDING_DOWN),
-                           color=color, size=24)
-                ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
-                padding=15
-            ),
-            elevation=1,
-            margin=ft.Margin(left=5, right=5, top=3, bottom=3)
-        )
+        resolved_icon = icon or (ft.Icons.TRENDING_UP if color == ft.Colors.GREEN else ft.Icons.TRENDING_DOWN)
+        return stat_card(title, value, color=color, icon=resolved_icon)
 
     def _refresh(self, e):
         self._load_data()

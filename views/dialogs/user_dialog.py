@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 import flet as ft
 from views.flet_compat import open_control, close_control
+from views.dialogs.dialog_kit import dialog_title, dialog_body, cancel_button, save_button, show_snackbar, set_button_busy, normalize_text
 from database import UserRepository
 from auth.session import UserSession
 from i18n.translator import translate
@@ -54,12 +55,10 @@ class UserDialog(ft.AlertDialog):
             visible=bool(user_id)
         )
 
-        self.title = ft.Text(
-            translate('add') if not user_id else translate('edit'),
-            size=18,
-            weight=ft.FontWeight.BOLD
-        )
-        self.content = ft.Column(
+        self._saving = False
+        self.save_btn = save_button(translate('save'), self._save)
+        self.title = dialog_title(translate('add') if not user_id else translate('edit'), ft.Icons.PERSON)
+        self.content = dialog_body(
             controls=[
                 self.username,
                 self.fullname,
@@ -69,12 +68,11 @@ class UserDialog(ft.AlertDialog):
                 self.change_pwd_btn
             ],
             spacing=15,
-            width=dialog_width,
-            scroll=ft.ScrollMode.AUTO
+            width=dialog_width
         )
         self.actions = [
-            ft.TextButton(translate('cancel'), on_click=lambda e: self._close()),
-            ft.FilledButton(translate('save'), on_click=self._save, bgcolor=ft.Colors.INDIGO, color=ft.Colors.WHITE)
+            cancel_button(translate('cancel'), lambda e: self._close()),
+            self.save_btn
         ]
         self.actions_alignment = ft.MainAxisAlignment.END
         self.inset_padding = 20
@@ -87,10 +85,7 @@ class UserDialog(ft.AlertDialog):
         close_control(self._page, self)
 
     def _show_snackbar(self, message, is_error=False):
-        snack = ft.SnackBar(content=ft.Text(message, size=13), bgcolor=ft.Colors.RED if is_error else ft.Colors.GREEN, duration=3000)
-        self._page.overlay.append(snack)
-        snack.open = True
-        self._page.update()
+        show_snackbar(self._page, message, is_error)
 
     def _load_user(self):
         try:
@@ -105,14 +100,22 @@ class UserDialog(ft.AlertDialog):
             self._show_snackbar(f"خطأ في تحميل البيانات: {str(ex)}", True)
 
     def _save(self, e):
-        username = self.username.value.strip()
-        full_name = self.fullname.value.strip()
+        if self._saving:
+            return
+        username = normalize_text(self.username.value)
+        full_name = normalize_text(self.fullname.value)
         role_map = {translate('admin'):'admin', translate('user'):'user', translate('viewer'):'viewer'}
         role = role_map.get(self.role.value, 'user')
         if not username:
             self._show_snackbar("اسم المستخدم مطلوب")
             return
         repo = UserRepository()
+        self._saving = True
+        set_button_busy(self.save_btn, True, translate('save'))
+        try:
+            self._page.update()
+        except Exception:
+            pass
         try:
             if not self.user_id:
                 password = self.password.value
@@ -133,6 +136,13 @@ class UserDialog(ft.AlertDialog):
                 self.on_save()
         except Exception as ex:
             self._show_snackbar(f"خطأ: {str(ex)}", True)
+        finally:
+            self._saving = False
+            set_button_busy(self.save_btn, False, translate('save'))
+            try:
+                self._page.update()
+            except Exception:
+                pass
 
     def _change_password(self, e):
         from views.dialogs.change_password_dialog import ChangePasswordDialog

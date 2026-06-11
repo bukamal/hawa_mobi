@@ -70,3 +70,37 @@ def start_license_checker(interval_hours: int = 24, on_invalid: Callable = None)
 def stop_license_checker():
     global _license_checker_stop
     _license_checker_stop = True
+
+
+def get_license_details() -> dict:
+    """Return safe license metadata for UI screens."""
+    device_id = get_device_id()
+    details = {
+        'activated': False,
+        'message': 'لم يتم التفعيل',
+        'device_id': device_id,
+        'expiration': '',
+        'activated_at': '',
+        'key_preview': '',
+    }
+    if not os.path.exists(LICENSE_FILE):
+        return details
+    try:
+        with open(LICENSE_FILE, 'r') as f:
+            encrypted = f.read().strip()
+        data = _decrypt_license(encrypted, device_id)
+        if not data or data.get('device') != device_id:
+            details['message'] = 'ترخيص غير صالح لهذا الجهاز'
+            return details
+        key = str(data.get('key', ''))
+        details.update({
+            'activated': True,
+            'message': 'الترخيص مفعل',
+            'expiration': str(data.get('expiration') or ''),
+            'activated_at': str(data.get('activated_at') or ''),
+            'key_preview': ('****-' + key[-4:]) if len(key) >= 4 else '****',
+        })
+        return details
+    except Exception as exc:
+        details['message'] = str(exc)
+        return details
