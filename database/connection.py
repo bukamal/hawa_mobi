@@ -63,7 +63,9 @@ class DatabaseConnection:
             try:
                 from auth.session import UserSession
                 token = UserSession.get_auth_token()
-                if token and not self._rest_client.token:
+                if not token:
+                    token = _get_local_setting_direct('auth/network_token', '')
+                if token:
                     self._rest_client.set_token(token)
             except Exception:
                 pass
@@ -262,7 +264,7 @@ class DatabaseConnection:
             self._rest_client = RestClient(self.server_url)
             try:
                 from auth.session import UserSession
-                token = UserSession.get_auth_token()
+                token = UserSession.get_auth_token() or _get_local_setting_direct('auth/network_token', '')
                 if token:
                     self._rest_client.set_token(token)
             except Exception:
@@ -294,7 +296,7 @@ def _set_local_setting_direct(key: str, value: str):
 
 
 def get_setting(key: str, default=None):
-    if str(key).startswith('network/'):
+    if str(key).startswith('network/') or str(key).startswith('auth/'):
         return _get_local_setting_direct(key, default)
     return DatabaseConnection().get_setting(key, default)
 
@@ -303,7 +305,7 @@ def set_setting(key: str, value: str):
     # network/mode and network/server_url are bootstrap settings. They must be
     # written locally even while the app is currently in client mode, otherwise
     # switching back/forth can try to call a remote server before the mode exists.
-    if str(key).startswith('network/'):
+    if str(key).startswith('network/') or str(key).startswith('auth/'):
         _set_local_setting_direct(key, value)
         return
     return DatabaseConnection().set_setting(key, value)

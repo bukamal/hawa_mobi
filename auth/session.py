@@ -5,6 +5,14 @@ import time
 from typing import Optional, Dict
 
 
+def _persist_network_token(token: str) -> None:
+    try:
+        from database.connection import _set_local_setting_direct
+        _set_local_setting_direct('auth/network_token', token or '')
+    except Exception:
+        pass
+
+
 class UserSession:
     """In-memory session state.
 
@@ -26,6 +34,8 @@ class UserSession:
         token_ttl = clean_user.pop('_token_expires_in', None)
         cls._current_user = clean_user
         cls._auth_token = token
+        if token:
+            _persist_network_token(token)
         cls._login_at = time.time()
         if ttl_seconds is not None:
             cls._ttl_seconds = int(ttl_seconds)
@@ -39,6 +49,7 @@ class UserSession:
     def logout(cls):
         cls._current_user = None
         cls._auth_token = None
+        _persist_network_token('')
         cls._login_at = 0.0
 
     @classmethod

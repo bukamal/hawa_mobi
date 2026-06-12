@@ -18,6 +18,29 @@ def _is_localhost_url(url: str) -> bool:
         return False
     return host in {'localhost', '127.0.0.1', '0.0.0.0', '::1'}
 
+
+def _get_persisted_auth_token() -> str:
+    """Return the locally cached network auth token, if any.
+
+    The token is a client bootstrap credential used only for the configured
+    network server. It prevents newly-created repositories / RestClient
+    instances from losing Authorization after navigation, mode refresh, or
+    APK view rebuilds.
+    """
+    try:
+        from database.connection import _get_local_setting_direct
+        return (_get_local_setting_direct('auth/network_token', '') or '').strip()
+    except Exception:
+        return ''
+
+
+def _set_persisted_auth_token(token: str) -> None:
+    try:
+        from database.connection import _set_local_setting_direct
+        _set_local_setting_direct('auth/network_token', token or '')
+    except Exception:
+        pass
+
 class RestClient:
     def __init__(self, server_url: str):
         # Accept either bare server URL (http://host:8000) or a mistakenly
@@ -27,22 +50,28 @@ class RestClient:
         self.token = None
 
     def set_token(self, token: str):
-        self.token = token
+        self.token = (token or '').strip()
+        if self.token:
+            _set_persisted_auth_token(self.token)
 
     def _headers(self):
         headers = {'Content-Type': 'application/json'}
-        token = self.token
+        token = (self.token or '').strip()
         if not token:
             try:
                 from auth.session import UserSession
-                token = UserSession.get_auth_token()
-                if token:
-                    self.token = token
+                token = (UserSession.get_auth_token() or '').strip()
             except Exception:
-                token = None
+                token = ''
+        if not token:
+            token = _get_persisted_auth_token()
         if token:
+            self.token = token
             headers['Authorization'] = f'Bearer {token}'
         return headers
+
+    def _requires_auth(self, endpoint: str) -> bool:
+        return not (endpoint in {'/api/login', '/api/health', '/health'} or endpoint.startswith('/api/health'))
 
     def _resolve_server_url(self) -> str:
         root = _clean_server_root(self.server_url)
@@ -71,9 +100,12 @@ class RestClient:
     def _request(self, method, endpoint, data=None, retries=3, backoff=1.0):
         root = self._resolve_server_url()
         url = f"{root}{endpoint}"
+        headers = self._headers()
+        if self._requires_auth(endpoint) and 'Authorization' not in headers:
+            raise Exception('انتهت جلسة الشبكة أو لم يتم تسجيل الدخول على الخادم. سجّل الخروج ثم ادخل من جديد في وضع عميل الشبكة.')
         for attempt in range(retries):
             try:
-                resp = requests.request(method, url, json=data, headers=self._headers(), timeout=10)
+                resp = requests.request(method, url, json=data, headers=headers, timeout=10)
                 if resp.status_code == 429:
                     wait = min(30, backoff * (4**attempt))
                     time.sleep(wait)
@@ -114,6 +146,7 @@ class RestClient:
     def logout(self):
         self._request('POST', '/api/logout')
         self.token = None
+        _set_persisted_auth_token('')
 
     def get_expenses(self) -> List[Dict]:
         return self._request('GET', '/api/expenses')
