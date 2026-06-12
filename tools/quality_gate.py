@@ -35,6 +35,7 @@ def main() -> int:
     run_py("tools/report_share_smoke_test.py")
     run_py("tools/auth_token_smoke_test.py")
     run_py("tools/auth_persistent_token_smoke_test.py")
+    run_py("tools/network_mode_bootstrap_smoke_test.py")
     run_py("tools/dashboard_currency_totals_smoke_test.py")
     run_py("tools/apk_file_export_smoke_test.py")
     print("✅ quality_gate passed")

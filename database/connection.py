@@ -32,19 +32,40 @@ class DatabaseConnection:
         return cls._instance
 
     def _init_mode(self):
-        self.mode = "local" if os.environ.get("HAWAA_SERVER_PROCESS") == "1" else self._get_setting_from_db("network/mode", "local")
-        self.server_url = self._get_setting_from_db("network/server_url", "")
+        # Bootstrap network settings without using get_connection().  During the
+        # first construction self.mode is not initialized yet, and calling
+        # get_connection() from here can incorrectly fall back to local mode.
+        self.mode = "local" if os.environ.get("HAWAA_SERVER_PROCESS") == "1" else self._read_bootstrap_setting("network/mode", "local")
+        self.server_url = self._read_bootstrap_setting("network/server_url", "")
         self._rest_client = None
         if self.mode == "client":
             from database.connection_rest import RestClient
             self._rest_client = RestClient(self.server_url)
 
-    def _get_setting_from_db(self, key: str, default=None):
+    def _read_bootstrap_setting(self, key: str, default=None):
         try:
+            conn = sqlite3.connect(get_local_db_path(), isolation_level=None)
+            conn.row_factory = sqlite3.Row
+            try:
+                conn.execute("CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT)")
+                row = conn.execute("SELECT value FROM settings WHERE key=?", (key,)).fetchone()
+                return row['value'] if row else default
+            finally:
+                conn.close()
+        except Exception:
+            return default
+
+    def _get_setting_from_db(self, key: str, default=None):
+        # Bootstrap settings must always be read locally even in client mode.
+        if str(key).startswith('network/') or str(key).startswith('auth/'):
+            return self._read_bootstrap_setting(key, default)
+        try:
+            if getattr(self, 'mode', 'local') == 'client':
+                return default
             conn = self.get_connection()
             row = conn.execute("SELECT value FROM settings WHERE key=?", (key,)).fetchone()
             return row['value'] if row else default
-        except:
+        except Exception:
             return default
 
     def _save_setting_to_db(self, key: str, value: str):
@@ -257,8 +278,8 @@ class DatabaseConnection:
 
     def refresh_mode(self):
         """إعادة تحميل وضع التشغيل من قاعدة البيانات (بعد تغيير الإعدادات)"""
-        self.mode = "local" if os.environ.get("HAWAA_SERVER_PROCESS") == "1" else self._get_setting_from_db("network/mode", "local")
-        self.server_url = self._get_setting_from_db("network/server_url", "")
+        self.mode = "local" if os.environ.get("HAWAA_SERVER_PROCESS") == "1" else self._read_bootstrap_setting("network/mode", "local")
+        self.server_url = self._read_bootstrap_setting("network/server_url", "")
         if self.mode == "client":
             from database.connection_rest import RestClient
             self._rest_client = RestClient(self.server_url)

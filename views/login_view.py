@@ -152,8 +152,12 @@ class LoginView(ft.Container):
         self._page.update()
         try:
             db = DatabaseConnection()
+            db.refresh_mode()
             if db.is_remote():
-                user = db.get_rest_client().login(username, password)
+                rest = db.get_rest_client()
+                if rest is None:
+                    raise RuntimeError('وضع عميل الشبكة مفعل لكن عميل الاتصال غير مهيأ. تحقق من عنوان الخادم في الإعدادات.')
+                user = rest.login(username, password)
             else:
                 user = UserRepository().authenticate(username, password)
             if not user:

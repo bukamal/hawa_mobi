@@ -56,6 +56,7 @@ class SplashView(ft.Container):
             self._set_status(0.35, 'قراءة إعدادات التشغيل...')
             await asyncio.sleep(0.12)
             db = DatabaseConnection()
+            db.refresh_mode()
             mode = 'عميل شبكة' if db.is_remote() else 'محلي'
 
             if db.is_remote():
