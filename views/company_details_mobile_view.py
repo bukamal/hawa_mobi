@@ -146,12 +146,10 @@ class CompanyDetailsMobileView(ft.Column):
     def _export_printable_statement(self, e):
         try:
             from reports.account_statement import export_account_statement_html
+            from services.file_export_service import FileExportService
             path = export_account_statement_html(self.company_name, self.records)
-            self._show_snackbar(f"تم إنشاء كشف الطباعة: {path}", False)
-            try:
-                self._page.launch_url("file://" + path)
-            except Exception:
-                pass
+            opened = FileExportService.open_file(self._page, path)
+            self._show_snackbar("تم إنشاء كشف الطباعة وفتحه" if opened else f"تم إنشاء كشف الطباعة: {path}", False)
         except Exception as ex:
             self._show_snackbar(f"خطأ في إنشاء الكشف: {str(ex)}", True)
 
@@ -181,8 +179,10 @@ class CompanyDetailsMobileView(ft.Column):
     def _export_csv_statement(self, e):
         try:
             from reports.account_statement import export_account_statement_csv
+            from services.file_export_service import FileExportService
             path = export_account_statement_csv(self.company_name, self.records)
-            self._show_snackbar(f"تم إنشاء CSV: {path}", False)
+            ok = FileExportService.share_file(self._page, path, f"CSV - كشف حساب {self.company_name}", open_whatsapp=False)
+            self._show_snackbar("تم إنشاء CSV وفتح المشاركة" if ok else f"تم إنشاء CSV: {path}", False)
         except Exception as ex:
             self._show_snackbar(f"خطأ في إنشاء CSV: {str(ex)}", True)
 

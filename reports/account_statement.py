@@ -10,7 +10,6 @@ import csv
 import datetime as _dt
 import html
 import os
-import tempfile
 from typing import Dict, Iterable, List, Tuple
 
 from config import get_company_info
@@ -89,9 +88,8 @@ def build_rows(records: Iterable[Dict], display_currency: str | None = None) -> 
 
 
 def _report_dir() -> str:
-    path = os.path.join(tempfile.gettempdir(), "hawaa_reports")
-    os.makedirs(path, exist_ok=True)
-    return path
+    from services.file_export_service import FileExportService
+    return FileExportService.export_dir("reports", temporary=True)
 
 
 def export_account_statement_html(company_name: str, records: Iterable[Dict], output_path: str | None = None) -> str:

@@ -422,13 +422,13 @@ class SettingsMobileView(ft.Column):
 
     def _backup_tab(self):
         backup_btn = ft.FilledButton(
-            content=ft.Row([ft.Icon(ft.Icons.BACKUP), ft.Text("نسخ احتياطي")]),
+            content=ft.Row([ft.Icon(ft.Icons.BACKUP), ft.Text("إنشاء ومشاركة نسخة احتياطية")]),
             bgcolor=ft.Colors.GREEN,
             color=ft.Colors.WHITE,
             on_click=self._perform_backup
         )
         export_btn = ft.FilledButton(
-            content=ft.Row([ft.Icon(ft.Icons.DOWNLOAD), ft.Text("تصدير إلى CSV")]),
+            content=ft.Row([ft.Icon(ft.Icons.IOS_SHARE), ft.Text("تصدير CSV ومشاركته")]),
             on_click=self._export_csv
         )
         vacuum_btn = ft.FilledButton(
@@ -442,6 +442,10 @@ class SettingsMobileView(ft.Column):
             on_click=self._reset_db_dialog
         )
         return ft.Column([
+            info_banner(
+                "على Android لا يتم الحفظ في مسار ثابت. يتم إنشاء الملف داخل تخزين التطبيق ثم تفتح نافذة المشاركة لاختيار Files / Drive / WhatsApp / Telegram.",
+                icon=ft.Icons.FOLDER_SHARED,
+            ),
             backup_btn,
             export_btn,
             vacuum_btn,
@@ -452,44 +456,29 @@ class SettingsMobileView(ft.Column):
 
     def _perform_backup(self, e):
         try:
-            from database.connection import get_local_db_path
-            db_path = get_local_db_path()
-            if not os.path.exists(db_path):
-                self._show_snackbar("ملف قاعدة البيانات غير موجود", True)
-                return
-            downloads = os.path.expanduser("~/storage/downloads") if os.name != 'nt' else os.path.expanduser("~/Downloads")
-            if not os.path.exists(downloads):
-                downloads = os.getcwd()
-            timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-            backup_name = f"hawaa_backup_{timestamp}.db"
-            backup_path = os.path.join(downloads, backup_name)
-            shutil.copy2(db_path, backup_path)
-            self._show_snackbar(f"تم النسخ الاحتياطي إلى {backup_path}", is_error=False)
+            from services.file_export_service import FileExportService
+            backup_path = FileExportService.create_backup_archive()
+            ok = FileExportService.share_file(
+                self._page,
+                backup_path,
+                "نسخة احتياطية من نظام هوى الشام. احتفظ بها في مكان آمن.",
+                open_whatsapp=False,
+            )
+            self._show_snackbar("تم إنشاء النسخة الاحتياطية وفتح المشاركة" if ok else f"تم إنشاء النسخة الاحتياطية: {backup_path}", is_error=False)
         except Exception as ex:
             self._show_snackbar(f"فشل النسخ الاحتياطي: {str(ex)}", True)
 
     def _export_csv(self, e):
         try:
-            from database.connection import DatabaseConnection
-            db = DatabaseConnection()
-            if db.is_remote():
-                self._show_snackbar("لا يمكن التصدير في وضع العميل", True)
-                return
-            conn = db.get_connection()
-            tables = ['expenses', 'users', 'audit_log']
-            downloads = os.path.expanduser("~/storage/downloads") if os.name != 'nt' else os.path.expanduser("~/Downloads")
-            if not os.path.exists(downloads):
-                downloads = os.getcwd()
-            timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-            for table in tables:
-                cursor = conn.execute(f"SELECT * FROM {table}")
-                rows = cursor.fetchall()
-                if rows:
-                    with open(os.path.join(downloads, f"{table}_{timestamp}.csv"), 'w', encoding='utf-8-sig', newline='') as f:
-                        writer = csv.writer(f)
-                        writer.writerow([desc[0] for desc in cursor.description])
-                        writer.writerows(rows)
-            self._show_snackbar(f"تم التصدير إلى {downloads}", is_error=False)
+            from services.file_export_service import FileExportService
+            export_path = FileExportService.create_csv_archive(['expenses', 'users', 'audit_log'])
+            ok = FileExportService.share_file(
+                self._page,
+                export_path,
+                "تصدير CSV من نظام هوى الشام.",
+                open_whatsapp=False,
+            )
+            self._show_snackbar("تم إنشاء ملف CSV وفتح المشاركة" if ok else f"تم إنشاء ملف CSV: {export_path}", is_error=False)
         except Exception as ex:
             self._show_snackbar(f"فشل التصدير: {str(ex)}", True)
 
