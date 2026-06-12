@@ -143,13 +143,24 @@ def main(page: ft.Page):
         open_control(page, dialog)
 
     def show_main_app():
+        # Expose a central logout/navigation hook for nested views such as settings.
+        # This is intentionally page-scoped so child views do not import main.py.
+        try:
+            setattr(page, '_hawaa_logout', logout)
+        except Exception:
+            pass
         page.controls.clear()
         app = AppLayout(page=page, on_logout=logout)
         page.add(app)
         start_license_checker(24, on_license_invalid)
 
     def logout():
+        from views.flet_compat import close_all_dialogs
         stop_license_checker()
+        try:
+            close_all_dialogs(page)
+        except Exception:
+            pass
         UserSession.logout()
         show_login()
 

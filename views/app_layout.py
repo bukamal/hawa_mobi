@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 import flet as ft
-from views.flet_compat import open_control, close_control
+from views.flet_compat import open_control, close_control, close_all_dialogs
 from views.ui_runtime import make_status_bar, loading_view, error_view, safe_update
 from views.ui_kit import app_brand
 from auth.session import UserSession
@@ -150,14 +150,26 @@ class AppLayout(ft.Column):
 
     def _logout(self, e):
         dlg = None
+
+        def cancel_logout(e):
+            if dlg:
+                close_control(self._page, dlg)
+
         def confirm_logout(e):
-            from database.connection import DatabaseConnection
-            db = DatabaseConnection()
-            if db.is_remote():
-                try:
-                    db.get_rest_client().logout()
-                except Exception:
-                    pass
+            # Close the modal first.  If the session is already invalid, any
+            # remote /logout call may fail; it must not block the confirmation
+            # buttons or leave a modal barrier above the app.
+            if dlg:
+                close_control(self._page, dlg)
+            # Do not call the remote /logout endpoint here.  If the server is
+            # unreachable or the token is already invalid, a blocking network
+            # call can make the confirmation buttons appear dead.  Clearing the
+            # local session/token is enough for the APK client; the server token
+            # will expire by TTL.
+            try:
+                close_all_dialogs(self._page)
+            except Exception:
+                pass
             UserSession.logout()
             if self.on_logout:
                 self.on_logout()
@@ -166,15 +178,17 @@ class AppLayout(ft.Column):
                 from views.login_view import LoginView
                 login = LoginView(page=self._page, on_login_success=lambda u: self._rebuild_after_login(), on_exit=self.on_logout)
                 self._page.add(login)
-            if dlg:
-                close_control(self._page, dlg)
+                self._page.update()
+
         dlg = ft.AlertDialog(
+            modal=True,
             title=ft.Text(translate('logout')),
             content=ft.Text("هل تريد تسجيل الخروج؟"),
             actions=[
                 ft.TextButton("نعم", on_click=confirm_logout),
-                ft.TextButton("لا", on_click=lambda e: self._close_dialog(dlg))
-            ]
+                ft.TextButton("لا", on_click=cancel_logout),
+            ],
+            actions_alignment=ft.MainAxisAlignment.END,
         )
         open_control(self._page, dlg)
 

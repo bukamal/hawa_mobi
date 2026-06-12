@@ -410,7 +410,19 @@ class SettingsMobileView(ft.Column):
                 self.network_save_btn.content = ft.Row([ft.ProgressRing(width=16, height=16), ft.Text("جاري الحفظ")])
                 self._page.update()
             from services.network_service import NetworkService
+            old_mode = DatabaseConnection().mode
             NetworkService.save_mode(new_mode, self.server_url.value or "")
+            if old_mode != new_mode:
+                self._show_snackbar("تم حفظ وضع الشبكة. يجب تسجيل الدخول من جديد.", is_error=False)
+                try:
+                    from views.flet_compat import close_all_dialogs
+                    close_all_dialogs(self._page)
+                except Exception:
+                    pass
+                logout_hook = getattr(self._page, '_hawaa_logout', None)
+                if callable(logout_hook):
+                    logout_hook()
+                return
             self._show_snackbar("تم حفظ إعدادات الشبكة", is_error=False)
         except Exception as ex:
             self._show_snackbar(f"❌ {str(ex)}", True)

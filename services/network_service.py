@@ -4,7 +4,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from urllib.parse import urlparse
 
-from database.connection import DatabaseConnection, set_setting
+from database.connection import DatabaseConnection, set_setting, _set_local_setting_direct
 
 
 @dataclass(frozen=True)
@@ -40,9 +40,27 @@ class NetworkService:
     def save_mode(mode: str, server_url: str = "") -> None:
         if mode not in {"local", "client"}:
             raise ValueError("الوضع المسموح: محلي أو عميل شبكة فقط")
+
+        # Network mode is a bootstrap/local setting, not a remote setting.
+        # Changing local -> client invalidates the current local session; keeping
+        # the user inside the app produces protected API calls without a token.
+        old_mode = DatabaseConnection().mode
         set_setting("network/mode", mode)
         if mode == "client":
             set_setting("network/server_url", NetworkService.normalize_server_url(server_url))
+            _set_local_setting_direct('auth/network_token', '')
+            try:
+                from auth.session import UserSession
+                UserSession.logout()
+            except Exception:
+                pass
+        elif old_mode == "client":
+            _set_local_setting_direct('auth/network_token', '')
+            try:
+                from auth.session import UserSession
+                UserSession.logout()
+            except Exception:
+                pass
         DatabaseConnection().refresh_mode()
 
     @staticmethod
