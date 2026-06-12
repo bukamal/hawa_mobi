@@ -40,7 +40,7 @@ def init_database():
             ('display_currency','USD'),
             ('abbreviate_numbers','false'),
             ('network/mode','local'),
-            ('network/server_url','http://localhost:8000');
+            ('network/server_url','');
         INSERT OR IGNORE INTO settings (key, value) VALUES 
             ('company_name','هوى الشام للسياحة والسفر'),
             ('company_address','المملكة العربية السعودية - الرياض'),

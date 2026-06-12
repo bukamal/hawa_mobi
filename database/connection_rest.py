@@ -1,16 +1,29 @@
 # -*- coding: utf-8 -*-
 import requests, time
 from typing import List, Dict
+from urllib.parse import urlparse
+
+
+def _clean_server_root(server_url: str) -> str:
+    root = (server_url or '').strip().rstrip('/')
+    if root.endswith('/api'):
+        root = root[:-4].rstrip('/')
+    return root
+
+
+def _is_localhost_url(url: str) -> bool:
+    try:
+        host = (urlparse(url).hostname or '').lower()
+    except Exception:
+        return False
+    return host in {'localhost', '127.0.0.1', '0.0.0.0', '::1'}
 
 class RestClient:
     def __init__(self, server_url: str):
         # Accept either bare server URL (http://host:8000) or a mistakenly
         # entered API base URL (http://host:8000/api).  Internally we always
         # keep the server root so endpoint paths remain stable.
-        root = (server_url or '').strip().rstrip('/')
-        if root.endswith('/api'):
-            root = root[:-4].rstrip('/')
-        self.server_url = root
+        self.server_url = _clean_server_root(server_url)
         self.token = None
 
     def set_token(self, token: str):
@@ -31,10 +44,33 @@ class RestClient:
             headers['Authorization'] = f'Bearer {token}'
         return headers
 
+    def _resolve_server_url(self) -> str:
+        root = _clean_server_root(self.server_url)
+        # The app may be installed over an older build where DatabaseConnection
+        # was initialized before the user saved the real server IP. Refresh the
+        # persisted bootstrap setting at request time so no protected endpoint
+        # silently falls back to localhost.
+        try:
+            from database.connection import _get_local_setting_direct
+            saved = _clean_server_root(_get_local_setting_direct('network/server_url', '') or '')
+            if saved and saved != root:
+                # Prefer a non-localhost saved server over an old localhost
+                # instance value. This fixes audit/users screens after mode
+                # changes without restarting the APK.
+                if _is_localhost_url(root) or not root:
+                    root = saved
+        except Exception:
+            pass
+        if not root:
+            raise Exception('عنوان الخادم غير مضبوط. افتح الإعدادات > الشبكة وأدخل IP جهاز الخادم.')
+        if _is_localhost_url(root):
+            raise Exception('عنوان الخادم مضبوط على localhost. في APK يجب استخدام IP جهاز الخادم مثل http://192.168.2.102:8000')
+        self.server_url = root
+        return root
+
     def _request(self, method, endpoint, data=None, retries=3, backoff=1.0):
-        if not self.server_url:
-            raise Exception('عنوان الخادم غير مضبوط')
-        url = f"{self.server_url}{endpoint}"
+        root = self._resolve_server_url()
+        url = f"{root}{endpoint}"
         for attempt in range(retries):
             try:
                 resp = requests.request(method, url, json=data, headers=self._headers(), timeout=10)

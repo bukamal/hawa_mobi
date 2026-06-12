@@ -75,7 +75,7 @@ def main(page: ft.Page):
                 ('language', 'ar'), ('theme', 'light'), ('base_currency', 'USD'),
                 ('display_currency', 'USD'), ('currency_decimals', '2'),
                 ('number_format', 'western'), ('abbreviate_numbers', 'false'),
-                ('network/mode', 'local'), ('network/server_url', 'http://localhost:8000')
+                ('network/mode', 'local'), ('network/server_url', '')
             ]
             conn.executemany("INSERT OR IGNORE INTO settings (key, value) VALUES (?,?)", defaults)
             conn.commit()

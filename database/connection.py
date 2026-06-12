@@ -33,7 +33,7 @@ class DatabaseConnection:
 
     def _init_mode(self):
         self.mode = "local" if os.environ.get("HAWAA_SERVER_PROCESS") == "1" else self._get_setting_from_db("network/mode", "local")
-        self.server_url = self._get_setting_from_db("network/server_url", "http://localhost:8000")
+        self.server_url = self._get_setting_from_db("network/server_url", "")
         self._rest_client = None
         if self.mode == "client":
             from database.connection_rest import RestClient
@@ -256,7 +256,7 @@ class DatabaseConnection:
     def refresh_mode(self):
         """إعادة تحميل وضع التشغيل من قاعدة البيانات (بعد تغيير الإعدادات)"""
         self.mode = "local" if os.environ.get("HAWAA_SERVER_PROCESS") == "1" else self._get_setting_from_db("network/mode", "local")
-        self.server_url = self._get_setting_from_db("network/server_url", "http://localhost:8000")
+        self.server_url = self._get_setting_from_db("network/server_url", "")
         if self.mode == "client":
             from database.connection_rest import RestClient
             self._rest_client = RestClient(self.server_url)
