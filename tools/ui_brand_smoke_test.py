@@ -1,3 +1,4 @@
+import os
 # -*- coding: utf-8 -*-
 from pathlib import Path
 import ast
@@ -11,6 +12,7 @@ assets = [
     ROOT / 'assets' / 'icon_android.png',
     ROOT / 'assets' / 'icon_web.png',
     ROOT / 'assets' / 'splash_android.png',
+    ROOT / 'assets' / 'brand' / 'app_wordmark.png',
     ROOT / 'assets' / 'icons' / 'app_icon_192.png',
     ROOT / 'assets' / 'icons' / 'app_icon_512.png',
 ]
@@ -22,9 +24,13 @@ ui_kit = ROOT / 'views' / 'ui_kit.py'
 text = ui_kit.read_text(encoding='utf-8')
 ast.parse(text)
 assert 'def app_mark(' in text
-assert "ft.Text('H'" in text
-assert 'ft.Icons.FLIGHT' in text
+assert 'ASSET_APP_SYMBOL' in text
+assert 'ft.Image' in text
+assert 'ft.Icons.FLIGHT' not in text
+assert "ft.Text('H'" not in text
 assert 'def app_brand(' in text
+assert 'brand_wordmark' in text
+assert 'brand_background' in text
 
 for rel in ['views/splash_view.py', 'views/login_view.py', 'views/activation_view.py', 'views/app_layout.py']:
     content = (ROOT / rel).read_text(encoding='utf-8')

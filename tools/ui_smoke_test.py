@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 """Static UI checks for the mobile interface layer."""
 from __future__ import annotations
+import os
 
 import ast
 from pathlib import Path
@@ -72,4 +73,7 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    code = main()
+    sys.stdout.flush() if "sys" in globals() else None
+    sys.stderr.flush() if "sys" in globals() else None
+    os._exit(code)

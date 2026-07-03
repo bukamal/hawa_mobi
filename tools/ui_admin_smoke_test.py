@@ -1,3 +1,4 @@
+import os
 # -*- coding: utf-8 -*-
 """Static UI checks for administration screens."""
 from pathlib import Path

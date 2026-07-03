@@ -36,9 +36,13 @@ jobs:
               print('Flutter version lookup failed:', e)
           PY
 
-      - name: Static Python check
+      - name: Quality gate
         run: |
-          python -m compileall .
+          PYTHONPATH=. python tools/quality_gate.py
+
+      - name: APK release preflight
+        run: |
+          PYTHONPATH=. python tools/apk_release_preflight.py
 
       - name: Clear Flet cache
         run: |
@@ -60,10 +64,11 @@ jobs:
           fi
           echo "✅ Found APK at: $APK_PATH"
           mkdir -p build/apk/release
-          cp "$APK_PATH" build/apk/release/app-release.apk
+          cp "$APK_PATH" build/apk/release/hawaa-sham-release.apk
+          PYTHONPATH=. python tools/apk_release_preflight.py build/apk/release/hawaa-sham-release.apk
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: hawaa-apk
-          path: build/apk/release/app-release.apk
+          name: hawaa-sham-apk
+          path: build/apk/release/hawaa-sham-release.apk

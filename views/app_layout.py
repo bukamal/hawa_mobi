@@ -2,7 +2,7 @@
 import flet as ft
 from views.flet_compat import open_control, close_control, close_all_dialogs
 from views.ui_runtime import make_status_bar, loading_view, error_view, safe_update
-from views.ui_kit import app_brand
+from views.ui_kit import app_brand, PRIMARY, PRIMARY_SOFT, PAGE_BG, CARD_BG
 from auth.session import UserSession
 from i18n.translator import translate
 
@@ -15,7 +15,7 @@ class AppLayout(ft.Column):
         self.spacing = 0
 
         self.status_area = ft.Container()
-        self.content_area = ft.Container(expand=True, padding=10, bgcolor=ft.Colors.GREY_50)
+        self.content_area = ft.Container(expand=True, padding=10, bgcolor=PAGE_BG)
         self.nav_bar = self._build_nav_bar()
         self.drawer = self._build_drawer()
 
@@ -75,8 +75,8 @@ class AppLayout(ft.Column):
             selected_index=1,
             destinations=destinations,
             on_change=self._nav_change,
-            bgcolor=ft.Colors.WHITE,
-            indicator_color=ft.Colors.INDIGO,
+            bgcolor=CARD_BG,
+            indicator_color=PRIMARY_SOFT,
             indicator_shape=ft.RoundedRectangleBorder(radius=10),
             elevation=5
         )
@@ -86,10 +86,10 @@ class AppLayout(ft.Column):
         controls = [
             ft.Container(
                 content=ft.Column([
-                    app_brand('هوى الشام', 'نظام الحسابات الداخلية', size=64, dark=True),
+                    app_brand('هوى الشام', 'نظام الحسابات الداخلية', size=72, dark=True, wordmark=True),
                 ], horizontal_alignment=ft.CrossAxisAlignment.CENTER),
                 padding=20,
-                bgcolor=ft.Colors.INDIGO_50,
+                bgcolor=PRIMARY_SOFT,
                 border_radius=20
             ),
             ft.Divider(),

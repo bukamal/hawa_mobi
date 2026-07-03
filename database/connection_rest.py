@@ -71,7 +71,7 @@ class RestClient:
         return headers
 
     def _requires_auth(self, endpoint: str) -> bool:
-        return not (endpoint in {'/api/login', '/api/health', '/health'} or endpoint.startswith('/api/health'))
+        return not (endpoint in {'/api/login', '/api/health', '/health', '/api/capabilities'} or endpoint.startswith('/api/health'))
 
     def _resolve_server_url(self) -> str:
         root = _clean_server_root(self.server_url)
@@ -129,6 +129,24 @@ class RestClient:
             # Compatibility with older server builds that exposed /health.
             if 'API error 404' in str(e):
                 return self._request('GET', '/health', retries=1)
+            raise
+
+    def capabilities(self) -> Dict:
+        """Return public server capabilities for APK/Windows pairing checks."""
+        try:
+            return self._request('GET', '/api/capabilities', retries=1)
+        except Exception as e:
+            # Older Phase-18 compatible servers may not expose /api/capabilities.
+            # In that case use /api/health as a weak compatibility signal.
+            if 'API error 404' in str(e):
+                health = self.health() or {}
+                return {
+                    'ok': bool(health.get('ok')),
+                    'service': health.get('service', 'hawaa-server'),
+                    'api_contract_version': health.get('api_contract_version', 'legacy'),
+                    'currency_contract': health.get('currency_contract', ''),
+                    'supports_historic_currency_snapshot': bool(health.get('supports_historic_currency_snapshot')),
+                }
             raise
 
     def login(self, username: str, password: str) -> Dict:
@@ -209,6 +227,9 @@ class RestClient:
 
     def get_all_currencies(self):
         return self._request('GET', '/api/exchange_rates')
+
+    def get_exchange_rate_history(self):
+        return self._request('GET', '/api/exchange_rate_history')
 
     def update_exchange_rate(self, currency_code: str, rate_to_usd: float):
         self._request('PUT', f'/api/exchange_rates/{currency_code}', {'rate_to_usd': rate_to_usd})

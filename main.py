@@ -92,7 +92,7 @@ def main(page: ft.Page):
     page.rtl = True
     page.padding = 0
     page.spacing = 0
-    page.bgcolor = ft.Colors.GREY_50
+    page.bgcolor = "#F6FAF9"
 
     repo = SettingsRepository()
     set_language(repo.get('language', 'ar'))
@@ -195,7 +195,7 @@ def main(page: ft.Page):
             ft.Text(message, size=14, text_align=ft.TextAlign.CENTER),
         ]
         if retry:
-            controls.append(ft.FilledButton("إعادة المحاولة", on_click=lambda _: retry(), bgcolor=ft.Colors.INDIGO, color=ft.Colors.WHITE))
+            controls.append(ft.FilledButton("إعادة المحاولة", on_click=lambda _: retry(), bgcolor="#118276", color=ft.Colors.WHITE))
         controls.append(ft.TextButton("إغلاق", on_click=lambda _: close_app()))
         page.add(
             ft.Container(
@@ -211,4 +211,4 @@ def main(page: ft.Page):
 
 if __name__ == "__main__":
     sys.excepthook = lambda exctype, value, tb: print(f"[CRITICAL] Unhandled exception: {value}")
-    ft.run(main)
+    ft.run(main, assets_dir="assets")

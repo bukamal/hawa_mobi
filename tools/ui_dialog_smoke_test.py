@@ -1,3 +1,4 @@
+import os
 # -*- coding: utf-8 -*-
 """Static checks for dialog UX consistency and APK-safe modal behavior."""
 from pathlib import Path
@@ -45,4 +46,7 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    code = main()
+    sys.stdout.flush() if "sys" in globals() else None
+    sys.stderr.flush() if "sys" in globals() else None
+    os._exit(code)

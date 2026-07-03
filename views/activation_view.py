@@ -4,7 +4,7 @@ from __future__ import annotations
 import asyncio
 import flet as ft
 from auth.activation import activate, get_device_id, get_license_details
-from views.ui_kit import app_brand
+from views.ui_kit import app_brand, brand_background, brand_card, status_chip, PRIMARY, MUTED, DANGER, SUCCESS, WARNING
 
 
 class ActivationView(ft.Container):
@@ -16,62 +16,74 @@ class ActivationView(ft.Container):
         self._busy = False
         self.expand = True
         self.alignment = ft.Alignment.CENTER
-        self.padding = 24
+        self.padding = 0
 
         details = get_license_details()
         self.device_id = get_device_id()
-        self.key_field = ft.TextField(label='مفتاح الترخيص', hint_text='XXXX-XXXX-XXXX-XXXX', password=True, can_reveal_password=True, width=350, text_align=ft.TextAlign.CENTER)
-        self.status_text = ft.Text(details.get('message') or '', color=ft.Colors.GREEN if details.get('activated') else ft.Colors.RED, size=12, text_align=ft.TextAlign.CENTER)
-        self.license_info = ft.Text(self._format_license_info(details), size=11, color=ft.Colors.GREY_700, text_align=ft.TextAlign.CENTER, selectable=True)
-        self.device_text = ft.Text(f'Device ID: {self.device_id[:12]}…{self.device_id[-8:]}', size=11, color=ft.Colors.GREY_600, selectable=True, text_align=ft.TextAlign.CENTER)
-        self.progress = ft.ProgressBar(width=350, visible=False)
-        self.activate_btn = ft.FilledButton(content=ft.Text('تفعيل', size=16, weight=ft.FontWeight.BOLD), width=350, height=45, bgcolor=ft.Colors.INDIGO, color=ft.Colors.WHITE, on_click=self._activate)
-        self.copy_btn = ft.TextButton(content=ft.Text('نسخ رقم الجهاز'), on_click=self._copy_device_id)
-        self.cancel_btn = ft.TextButton(content=ft.Text('إغلاق'), on_click=lambda e: self.on_cancel() if self.on_cancel else None)
-        self.content = ft.Card(
-            content=ft.Container(
-                content=ft.Column(
-                    controls=[
-                        app_brand('تفعيل هوى الشام', 'أدخل مفتاح الترخيص للتفعيل عبر الإنترنت', size=78, dark=True),
-                        ft.Container(height=12),
-                        self.license_info,
-                        self.device_text,
-                        self.copy_btn,
-                        ft.Container(height=12),
-                        self.key_field,
-                        self.status_text,
-                        self.progress,
-                        ft.Container(height=12),
-                        self.activate_btn,
-                        self.cancel_btn,
-                    ],
-                    alignment=ft.MainAxisAlignment.CENTER,
-                    horizontal_alignment=ft.CrossAxisAlignment.CENTER,
-                    tight=True,
-                    scroll=ft.ScrollMode.AUTO,
-                ),
-                padding=28,
-                width=410,
-            ),
-            elevation=5,
+        self.status_chip = status_chip('مفعل' if details.get('activated') else 'غير مفعل', icon=ft.Icons.VERIFIED_USER, color=SUCCESS if details.get('activated') else DANGER, bgcolor="#E9F7F1" if details.get('activated') else "#FDECEC")
+        self.key_field = ft.TextField(label='مفتاح الترخيص', hint_text='XXXX-XXXX-XXXX-XXXX', password=True, can_reveal_password=True, width=360, text_align=ft.TextAlign.CENTER, border_radius=14)
+        self.status_text = ft.Text(details.get('message') or '', color=SUCCESS if details.get('activated') else DANGER, size=12, text_align=ft.TextAlign.CENTER)
+        self.license_info = ft.Text(self._format_license_info(details), size=11, color=MUTED, text_align=ft.TextAlign.CENTER, selectable=True)
+        self.device_text = ft.Text(f'معرّف الجهاز: {self.device_id[:12]}…{self.device_id[-8:]}', size=11, color=MUTED, selectable=True, text_align=ft.TextAlign.CENTER)
+        self.path_text = ft.Text(details.get('license_file') or '', size=10, color=MUTED, selectable=True, text_align=ft.TextAlign.CENTER)
+        self.progress = ft.ProgressBar(width=360, visible=False, color=PRIMARY)
+        self.activate_btn = ft.FilledButton(content=ft.Text('تفعيل', size=16, weight=ft.FontWeight.BOLD), width=360, height=46, bgcolor=PRIMARY, color=ft.Colors.WHITE, on_click=self._activate)
+        self.copy_btn = ft.OutlinedButton(content=ft.Text('نسخ معرّف الجهاز'), on_click=self._copy_device_id)
+        self.refresh_btn = ft.OutlinedButton(content=ft.Text('تحديث الحالة'), on_click=self._refresh_status)
+        self.cancel_btn = ft.TextButton(content=ft.Text('إغلاق', color=MUTED), on_click=lambda e: self.on_cancel() if self.on_cancel else None)
+
+        form = ft.Column(
+            controls=[
+                app_brand('تفعيل هوى الشام', 'ربط الترخيص بهذا الجهاز', size=88, dark=True),
+                self.status_chip,
+                self.license_info,
+                self.device_text,
+                self.path_text,
+                ft.Row([self.copy_btn, self.refresh_btn], alignment=ft.MainAxisAlignment.CENTER, spacing=10),
+                ft.Container(height=8),
+                self.key_field,
+                self.status_text,
+                self.progress,
+                self.activate_btn,
+                self.cancel_btn,
+            ],
+            alignment=ft.MainAxisAlignment.CENTER,
+            horizontal_alignment=ft.CrossAxisAlignment.CENTER,
+            tight=True,
+            scroll=ft.ScrollMode.AUTO,
+            spacing=9,
         )
+        self.content = brand_background(brand_card(form, width=450, padding=24), padding=18, dark=False)
 
     def _format_license_info(self, details: dict) -> str:
         if not details.get('activated'):
-            return 'حالة الترخيص: غير مفعل'
+            msg = details.get('message') or 'غير مفعل'
+            return f'حالة الترخيص: غير مفعل\nالسبب: {msg}'
         expiration = details.get('expiration') or 'غير محدد'
         activated_at = details.get('activated_at') or 'غير محدد'
         preview = details.get('key_preview') or '****'
         return f'حالة الترخيص: مفعل\nالمفتاح: {preview}\nينتهي: {expiration}\nتاريخ التفعيل: {activated_at}'
 
+    def _refresh_status(self, e=None):
+        details = get_license_details()
+        self.status_chip.content.controls[-1].value = 'مفعل' if details.get('activated') else 'غير مفعل'
+        self.license_info.value = self._format_license_info(details)
+        self.path_text.value = details.get('license_file') or ''
+        self.status_text.value = details.get('message') or ''
+        self.status_text.color = SUCCESS if details.get('activated') else DANGER
+        try:
+            self._page.update()
+        except Exception:
+            pass
+
     def _copy_device_id(self, e):
         try:
             self._page.set_clipboard(self.device_id)
-            self.status_text.value = 'تم نسخ رقم الجهاز'
-            self.status_text.color = ft.Colors.GREEN
+            self.status_text.value = 'تم نسخ معرّف الجهاز'
+            self.status_text.color = SUCCESS
         except Exception:
             self.status_text.value = self.device_id
-            self.status_text.color = ft.Colors.BLUE
+            self.status_text.color = PRIMARY
         self._page.update()
 
     def _set_busy(self, busy: bool):
@@ -90,28 +102,27 @@ class ActivationView(ft.Container):
         key = (self.key_field.value or '').strip()
         if not key:
             self.status_text.value = 'يرجى إدخال مفتاح الترخيص'
-            self.status_text.color = ft.Colors.RED
+            self.status_text.color = WARNING
             self._page.update()
             return
         self._set_busy(True)
         self.status_text.value = 'جاري الاتصال بخادم التفعيل...'
-        self.status_text.color = ft.Colors.BLUE
+        self.status_text.color = PRIMARY
         self._page.update()
         try:
             success, msg = activate(key)
             if success:
-                details = get_license_details()
-                self.license_info.value = self._format_license_info(details)
+                self._refresh_status()
                 self.status_text.value = 'تم التفعيل بنجاح'
-                self.status_text.color = ft.Colors.GREEN
+                self.status_text.color = SUCCESS
                 self._page.update()
                 asyncio.create_task(self._delayed_success())
             else:
                 self.status_text.value = f'فشل التفعيل: {msg}'
-                self.status_text.color = ft.Colors.RED
+                self.status_text.color = DANGER
         except Exception as ex:
             self.status_text.value = f'خطأ: {ex}'
-            self.status_text.color = ft.Colors.RED
+            self.status_text.color = DANGER
         finally:
             self._set_busy(False)
             try:

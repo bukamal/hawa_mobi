@@ -71,8 +71,26 @@ class NetworkService:
         client = RestClient(url)
         try:
             health = client.health()
-            if isinstance(health, dict) and health.get("ok"):
-                return NetworkCheckResult(True, "الاتصال بالخادم ناجح", url)
-            return NetworkCheckResult(False, "استجابة الخادم غير متوقعة", url)
+            if not (isinstance(health, dict) and health.get("ok")):
+                return NetworkCheckResult(False, "استجابة الخادم غير متوقعة", url)
+            try:
+                caps = client.capabilities()
+            except Exception:
+                caps = {}
+            currency_contract = str(caps.get("currency_contract") or health.get("currency_contract") or "")
+            if caps and not caps.get("supports_historic_currency_snapshot", False):
+                return NetworkCheckResult(
+                    False,
+                    "الخادم يعمل لكنه لا يعلن دعم السعر التاريخي للعملات. حدّث خادم هوى الشام قبل ربط APK.",
+                    url,
+                )
+            if currency_contract and currency_contract != "historic-currency-snapshot-v1":
+                return NetworkCheckResult(
+                    False,
+                    f"عقد العملات في الخادم غير متوافق: {currency_contract}",
+                    url,
+                )
+            version = caps.get("api_contract_version") or health.get("api_contract_version") or "legacy"
+            return NetworkCheckResult(True, f"الاتصال بالخادم ناجح — عقد API: {version}", url)
         except Exception as exc:
             return NetworkCheckResult(False, f"فشل الاتصال بالخادم: {exc}", url)

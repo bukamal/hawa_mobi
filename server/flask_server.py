@@ -25,10 +25,52 @@ from auth.password import hash_password, verify_password
 from database.connection import get_local_db_path
 from database.migrations import ensure_db
 from server.config import load_server_config
+from services.currency_ledger_service import CurrencyLedgerService
 
 _SERVER_CONFIG = load_server_config()
 app = Flask(__name__)
 _TOKENS: Dict[str, Dict[str, Any]] = {}
+
+API_CONTRACT_VERSION = "2026.07.mobile-v1"
+CURRENCY_CONTRACT_VERSION = "historic-currency-snapshot-v1"
+REQUIRED_MOBILE_ENDPOINTS = [
+    "/api/health",
+    "/api/capabilities",
+    "/api/login",
+    "/api/logout",
+    "/api/server_info",
+    "/api/expenses",
+    "/api/expenses/{id}",
+    "/api/expenses/summary",
+    "/api/payment_reminders",
+    "/api/payment_reminders/count_waiting",
+    "/api/users",
+    "/api/users/{id}",
+    "/api/users/change_password",
+    "/api/audit_log",
+    "/api/audit_log/old",
+    "/api/settings",
+    "/api/settings/{key}",
+    "/api/exchange_rates",
+    "/api/exchange_rate_history",
+    "/api/exchange_rates/{currency_code}",
+]
+
+
+def _capabilities_payload() -> Dict[str, Any]:
+    return {
+        "ok": True,
+        "service": "hawaa-server",
+        "api_contract_version": API_CONTRACT_VERSION,
+        "currency_contract": CURRENCY_CONTRACT_VERSION,
+        "base_currency": "USD",
+        "supports_historic_currency_snapshot": True,
+        "supports_amount_base": True,
+        "supports_exchange_rate_history": True,
+        "auth_required": True,
+        "token_type": "Bearer",
+        "endpoints": REQUIRED_MOBILE_ENDPOINTS,
+    }
 
 
 def _now() -> str:
@@ -76,6 +118,48 @@ def require_auth(fn):
     return wrapper
 
 
+def require_roles(*roles: str):
+    allowed = {r.lower() for r in roles}
+    def decorator(fn):
+        @wraps(fn)
+        def wrapper(*args, **kwargs):
+            user = _current_user()
+            if not user:
+                return _json_error("تسجيل الدخول مطلوب", 401)
+            if (user.get("role") or "").lower() not in allowed:
+                return _json_error("ليست لديك صلاحية لتنفيذ هذه العملية", 403)
+            return fn(*args, **kwargs)
+        return wrapper
+    return decorator
+
+
+def _role_allows_write() -> tuple[str, ...]:
+    return ("admin", "manager", "accountant", "user")
+
+
+def _get_rate_to_usd(conn: sqlite3.Connection, currency_code: str) -> float:
+    code = (currency_code or "USD").upper()
+    if code == "USD":
+        return 1.0
+    row = conn.execute("SELECT rate_to_usd FROM exchange_rates WHERE currency_code=?", (code,)).fetchone()
+    try:
+        rate = float(row["rate_to_usd"] if row else 1.0)
+    except Exception:
+        rate = 1.0
+    return rate if rate > 0 else 1.0
+
+
+def _ledger_for(conn: sqlite3.Connection) -> CurrencyLedgerService:
+    return CurrencyLedgerService(rate_getter=lambda code: _get_rate_to_usd(conn, code))
+
+
+def _insert_rate_history(conn: sqlite3.Connection, currency_code: str, new_rate: float, previous_rate: Optional[float]) -> None:
+    conn.execute(
+        "INSERT INTO exchange_rate_history (currency_code, rate_to_usd, previous_rate_to_usd, changed_by, changed_at) VALUES (?,?,?,?,?)",
+        ((currency_code or "USD").upper(), float(new_rate), previous_rate, (_current_user() or {}).get("id"), _now()),
+    )
+
+
 def _audit(conn: sqlite3.Connection, action: str, table_name: str, record_id: Optional[int], details: str):
     user = _current_user() or {}
     conn.execute(
@@ -84,33 +168,40 @@ def _audit(conn: sqlite3.Connection, action: str, table_name: str, record_id: Op
     )
 
 
-def _expense_payload(data: Dict[str, Any], *, update: bool = False) -> Dict[str, Any]:
+def _expense_payload(conn: sqlite3.Connection, data: Dict[str, Any], *, existing: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     required = ["company_name", "amount", "type", "date", "currency"]
     missing = [k for k in required if k not in data or data.get(k) in (None, "")]
     if missing:
         raise ValueError(f"حقول ناقصة: {', '.join(missing)}")
-    amount_original = float(data.get("amount_original", data.get("amount") or 0))
-    amount = float(data.get("amount") or 0)
-    currency = str(data.get("currency") or "SAR")
-    return {
-        "company_name": str(data["company_name"]).strip(),
-        "amount": amount,
-        "type": data["type"],
-        "date": data["date"],
-        "notes": data.get("notes", ""),
-        "currency": currency,
-        "created_by": data.get("created_by", 1),
-        "created_at": data.get("created_at") or _now(),
-        "updated_by": data.get("updated_by", data.get("created_by", 1)),
-        "updated_at": data.get("updated_at") or _now(),
-        "amount_original": amount_original,
-        "currency_original": data.get("currency_original", currency),
-        "exchange_rate_to_usd": float(data.get("exchange_rate_to_usd", 1.0) or 1.0),
-        "status": data.get("status") or ("waiting_payment" if amount_original == 0 else "approved"),
-        "payment_due_date": data.get("payment_due_date"),
-        "payment_reminder_note": data.get("payment_reminder_note"),
-    }
-
+    type_val = str(data.get("type") or "").strip()
+    if type_val not in {"incoming", "outgoing"}:
+        raise ValueError("نوع القيد يجب أن يكون incoming أو outgoing")
+    try:
+        original_amount = float(data.get("amount_original", data.get("amount") or 0))
+    except Exception:
+        raise ValueError("المبلغ غير صالح")
+    if original_amount < 0:
+        raise ValueError("المبلغ لا يمكن أن يكون سالباً")
+    currency_code = str(data.get("currency_original") or data.get("currency") or "USD").upper()
+    normalized = _ledger_for(conn).normalize_expense_payload(
+        {
+            "company_name": str(data["company_name"]).strip(),
+            "amount": original_amount,
+            "type": type_val,
+            "date": data["date"],
+            "notes": data.get("notes", ""),
+            "currency": currency_code,
+            "created_by": data.get("created_by", (_current_user() or {}).get("id", 1)),
+            "created_at": data.get("created_at") or _now(),
+            "updated_by": data.get("updated_by", (_current_user() or {}).get("id", data.get("created_by", 1))),
+            "updated_at": data.get("updated_at") or _now(),
+            "payment_due_date": data.get("payment_due_date"),
+            "payment_reminder_note": data.get("payment_reminder_note"),
+        },
+        existing=existing,
+    )
+    normalized["status"] = data.get("status") or ("waiting_payment" if normalized["amount_original"] == 0 else "approved")
+    return normalized
 
 @app.get("/api/health")
 @app.get("/health")
@@ -122,8 +213,21 @@ def health():
         "server_time": _now(),
         "auth_required": True,
     }
+    payload.update({
+        "api_contract_version": API_CONTRACT_VERSION,
+        "currency_contract": CURRENCY_CONTRACT_VERSION,
+        "supports_historic_currency_snapshot": True,
+    })
     if _SERVER_CONFIG.expose_database_path:
         payload["database"] = get_local_db_path()
+    return jsonify(payload)
+
+
+@app.get("/api/capabilities")
+def capabilities():
+    ensure_db()
+    payload = _capabilities_payload()
+    payload["server_time"] = _now()
     return jsonify(payload)
 
 
@@ -131,12 +235,13 @@ def health():
 @require_auth
 def server_info():
     ensure_db()
-    return jsonify({
-        "ok": True,
-        "service": "hawaa-server",
+    payload = _capabilities_payload()
+    payload.update({
         "server_time": _now(),
         "token_ttl_minutes": _SERVER_CONFIG.token_ttl_minutes,
+        "authenticated": True,
     })
+    return jsonify(payload)
 
 
 @app.post("/api/login")
@@ -197,22 +302,22 @@ def get_expense(expense_id: int):
 
 
 @app.post("/api/expenses")
-@require_auth
+@require_roles(*_role_allows_write())
 def add_expense():
     data = request.get_json(silent=True) or {}
-    try:
-        p = _expense_payload(data)
-    except ValueError as e:
-        return _json_error(e, 400)
     conn = _connect()
     try:
+        try:
+            p = _expense_payload(conn, data)
+        except ValueError as e:
+            return _json_error(e, 400)
         cur = conn.execute(
             """INSERT INTO expenses
-            (company_name, amount, type, date, notes, currency, created_by, created_at,
+            (company_name, amount, amount_base, type, date, notes, currency, created_by, created_at,
              updated_by, updated_at, amount_original, currency_original, exchange_rate_to_usd,
              status, payment_due_date, payment_reminder_note)
-            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
-            (p["company_name"], p["amount"], p["type"], p["date"], p["notes"], p["currency"], p["created_by"], p["created_at"],
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+            (p["company_name"], p["amount"], p["amount_base"], p["type"], p["date"], p["notes"], p["currency"], p["created_by"], p["created_at"],
              p["updated_by"], p["updated_at"], p["amount_original"], p["currency_original"], p["exchange_rate_to_usd"],
              p["status"], p["payment_due_date"], p["payment_reminder_note"]),
         )
@@ -229,21 +334,24 @@ def add_expense():
 
 
 @app.put("/api/expenses/<int:expense_id>")
-@require_auth
+@require_roles(*_role_allows_write())
 def update_expense(expense_id: int):
     data = request.get_json(silent=True) or {}
-    try:
-        p = _expense_payload(data, update=True)
-    except ValueError as e:
-        return _json_error(e, 400)
     conn = _connect()
     try:
+        existing_row = conn.execute("SELECT * FROM expenses WHERE id=?", (expense_id,)).fetchone()
+        if not existing_row:
+            return _json_error(f"لم يتم العثور على القيد id={expense_id}", 404)
+        try:
+            p = _expense_payload(conn, data, existing=dict(existing_row))
+        except ValueError as e:
+            return _json_error(e, 400)
         cur = conn.execute(
             """UPDATE expenses SET
-            company_name=?, amount=?, type=?, date=?, notes=?, currency=?, updated_by=?, updated_at=?,
+            company_name=?, amount=?, amount_base=?, type=?, date=?, notes=?, currency=?, updated_by=?, updated_at=?,
             amount_original=?, currency_original=?, exchange_rate_to_usd=?, status=?, payment_due_date=?, payment_reminder_note=?
             WHERE id=?""",
-            (p["company_name"], p["amount"], p["type"], p["date"], p["notes"], p["currency"], p["updated_by"], p["updated_at"],
+            (p["company_name"], p["amount"], p["amount_base"], p["type"], p["date"], p["notes"], p["currency"], p["updated_by"], p["updated_at"],
              p["amount_original"], p["currency_original"], p["exchange_rate_to_usd"], p["status"], p["payment_due_date"], p["payment_reminder_note"], expense_id),
         )
         if cur.rowcount != 1:
@@ -263,7 +371,7 @@ def update_expense(expense_id: int):
 
 
 @app.delete("/api/expenses/<int:expense_id>")
-@require_auth
+@require_roles("admin", "manager", "accountant")
 def delete_expense(expense_id: int):
     conn = _connect()
     try:
@@ -284,10 +392,10 @@ def delete_expense(expense_id: int):
 def expense_summary():
     conn = _connect()
     try:
-        rows = conn.execute("SELECT company_name, amount, type, status FROM expenses").fetchall()
+        rows = conn.execute("SELECT company_name, amount, amount_base, type, status FROM expenses").fetchall()
         approved = [r for r in rows if r["status"] != "waiting_payment"]
-        total_in = sum(float(r["amount"] or 0) for r in approved if r["type"] == "incoming")
-        total_out = sum(float(r["amount"] or 0) for r in approved if r["type"] == "outgoing")
+        total_in = sum(float((r["amount_base"] if "amount_base" in r.keys() else r["amount"]) or 0) for r in approved if r["type"] == "incoming")
+        total_out = sum(float((r["amount_base"] if "amount_base" in r.keys() else r["amount"]) or 0) for r in approved if r["type"] == "outgoing")
         return jsonify({"total_incoming": total_in, "total_outgoing": total_out, "net": total_in - total_out, "companies_count": len({r['company_name'] for r in rows})})
     finally:
         conn.close()
@@ -331,7 +439,7 @@ def get_users():
 
 
 @app.post("/api/users")
-@require_auth
+@require_roles("admin")
 def add_user():
     data = request.get_json(silent=True) or {}
     if not data.get("username") or not data.get("password"):
@@ -352,7 +460,7 @@ def add_user():
 
 
 @app.put("/api/users/<int:user_id>")
-@require_auth
+@require_roles("admin")
 def update_user(user_id: int):
     data = request.get_json(silent=True) or {}
     conn = _connect()
@@ -380,7 +488,7 @@ def update_user(user_id: int):
 
 
 @app.delete("/api/users/<int:user_id>")
-@require_auth
+@require_roles("admin")
 def delete_user(user_id: int):
     if user_id == 1:
         return _json_error("لا يمكن حذف المستخدم الرئيسي", 400)
@@ -441,7 +549,7 @@ def add_audit_log():
 
 
 @app.delete("/api/audit_log/old")
-@require_auth
+@require_roles("admin")
 def delete_old_audit_logs():
     data = request.get_json(silent=True) or {}
     days = int(data.get("days", 90))
@@ -477,7 +585,7 @@ def get_setting(key: str):
 
 
 @app.post("/api/settings/<path:key>")
-@require_auth
+@require_roles("admin")
 def set_setting(key: str):
     data = request.get_json(silent=True) or {}
     conn = _connect()
@@ -500,15 +608,31 @@ def get_exchange_rates():
         conn.close()
 
 
-@app.put("/api/exchange_rates/<currency_code>")
+@app.get("/api/exchange_rate_history")
 @require_auth
+def get_exchange_rate_history():
+    conn = _connect()
+    try:
+        rows = conn.execute("SELECT * FROM exchange_rate_history ORDER BY id DESC LIMIT 200").fetchall()
+        return jsonify([dict(r) for r in rows])
+    finally:
+        conn.close()
+
+
+@app.put("/api/exchange_rates/<currency_code>")
+@require_roles("admin", "manager")
 def update_exchange_rate(currency_code: str):
     data = request.get_json(silent=True) or {}
     conn = _connect()
     try:
+        code = currency_code.upper()
+        new_rate = float(data.get("rate_to_usd", 1.0) or 1.0)
+        old_row = conn.execute("SELECT rate_to_usd FROM exchange_rates WHERE currency_code=?", (code,)).fetchone()
+        previous = float(old_row["rate_to_usd"]) if old_row else None
         conn.execute("INSERT OR REPLACE INTO exchange_rates (currency_code, rate_to_usd, updated_at) VALUES (?,?,?)",
-                     (currency_code.upper(), float(data.get("rate_to_usd", 1.0) or 1.0), _now()))
-        _audit(conn, "تعديل سعر صرف", "exchange_rates", None, currency_code.upper())
+                     (code, new_rate, _now()))
+        _insert_rate_history(conn, code, new_rate, previous)
+        _audit(conn, "تعديل سعر صرف", "exchange_rates", None, code)
         return jsonify({"ok": True})
     finally:
         conn.close()

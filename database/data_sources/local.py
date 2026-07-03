@@ -47,12 +47,12 @@ class LocalDataSource:
         now = datetime.datetime.now().isoformat()
         cur = conn.execute(
             """INSERT INTO expenses
-            (company_name, amount, type, date, notes, currency, created_by, created_at,
+            (company_name, amount, amount_base, type, date, notes, currency, created_by, created_at,
              updated_by, updated_at, amount_original, currency_original, exchange_rate_to_usd,
              status, payment_due_date, payment_reminder_note)
-            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
             (
-                data["company_name"], data["amount"], data["type"], data["date"], data.get("notes", ""), data["currency"],
+                data["company_name"], data["amount"], data.get("amount_base", data["amount"]), data["type"], data["date"], data.get("notes", ""), data["currency"],
                 data.get("created_by", 1), data.get("created_at", now), data.get("updated_by", 1), data.get("updated_at", now),
                 data.get("amount_original", data["amount"]), data.get("currency_original", data["currency"]),
                 data.get("exchange_rate_to_usd", 1.0), data.get("status", "approved"), data.get("payment_due_date"),
@@ -67,11 +67,11 @@ class LocalDataSource:
         now = datetime.datetime.now().isoformat()
         cur = conn.execute(
             """UPDATE expenses SET
-            company_name=?, amount=?, type=?, date=?, notes=?, currency=?, updated_by=?, updated_at=?,
+            company_name=?, amount=?, amount_base=?, type=?, date=?, notes=?, currency=?, updated_by=?, updated_at=?,
             amount_original=?, currency_original=?, exchange_rate_to_usd=?, status=?, payment_due_date=?, payment_reminder_note=?
             WHERE id=?""",
             (
-                data["company_name"], data["amount"], data["type"], data["date"], data.get("notes", ""), data["currency"],
+                data["company_name"], data["amount"], data.get("amount_base", data["amount"]), data["type"], data["date"], data.get("notes", ""), data["currency"],
                 data.get("updated_by", 1), data.get("updated_at", now), data.get("amount_original", data["amount"]),
                 data.get("currency_original", data["currency"]), data.get("exchange_rate_to_usd", 1.0),
                 data.get("status", "approved"), data.get("payment_due_date"), data.get("payment_reminder_note"), int(expense_id),
@@ -135,8 +135,18 @@ class LocalDataSource:
     def update_exchange_rate(self, currency_code: str, rate_to_usd: float) -> None:
         now = datetime.datetime.now().isoformat()
         conn = self.get_connection()
+        code = (currency_code or 'USD').upper()
+        old_row = conn.execute("SELECT rate_to_usd FROM exchange_rates WHERE currency_code=?", (code,)).fetchone()
+        previous = float(old_row['rate_to_usd']) if old_row else None
         conn.execute(
             "INSERT OR REPLACE INTO exchange_rates (currency_code, rate_to_usd, updated_at) VALUES (?,?,?)",
-            (currency_code, float(rate_to_usd), now),
+            (code, float(rate_to_usd), now),
         )
+        conn.execute("CREATE TABLE IF NOT EXISTS exchange_rate_history (id INTEGER PRIMARY KEY AUTOINCREMENT, currency_code TEXT NOT NULL, rate_to_usd REAL NOT NULL, previous_rate_to_usd REAL, changed_by INTEGER, changed_at TEXT NOT NULL)")
+        conn.execute("INSERT INTO exchange_rate_history (currency_code, rate_to_usd, previous_rate_to_usd, changed_by, changed_at) VALUES (?,?,?,?,?)",
+                     (code, float(rate_to_usd), previous, None, now))
         conn.commit()
+
+    def get_exchange_rate_history(self) -> List[Dict[str, Any]]:
+        rows = self.get_connection().execute("SELECT * FROM exchange_rate_history ORDER BY id DESC LIMIT 200").fetchall()
+        return [dict(row) for row in rows]

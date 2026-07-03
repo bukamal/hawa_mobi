@@ -8,51 +8,113 @@ from __future__ import annotations
 
 import flet as ft
 
-PRIMARY = ft.Colors.INDIGO
-PAGE_BG = ft.Colors.GREY_50
+# Windows-compatible Hawaa brand tokens.  Keep these centralized so Android
+# does not drift visually from the desktop product.
+PRIMARY = "#118276"
+PRIMARY_DARK = "#0B5F57"
+PRIMARY_SOFT = "#E7F5F2"
+ACCENT = "#F5B51B"
+ACCENT_DARK = "#D77A00"
+PAGE_BG = "#F6FAF9"
 CARD_BG = ft.Colors.WHITE
-MUTED = ft.Colors.GREY_600
-BORDER = ft.Colors.GREY_200
+MUTED = "#64748B"
+TEXT = "#102033"
+BORDER = "#DCE7E5"
+DANGER = "#D64545"
+SUCCESS = "#12805C"
+WARNING = "#B7791F"
+
+ASSET_APP_SYMBOL = "/app_logo.png"
+ASSET_APP_WORDMARK = "/brand/app_wordmark.png"
+ASSET_APP_ICON = "/icon_android.png"
 
 
 def app_mark(size=86, color=PRIMARY, dark=False):
-    """Vector-like application mark: H + flight. No runtime asset dependency."""
-    fg = ft.Colors.WHITE if not dark else color
-    bg = color if not dark else ft.Colors.WHITE
-    border = ft.Border(
-        left=ft.BorderSide(1, ft.Colors.WHITE_24 if not dark else ft.Colors.INDIGO_100),
-        top=ft.BorderSide(1, ft.Colors.WHITE_24 if not dark else ft.Colors.INDIGO_100),
-        right=ft.BorderSide(1, ft.Colors.WHITE_24 if not dark else ft.Colors.INDIGO_100),
-        bottom=ft.BorderSide(1, ft.Colors.WHITE_24 if not dark else ft.Colors.INDIGO_100),
-    )
+    """Real application mark loaded from the shared Hawaa brand assets.
+
+    The old Android branch drew an H + airplane at runtime.  That made the APK
+    look like a different product than Windows.  This helper now uses the same
+    accounting/ledger symbol shipped with the desktop application.
+    """
+    bg = ft.Colors.WHITE if dark else "#FFFFFF22"
+    border_color = BORDER if dark else "#FFFFFF55"
     return ft.Container(
         width=size,
         height=size,
-        border_radius=size // 4,
+        border_radius=max(18, size // 5),
         bgcolor=bg,
-        border=border,
-        shadow=ft.BoxShadow(blur_radius=16, spread_radius=1, color=ft.Colors.BLACK26),
-        content=ft.Stack([
-            ft.Text('H', size=int(size * 0.58), weight=ft.FontWeight.BOLD, color=fg, left=int(size * 0.15), top=int(size * 0.11)),
-            ft.Icon(ft.Icons.FLIGHT, size=int(size * 0.50), color=fg, left=int(size * 0.43), top=int(size * 0.31), rotate=ft.Rotate(angle=0.78)),
-            ft.Container(width=int(size * 0.42), height=3, bgcolor=ft.Colors.AMBER, left=int(size * 0.50), top=int(size * 0.52), rotate=ft.Rotate(angle=-0.50), border_radius=2),
-        ]),
+        border=ft.Border(
+            left=ft.BorderSide(1, border_color),
+            top=ft.BorderSide(1, border_color),
+            right=ft.BorderSide(1, border_color),
+            bottom=ft.BorderSide(1, border_color),
+        ),
+        shadow=ft.BoxShadow(blur_radius=18, spread_radius=1, color=ft.Colors.BLACK26),
+        padding=max(4, size // 18),
+        content=ft.Image(src=ASSET_APP_SYMBOL, width=size, height=size, fit=ft.ImageFit.CONTAIN),
     )
 
 
-def app_brand(title='هوى الشام', subtitle='نظام الحسابات الداخلية', size=86, color=PRIMARY, dark=False):
-    text_color = ft.Colors.WHITE if not dark else ft.Colors.GREY_900
-    sub_color = ft.Colors.WHITE_70 if not dark else MUTED
-    return ft.Column(
-        controls=[
-            app_mark(size=size, color=color, dark=dark),
-            ft.Text(title, size=24 if size < 90 else 32, weight=ft.FontWeight.BOLD, color=text_color, text_align=ft.TextAlign.CENTER),
+def brand_wordmark(width=260, height=92, dark=True):
+    """Wordmark image used in splash/login/drawer where enough space exists."""
+    return ft.Image(src=ASSET_APP_WORDMARK, width=width, height=height, fit=ft.ImageFit.CONTAIN)
+
+
+def app_brand(title='هوى الشام', subtitle='نظام الحسابات الداخلية', size=86, color=PRIMARY, dark=False, wordmark=False):
+    text_color = ft.Colors.WHITE if not dark else TEXT
+    sub_color = "#FFFFFFB3" if not dark else MUTED
+    controls = [app_mark(size=size, color=color, dark=dark)]
+    if wordmark:
+        controls.append(brand_wordmark(width=max(220, int(size * 3.4)), height=max(70, int(size * 1.1)), dark=dark))
+    else:
+        controls.extend([
+            ft.Text(title, size=23 if size < 90 else 30, weight=ft.FontWeight.BOLD, color=text_color, text_align=ft.TextAlign.CENTER),
             ft.Text(subtitle, size=12 if size < 90 else 14, color=sub_color, text_align=ft.TextAlign.CENTER),
-        ],
-        spacing=8,
+        ])
+    return ft.Column(
+        controls=controls,
+        spacing=7,
         alignment=ft.MainAxisAlignment.CENTER,
         horizontal_alignment=ft.CrossAxisAlignment.CENTER,
         tight=True,
+    )
+
+
+def brand_background(content, padding=24, dark=True):
+    """Reusable branded background for splash/login/activation."""
+    colors = ["#082040", PRIMARY_DARK, "#0E8276", ACCENT_DARK] if dark else [PAGE_BG, "#EBF7F4", "#FFF8E7"]
+    return ft.Container(
+        expand=True,
+        padding=padding,
+        alignment=ft.Alignment.CENTER,
+        gradient=ft.LinearGradient(begin=ft.Alignment.TOP_LEFT, end=ft.Alignment.BOTTOM_RIGHT, colors=colors),
+        content=content,
+    )
+
+
+def brand_card(content, width=420, padding=24):
+    return ft.Card(
+        content=ft.Container(content=content, padding=padding, width=width, bgcolor=ft.Colors.WHITE, border_radius=24),
+        elevation=8,
+    )
+
+
+def status_chip(text, icon=None, color=PRIMARY, bgcolor=PRIMARY_SOFT):
+    controls = []
+    if icon:
+        controls.append(ft.Icon(icon, size=15, color=color))
+    controls.append(ft.Text(str(text), size=11, color=color, weight=ft.FontWeight.BOLD))
+    return ft.Container(
+        content=ft.Row(controls, spacing=5, tight=True, alignment=ft.MainAxisAlignment.CENTER),
+        bgcolor=bgcolor,
+        border_radius=999,
+        border=ft.Border(
+            left=ft.BorderSide(1, color),
+            top=ft.BorderSide(1, color),
+            right=ft.BorderSide(1, color),
+            bottom=ft.BorderSide(1, color),
+        ),
+        padding=ft.Padding(left=10, right=10, top=5, bottom=5),
     )
 
 
@@ -108,7 +170,7 @@ def metric_tile(label, value_control, expand=True):
     )
 
 
-def summary_bar(items, visible=True, bgcolor=ft.Colors.INDIGO_50):
+def summary_bar(items, visible=True, bgcolor=PRIMARY_SOFT):
     controls = []
     for idx, item in enumerate(items):
         if idx:
@@ -167,7 +229,7 @@ def pill(text, color=PRIMARY, bgcolor=None, icon=None, size=12, padding=None):
     controls.append(ft.Text(str(text), size=size, weight=ft.FontWeight.BOLD, color=color))
     return ft.Container(
         content=ft.Row(controls, spacing=4, tight=True),
-        bgcolor=bgcolor or ft.Colors.INDIGO_50,
+        bgcolor=bgcolor or PRIMARY_SOFT,
         border_radius=20,
         padding=padding or ft.Padding(left=10, right=10, top=5, bottom=5),
     )
@@ -242,7 +304,7 @@ def set_control_busy(control, busy=True, label=None):
     return control
 
 
-def info_banner(message, icon=ft.Icons.INFO_OUTLINE, color=PRIMARY, bgcolor=ft.Colors.INDIGO_50):
+def info_banner(message, icon=ft.Icons.INFO_OUTLINE, color=PRIMARY, bgcolor=PRIMARY_SOFT):
     return ft.Container(
         content=ft.Row([ft.Icon(icon, color=color, size=18), ft.Text(str(message), size=12, color=ft.Colors.GREY_700, expand=True)]),
         bgcolor=bgcolor,

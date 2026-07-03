@@ -16,9 +16,10 @@ def init_database():
     cursor.executescript('''
         CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT UNIQUE NOT NULL, password_hash TEXT NOT NULL, salt TEXT NOT NULL, full_name TEXT, role TEXT DEFAULT 'user', created_at TEXT, last_login TEXT, force_password_change INTEGER DEFAULT 0);
         CREATE TABLE IF NOT EXISTS audit_log (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, username TEXT, action TEXT, table_name TEXT, record_id INTEGER, details TEXT, ip_address TEXT, timestamp TEXT);
-        CREATE TABLE IF NOT EXISTS expenses (id INTEGER PRIMARY KEY AUTOINCREMENT, company_name TEXT NOT NULL, amount REAL NOT NULL, type TEXT NOT NULL CHECK(type IN ('incoming','outgoing')), date TEXT NOT NULL, notes TEXT, currency TEXT DEFAULT 'SAR', created_by INTEGER, created_at TEXT, updated_by INTEGER, updated_at TEXT, amount_original REAL NOT NULL DEFAULT 0, currency_original TEXT NOT NULL DEFAULT 'SAR', exchange_rate_to_usd REAL NOT NULL DEFAULT 1.0, status TEXT NOT NULL DEFAULT 'approved', payment_due_date TEXT, payment_reminder_note TEXT);
+        CREATE TABLE IF NOT EXISTS expenses (id INTEGER PRIMARY KEY AUTOINCREMENT, company_name TEXT NOT NULL, amount REAL NOT NULL, amount_base REAL NOT NULL DEFAULT 0, type TEXT NOT NULL CHECK(type IN ('incoming','outgoing')), date TEXT NOT NULL, notes TEXT, currency TEXT DEFAULT 'USD', created_by INTEGER, created_at TEXT, updated_by INTEGER, updated_at TEXT, amount_original REAL NOT NULL DEFAULT 0, currency_original TEXT NOT NULL DEFAULT 'USD', exchange_rate_to_usd REAL NOT NULL DEFAULT 1.0, status TEXT NOT NULL DEFAULT 'approved', payment_due_date TEXT, payment_reminder_note TEXT);
         CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT);
         CREATE TABLE IF NOT EXISTS exchange_rates (currency_code TEXT PRIMARY KEY, rate_to_usd REAL NOT NULL, updated_at TEXT);
+        CREATE TABLE IF NOT EXISTS exchange_rate_history (id INTEGER PRIMARY KEY AUTOINCREMENT, currency_code TEXT NOT NULL, rate_to_usd REAL NOT NULL, previous_rate_to_usd REAL, changed_by INTEGER, changed_at TEXT NOT NULL);
         CREATE TABLE IF NOT EXISTS token_blacklist (jti TEXT PRIMARY KEY, created_at TEXT);
         CREATE TABLE IF NOT EXISTS payment_reminders (id INTEGER PRIMARY KEY AUTOINCREMENT, expense_id INTEGER NOT NULL, reminder_date TEXT NOT NULL, note TEXT, is_done INTEGER NOT NULL DEFAULT 0, created_at TEXT, FOREIGN KEY(expense_id) REFERENCES expenses(id) ON DELETE CASCADE);
     ''')
@@ -38,6 +39,7 @@ def init_database():
             ('theme','light'),
             ('base_currency','USD'),
             ('display_currency','USD'),
+            ('schema_version','18'),
             ('abbreviate_numbers','false'),
             ('network/mode','local'),
             ('network/server_url','');
@@ -93,15 +95,22 @@ def ensure_db():
             cols = [c[1] for c in cursor.fetchall()]
             if 'amount_original' not in cols:
                 cursor.execute("ALTER TABLE expenses ADD COLUMN amount_original REAL NOT NULL DEFAULT 0")
-                cursor.execute("ALTER TABLE expenses ADD COLUMN currency_original TEXT NOT NULL DEFAULT 'SAR'")
+                cursor.execute("ALTER TABLE expenses ADD COLUMN currency_original TEXT NOT NULL DEFAULT 'USD'")
                 cursor.execute("ALTER TABLE expenses ADD COLUMN exchange_rate_to_usd REAL NOT NULL DEFAULT 1.0")
                 cursor.execute("UPDATE expenses SET amount_original = amount, currency_original = currency, exchange_rate_to_usd = 1.0")
+            if 'amount_base' not in cols:
+                cursor.execute("ALTER TABLE expenses ADD COLUMN amount_base REAL NOT NULL DEFAULT 0")
+                cursor.execute("UPDATE expenses SET amount_base = amount WHERE amount_base = 0 OR amount_base IS NULL")
+            # keep legacy amount column as base USD mirror for old views.
+            cursor.execute("UPDATE expenses SET amount_base = amount WHERE amount_base IS NULL")
             if 'status' not in cols:
                 cursor.execute("ALTER TABLE expenses ADD COLUMN status TEXT NOT NULL DEFAULT 'approved'")
             if 'payment_due_date' not in cols:
                 cursor.execute("ALTER TABLE expenses ADD COLUMN payment_due_date TEXT")
             if 'payment_reminder_note' not in cols:
                 cursor.execute("ALTER TABLE expenses ADD COLUMN payment_reminder_note TEXT")
+            cursor.execute("CREATE TABLE IF NOT EXISTS exchange_rate_history (id INTEGER PRIMARY KEY AUTOINCREMENT, currency_code TEXT NOT NULL, rate_to_usd REAL NOT NULL, previous_rate_to_usd REAL, changed_by INTEGER, changed_at TEXT NOT NULL)")
+            cursor.execute("INSERT OR REPLACE INTO settings (key, value) VALUES (?,?)", ('schema_version','18'))
             cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='token_blacklist'")
             if not cursor.fetchone():
                 cursor.execute("CREATE TABLE token_blacklist (jti TEXT PRIMARY KEY, created_at TEXT)")

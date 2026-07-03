@@ -67,7 +67,22 @@ def main() -> int:
         row = assert_one(conn, "SELECT * FROM expenses WHERE id=?", (eid,))
         assert row["company_name"] == "شركة اختبار"
         assert float(row["amount_original"]) == 125.50
+        assert abs(float(row["amount_base"]) - 125.50) < 1e-9
+        assert abs(float(row["amount"]) - float(row["amount_base"])) < 1e-9
         assert row["status"] == "approved"
+
+        # Historical rate preservation: same-currency edits must not pick up a new current rate.
+        db.update_exchange_rate('SYP', 14000)
+        syp_id = repo.add("شركة ليرة", 14000, "incoming", "2026-06-11", "سعر تاريخي", "SYP", 1)
+        syp_row = assert_one(conn, "SELECT * FROM expenses WHERE id=?", (syp_id,))
+        assert abs(float(syp_row["amount_base"]) - 1.0) < 1e-9
+        assert float(syp_row["exchange_rate_to_usd"]) == 14000.0
+        db.update_exchange_rate('SYP', 15000)
+        repo.update(syp_id, "شركة ليرة", 28000, "incoming", "2026-06-12", "تعديل بنفس العملة", "SYP", 1)
+        syp_row = assert_one(conn, "SELECT * FROM expenses WHERE id=?", (syp_id,))
+        assert float(syp_row["exchange_rate_to_usd"]) == 14000.0
+        assert abs(float(syp_row["amount_base"]) - 2.0) < 1e-9
+        repo.delete(syp_id, 1)
 
         repo.update(
             eid,
@@ -123,4 +138,7 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    code = main()
+    sys.stdout.flush() if "sys" in globals() else None
+    sys.stderr.flush() if "sys" in globals() else None
+    os._exit(code)

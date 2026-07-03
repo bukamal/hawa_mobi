@@ -63,3 +63,6 @@ class RemoteDataSource:
 
     def update_exchange_rate(self, currency_code: str, rate_to_usd: float) -> None:
         self.rest.update_exchange_rate(currency_code, float(rate_to_usd))
+
+    def get_exchange_rate_history(self) -> List[Dict[str, Any]]:
+        return self.rest.get_exchange_rate_history()

@@ -1,10 +1,17 @@
 from database.repositories.base_repo import BaseRepository
 from auth.session import UserSession
-from currency import currency
 import datetime
 from typing import List, Dict, Optional
+from services.currency_ledger_service import CurrencyLedgerService
 
 class ExpenseRepository(BaseRepository):
+    def __init__(self):
+        super().__init__()
+        self.ledger = CurrencyLedgerService()
+
+    def _base_amount(self, row: Dict) -> float:
+        return float(row.get('amount_base', row.get('amount', 0)) or 0)
+
     def get_all(self, convert_to_display: bool = True) -> List[Dict]:
         expenses = self.data.get_expenses()
         if convert_to_display:
@@ -21,14 +28,15 @@ class ExpenseRepository(BaseRepository):
                 e['currency_display'] = e.get('currency_original', e.get('currency', 'SAR'))
         return filtered
     def add(self, company_name: str, amount: float, type_val: str, date: str, notes: str, currency_code: str, user_id: int, payment_due_date: Optional[str] = None, payment_note: Optional[str] = None) -> int:
-        rate = float(currency.get_rate_to_usd(currency_code) or 1.0)
         amount = float(amount or 0)
-        amount_usd = amount / rate if currency_code != 'USD' and rate != 0 else amount
-        status = 'waiting_payment' if amount == 0 else 'approved'
+        if amount < 0:
+            raise ValueError("المبلغ لا يمكن أن يكون سالباً")
         now = datetime.datetime.now().isoformat()
-        data = {'company_name': company_name, 'amount': amount_usd, 'type': type_val, 'date': date, 'notes': notes,
+        data = {'company_name': company_name, 'amount': amount, 'type': type_val, 'date': date, 'notes': notes,
                 'currency': currency_code, 'created_by': user_id, 'created_at': now, 'updated_by': user_id, 'updated_at': now,
-                'amount_original': amount, 'currency_original': currency_code, 'exchange_rate_to_usd': rate, 'status': status, 'payment_due_date': payment_due_date, 'payment_reminder_note': payment_note}
+                'payment_due_date': payment_due_date, 'payment_reminder_note': payment_note}
+        data = self.ledger.normalize_expense_payload(data)
+        status = data['status']
         if self.data.is_remote():
             return self.data.add_expense(data)
         else:
@@ -36,9 +44,9 @@ class ExpenseRepository(BaseRepository):
             audit = {'user_id': user_id, 'username': user['username'] if user else '', 'action': "إضافة قيد", 'table_name': 'expenses', 'record_id': None,
                      'details': f"الشركة: {company_name}, المبلغ: {amount} {currency_code}"}
             conn = self.db.get_connection()
-            cur = conn.execute('''INSERT INTO expenses (company_name, amount, type, date, notes, currency, created_by, created_at, updated_by, updated_at, amount_original, currency_original, exchange_rate_to_usd, status, payment_due_date, payment_reminder_note)
-                                 VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)''',
-                              (data['company_name'], data['amount'], data['type'], data['date'], data['notes'], data['currency'],
+            cur = conn.execute('''INSERT INTO expenses (company_name, amount, amount_base, type, date, notes, currency, created_by, created_at, updated_by, updated_at, amount_original, currency_original, exchange_rate_to_usd, status, payment_due_date, payment_reminder_note)
+                                 VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)''',
+                              (data['company_name'], data['amount'], data['amount_base'], data['type'], data['date'], data['notes'], data['currency'],
                                data['created_by'], data['created_at'], data['updated_by'], data['updated_at'],
                                data['amount_original'], data['currency_original'], data['exchange_rate_to_usd'], data['status'], data['payment_due_date'], data['payment_reminder_note']))
             conn.commit()
@@ -54,14 +62,19 @@ class ExpenseRepository(BaseRepository):
         if expense_id is None:
             raise ValueError("لا يمكن تعديل قيد دون معرّف id")
         expense_id = int(expense_id)
-        rate = float(currency.get_rate_to_usd(currency_code) or 1.0)
         amount = float(amount or 0)
-        amount_usd = amount / rate if currency_code != 'USD' and rate != 0 else amount
-        status = 'waiting_payment' if amount == 0 else 'approved'
+        if amount < 0:
+            raise ValueError("المبلغ لا يمكن أن يكون سالباً")
         now = datetime.datetime.now().isoformat()
-        data = {'company_name': company_name, 'amount': amount_usd, 'type': type_val, 'date': date, 'notes': notes,
+        existing = None
+        if not self.data.is_remote():
+            existing = self.db.get_connection().execute('SELECT * FROM expenses WHERE id=?', (expense_id,)).fetchone()
+            existing = dict(existing) if existing else None
+        data = {'company_name': company_name, 'amount': amount, 'type': type_val, 'date': date, 'notes': notes,
                 'currency': currency_code, 'updated_by': user_id, 'updated_at': now,
-                'amount_original': amount, 'currency_original': currency_code, 'exchange_rate_to_usd': rate, 'status': status, 'payment_due_date': payment_due_date, 'payment_reminder_note': payment_note}
+                'payment_due_date': payment_due_date, 'payment_reminder_note': payment_note}
+        data = self.ledger.normalize_expense_payload(data, existing=existing)
+        status = data['status']
         if self.data.is_remote():
             self.data.update_expense(expense_id, data)
         else:
@@ -69,8 +82,8 @@ class ExpenseRepository(BaseRepository):
             audit = {'user_id': user_id, 'username': user['username'] if user else '', 'action': "تعديل قيد", 'table_name': 'expenses', 'record_id': expense_id,
                      'details': f"الشركة: {company_name}, المبلغ: {amount} {currency_code}"}
             conn = self.db.get_connection()
-            cur = conn.execute('''UPDATE expenses SET company_name=?, amount=?, type=?, date=?, notes=?, currency=?, updated_by=?, updated_at=?, amount_original=?, currency_original=?, exchange_rate_to_usd=?, status=?, payment_due_date=?, payment_reminder_note=? WHERE id=?''',
-                         (data['company_name'], data['amount'], data['type'], data['date'], data['notes'], data['currency'],
+            cur = conn.execute('''UPDATE expenses SET company_name=?, amount=?, amount_base=?, type=?, date=?, notes=?, currency=?, updated_by=?, updated_at=?, amount_original=?, currency_original=?, exchange_rate_to_usd=?, status=?, payment_due_date=?, payment_reminder_note=? WHERE id=?''',
+                         (data['company_name'], data['amount'], data['amount_base'], data['type'], data['date'], data['notes'], data['currency'],
                           data['updated_by'], data['updated_at'], data['amount_original'], data['currency_original'], data['exchange_rate_to_usd'], data['status'], data['payment_due_date'], data['payment_reminder_note'], expense_id))
             if cur.rowcount != 1:
                 conn.rollback()
@@ -126,7 +139,7 @@ class ExpenseRepository(BaseRepository):
     def get_summary(self, convert_to_display: bool = True) -> Dict:
         expenses = self.get_all(convert_to_display=False)
         approved = [e for e in expenses if e.get('status', 'approved') != 'waiting_payment']
-        total_in = sum(float(e['amount']) for e in approved if e['type'] == 'incoming')
-        total_out = sum(float(e['amount']) for e in approved if e['type'] == 'outgoing')
+        total_in = sum(self._base_amount(e) for e in approved if e['type'] == 'incoming')
+        total_out = sum(self._base_amount(e) for e in approved if e['type'] == 'outgoing')
         companies_count = len(set(e['company_name'] for e in expenses))
         return {'total_incoming': total_in, 'total_outgoing': total_out, 'net': total_in - total_out, 'companies_count': companies_count}
