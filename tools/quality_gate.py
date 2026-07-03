@@ -36,6 +36,11 @@ def run_py(script: str) -> None:
 
 
 def main() -> int:
+    # Clean stale root-level server entrypoints that may remain when a phase ZIP
+    # is copied over an older repository. The Android client keeps server code
+    # under server/ only.
+    run_py("tools/cleanup_legacy_root_server_entries.py")
+
     ok = compileall.compile_dir(str(ROOT), quiet=1, force=True)
     if not ok:
         raise SystemExit("compileall failed")

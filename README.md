@@ -75,3 +75,15 @@ PYTHONPATH=. python tools/quality_gate.py
 PHASE20_ANDROID_BRANDING_MOBILE_UI_PARITY_NOTES.md
 assets/brand/ANDROID_BRAND_MANIFEST.md
 ```
+
+
+## Phase 21 — CI cleanup for stale root server files
+
+If the Android project was updated by copying phase files over an older checkout, old root-level files such as `flask_server.py` or `run_server.py` may remain and fail `tools/network_contract_test.py`. Phase 21 adds `tools/cleanup_legacy_root_server_entries.py`, and `tools/quality_gate.py` runs it before the APK safety checks.
+
+Preferred Git cleanup:
+
+```bash
+git rm -f flask_server.py run_server.py
+PYTHONPATH=. python tools/quality_gate.py
+```
