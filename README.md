@@ -87,3 +87,27 @@ Preferred Git cleanup:
 git rm -f flask_server.py run_server.py
 PYTHONPATH=. python tools/quality_gate.py
 ```
+
+
+## CI cleanup notes
+
+Before Android quality gates, run:
+
+```bash
+PYTHONPATH=. python tools/quality_gate.py
+```
+
+The quality gate now removes stale runtime artifacts before preflight:
+
+- `flask_server.py` and `run_server.py` from the repository root only
+- `license.dat`
+- `network_license.dat`
+- `auth/activation.py.tmp`
+- `.pytest_cache/`
+
+If any of these files are tracked by Git, remove them permanently:
+
+```bash
+git rm -f license.dat network_license.dat auth/activation.py.tmp 2>/dev/null || true
+git rm -f flask_server.py run_server.py 2>/dev/null || true
+```

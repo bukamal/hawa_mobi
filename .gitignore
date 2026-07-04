@@ -1,0 +1,24 @@
+# Python runtime artifacts
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# Local runtime/license artifacts - never commit
+license.dat
+network_license.dat
+auth/activation.py.tmp
+*.tmp
+
+# Build outputs
+build/
+dist/
+*.apk
+*.aab
+*.zip
+
+# Local data/logs
+*.db
+*.db-wal
+*.db-shm
+logs/
+backups/
