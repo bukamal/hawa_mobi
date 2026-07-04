@@ -88,6 +88,18 @@ def main() -> int:
     if bad_alpha:
         return fail("ألوان alpha hex تسبب خللاً في Flet Android: " + ", ".join(bad_alpha[:10]))
 
+
+    share_module = (ROOT / "reports" / "share.py").read_text(encoding="utf-8")
+    if "org.kivy.android.PythonActivity" in share_module or "from jnius import" in share_module:
+        return fail("مشاركة Android لا يجب أن تعتمد على Kivy/pyjnius داخل Flet APK؛ استخدم ft.Share")
+    if "ft.Share" not in share_module or "ShareFile" not in share_module or "share_files" not in share_module:
+        return fail("مشاركة الملفات يجب أن تستخدم Flet Share service و ShareFile")
+    if "page.launch_url(file_uri(path))" in share_module:
+        return fail("لا تعتبر فتح file:// مشاركة ناجحة على Android؛ استخدم share sheet")
+    file_export = (ROOT / "services" / "file_export_service.py").read_text(encoding="utf-8")
+    if ".backup(" not in file_export or "sqlite_snapshot=backup_api" not in file_export:
+        return fail("نسخ SQLite الاحتياطي يجب أن يستخدم SQLite backup API حتى لا يفقد بيانات WAL")
+
     settings_view = (ROOT / "views" / "settings_mobile_view.py").read_text(encoding="utf-8")
     if "سيتم تطبيق اللغة بعد إعادة التشغيل" in settings_view:
         return fail("تغيير اللغة لا يزال يتطلب إعادة تشغيل؛ يجب تطبيقه فورياً عبر _hawaa_rebuild_main")

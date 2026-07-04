@@ -141,3 +141,7 @@ git rm -f flask_server.py run_server.py 2>/dev/null || true
 - يتم التحقق من `historic-currency-snapshot-v1` قبل قبول الربط.
 
 راجع: `PHASE26_QR_NETWORK_PAIRING_NOTES.md` و `QR_NETWORK_PAIRING_QA.md`.
+
+## Phase 29 — Android Share / Print / Backup Export
+
+تم إصلاح مسار المشاركة والطباعة والنسخ الاحتياطي في Android ليمر عبر Flet Share service بدل `file://` أو Intents غير موثوقة. الطباعة تعمل بإنشاء HTML ثم اختيار تطبيق الطباعة/المتصفح من نافذة المشاركة. النسخ الاحتياطي المحلي يستخدم SQLite backup API لضمان لقطة سليمة مع WAL.

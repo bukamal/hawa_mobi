@@ -143,46 +143,46 @@ class CompanyDetailsMobileView(ft.Column):
         self.records_list.controls = cards
         self._page.update()
 
-    def _export_printable_statement(self, e):
+    async def _export_printable_statement(self, e):
         try:
             from reports.account_statement import export_account_statement_html
             from services.file_export_service import FileExportService
             path = export_account_statement_html(self.company_name, self.records)
-            opened = FileExportService.open_file(self._page, path)
-            self._show_snackbar("تم إنشاء كشف الطباعة وفتحه" if opened else f"تم إنشاء كشف الطباعة: {path}", False)
+            result = await FileExportService.open_file_async(self._page, path, title="فتح أو طباعة كشف حساب")
+            self._show_snackbar(result.message if result.ok else result.message or f"تم إنشاء كشف الطباعة: {path}", not result.ok)
         except Exception as ex:
             self._show_snackbar(f"خطأ في إنشاء الكشف: {str(ex)}", True)
 
 
-    def _share_statement(self, e):
+    async def _share_statement(self, e):
         try:
             from reports.account_statement import export_account_statement_html
-            from reports.share import build_statement_message, share_file
+            from reports.share import build_statement_message, share_file_async
             path = export_account_statement_html(self.company_name, self.records)
             message = build_statement_message(self.company_name, path)
-            ok = share_file(self._page, path, message, open_whatsapp=False)
-            self._show_snackbar("تم تجهيز الكشف للمشاركة" if ok else f"تم إنشاء الكشف: {path}", False)
+            result = await share_file_async(self._page, path, message, open_whatsapp=False, title="مشاركة كشف الحساب")
+            self._show_snackbar(result.message if result.ok else result.message or f"تم إنشاء الكشف: {path}", not result.ok)
         except Exception as ex:
             self._show_snackbar(f"خطأ في مشاركة الكشف: {str(ex)}", True)
 
-    def _share_statement_whatsapp(self, e):
+    async def _share_statement_whatsapp(self, e):
         try:
             from reports.account_statement import export_account_statement_html
-            from reports.share import build_statement_message, share_file
+            from reports.share import build_statement_message, share_file_async
             path = export_account_statement_html(self.company_name, self.records)
-            message = build_statement_message(self.company_name, path)
-            ok = share_file(self._page, path, message, open_whatsapp=True)
-            self._show_snackbar("تم فتح المشاركة/واتساب" if ok else f"تم إنشاء الكشف: {path}", False)
+            message = build_statement_message(self.company_name, path) + "\nاختر واتساب من نافذة المشاركة لإرسال الملف."
+            result = await share_file_async(self._page, path, message, open_whatsapp=True, title="مشاركة كشف الحساب عبر واتساب")
+            self._show_snackbar(result.message if result.ok else result.message or f"تم إنشاء الكشف: {path}", not result.ok)
         except Exception as ex:
             self._show_snackbar(f"خطأ في مشاركة واتساب: {str(ex)}", True)
 
-    def _export_csv_statement(self, e):
+    async def _export_csv_statement(self, e):
         try:
             from reports.account_statement import export_account_statement_csv
             from services.file_export_service import FileExportService
             path = export_account_statement_csv(self.company_name, self.records)
-            ok = FileExportService.share_file(self._page, path, f"CSV - كشف حساب {self.company_name}", open_whatsapp=False)
-            self._show_snackbar("تم إنشاء CSV وفتح المشاركة" if ok else f"تم إنشاء CSV: {path}", False)
+            result = await FileExportService.share_file_async(self._page, path, f"CSV - كشف حساب {self.company_name}", open_whatsapp=False, title="مشاركة CSV كشف الحساب")
+            self._show_snackbar(result.message if result.ok else result.message or f"تم إنشاء CSV: {path}", not result.ok)
         except Exception as ex:
             self._show_snackbar(f"خطأ في إنشاء CSV: {str(ex)}", True)
 

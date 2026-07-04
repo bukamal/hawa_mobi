@@ -557,31 +557,33 @@ class SettingsMobileView(ft.Column):
             reset_btn
         ], spacing=15)
 
-    def _perform_backup(self, e):
+    async def _perform_backup(self, e):
         try:
             from services.file_export_service import FileExportService
             backup_path = FileExportService.create_backup_archive()
-            ok = FileExportService.share_file(
+            result = await FileExportService.share_file_async(
                 self._page,
                 backup_path,
                 "نسخة احتياطية من نظام هوى الشام. احتفظ بها في مكان آمن.",
                 open_whatsapp=False,
+                title="مشاركة نسخة احتياطية",
             )
-            self._show_snackbar("تم إنشاء النسخة الاحتياطية وفتح المشاركة" if ok else f"تم إنشاء النسخة الاحتياطية: {backup_path}", is_error=False)
+            self._show_snackbar(result.message if result.ok else result.message or f"تم إنشاء النسخة الاحتياطية: {backup_path}", is_error=not result.ok)
         except Exception as ex:
             self._show_snackbar(f"فشل النسخ الاحتياطي: {str(ex)}", True)
 
-    def _export_csv(self, e):
+    async def _export_csv(self, e):
         try:
             from services.file_export_service import FileExportService
             export_path = FileExportService.create_csv_archive(['expenses', 'users', 'audit_log'])
-            ok = FileExportService.share_file(
+            result = await FileExportService.share_file_async(
                 self._page,
                 export_path,
                 "تصدير CSV من نظام هوى الشام.",
                 open_whatsapp=False,
+                title="مشاركة تصدير CSV",
             )
-            self._show_snackbar("تم إنشاء ملف CSV وفتح المشاركة" if ok else f"تم إنشاء ملف CSV: {export_path}", is_error=False)
+            self._show_snackbar(result.message if result.ok else result.message or f"تم إنشاء ملف CSV: {export_path}", is_error=not result.ok)
         except Exception as ex:
             self._show_snackbar(f"فشل التصدير: {str(ex)}", True)
 

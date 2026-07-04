@@ -76,14 +76,28 @@ class FileExportService:
 
         timestamp = _dt.datetime.now().strftime("%Y%m%d_%H%M%S")
         zip_path = FileExportService.build_path(f"hawaa_backup_{timestamp}.zip", "backups", temporary=True)
+
+        # SQLite is configured with WAL. Copying hawaa_data.db alone can miss
+        # recently committed changes that still live in the -wal file. Create a
+        # consistent snapshot with SQLite backup API, then zip that snapshot.
+        snapshot_path = FileExportService.build_path(f"hawaa_data_snapshot_{timestamp}.db", "backups_snapshots", temporary=True)
+        src = sqlite3.connect(db_path)
+        dst = sqlite3.connect(snapshot_path)
+        try:
+            src.backup(dst)
+        finally:
+            dst.close()
+            src.close()
+
         with zipfile.ZipFile(zip_path, "w", compression=zipfile.ZIP_DEFLATED) as zf:
-            zf.write(db_path, "hawaa_data.db")
+            zf.write(snapshot_path, "hawaa_data.db")
             config_path = os.path.join(os.path.dirname(db_path), "config.json")
             if os.path.exists(config_path):
                 zf.write(config_path, "config.json")
             manifest = (
                 f"created_at={_dt.datetime.now().isoformat()}\n"
                 "format=hawaa-backup-v1\n"
+                "sqlite_snapshot=backup_api\n"
                 "restore_hint=استورد هذا الملف من شاشة النسخ الاحتياطي داخل التطبيق.\n"
             )
             zf.writestr("manifest.txt", manifest)
@@ -143,17 +157,22 @@ class FileExportService:
                 shutil.rmtree(tmp_dir, ignore_errors=True)
 
     @staticmethod
+    async def share_file_async(page, path: str, text: str = "", *, phone: str | None = None, open_whatsapp: bool = False, title: str = "مشاركة ملف هوى الشام"):
+        from reports.share import share_file_async
+        return await share_file_async(page, path, text, phone=phone, open_whatsapp=open_whatsapp, title=title)
+
+    @staticmethod
     def share_file(page, path: str, text: str = "", *, phone: str | None = None, open_whatsapp: bool = False) -> bool:
         from reports.share import share_file
         return share_file(page, path, text, phone=phone, open_whatsapp=open_whatsapp)
 
     @staticmethod
+    async def open_file_async(page, path: str, *, title: str = "فتح ملف هوى الشام"):
+        # Android cannot reliably open private file:// paths from Flet. Use the
+        # platform share/open sheet instead. The user can choose browser, Files,
+        # printer provider, Drive, WhatsApp, Telegram, etc.
+        return await FileExportService.share_file_async(page, path, f"ملف من نظام هوى الشام: {os.path.basename(path)}", open_whatsapp=False, title=title)
+
+    @staticmethod
     def open_file(page, path: str) -> bool:
-        from reports.share import file_uri
-        try:
-            if path and os.path.exists(path) and hasattr(page, "launch_url"):
-                page.launch_url(file_uri(path))
-                return True
-        except Exception:
-            return False
-        return False
+        return FileExportService.share_file(page, path, f"ملف من نظام هوى الشام: {os.path.basename(path)}", open_whatsapp=False)
