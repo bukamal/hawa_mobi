@@ -128,3 +128,16 @@ git rm -f flask_server.py run_server.py 2>/dev/null || true
 ## Phase 25 — Runtime Display Currency Fix
 
 تم إصلاح تطبيق عملة العرض على Android فورياً بدون إعادة تشغيل التطبيق. يعتمد الإصلاح على إبطال cache إعدادات العملة مركزياً، وتحديث الصفحة الحالية بعد حفظ إعدادات العملة أو أسعار الصرف. راجع `PHASE25_ANDROID_RUNTIME_DISPLAY_CURRENCY_FIX_NOTES.md`.
+
+
+## Phase 26 — QR Network Pairing
+
+تمت إضافة ربط Android مع Windows عبر QR / نص QR:
+
+- Windows Server ينشئ `pairing_token` مؤقتاً عبر `/api/mobile/pairing-token`.
+- Android يتحقق من QR عبر `/api/mobile/pair`.
+- QR لا يحتوي كلمة مرور ولا يسجل الدخول.
+- بعد الربط يجب تسجيل الدخول بحساب المستخدم.
+- يتم التحقق من `historic-currency-snapshot-v1` قبل قبول الربط.
+
+راجع: `PHASE26_QR_NETWORK_PAIRING_NOTES.md` و `QR_NETWORK_PAIRING_QA.md`.

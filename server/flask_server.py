@@ -9,11 +9,13 @@ machine where the server runs.
 from __future__ import annotations
 
 import datetime
+import json
 import os
 import secrets
 import sqlite3
 from functools import wraps
 from typing import Any, Dict, Optional
+from urllib.parse import urlparse
 
 # Must be set before importing database.connection so the server never switches
 # itself into REST client mode because of persisted client settings.
@@ -30,6 +32,7 @@ from services.currency_ledger_service import CurrencyLedgerService
 _SERVER_CONFIG = load_server_config()
 app = Flask(__name__)
 _TOKENS: Dict[str, Dict[str, Any]] = {}
+_PAIRING_TOKENS: Dict[str, Dict[str, Any]] = {}
 
 API_CONTRACT_VERSION = "2026.07.mobile-v1"
 CURRENCY_CONTRACT_VERSION = "historic-currency-snapshot-v1"
@@ -54,6 +57,8 @@ REQUIRED_MOBILE_ENDPOINTS = [
     "/api/exchange_rates",
     "/api/exchange_rate_history",
     "/api/exchange_rates/{currency_code}",
+    "/api/mobile/pairing-token",
+    "/api/mobile/pair",
 ]
 
 
@@ -71,6 +76,75 @@ def _capabilities_payload() -> Dict[str, Any]:
         "token_type": "Bearer",
         "endpoints": REQUIRED_MOBILE_ENDPOINTS,
     }
+
+
+PAIRING_CONTRACT_VERSION = "hawaa-mobile-pairing-v1"
+PAIRING_TOKEN_TTL_SECONDS = 300
+
+
+def _utc_now() -> datetime.datetime:
+    return datetime.datetime.now(datetime.timezone.utc)
+
+
+def _iso_utc(dt: datetime.datetime) -> str:
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=datetime.timezone.utc)
+    return dt.astimezone(datetime.timezone.utc).isoformat().replace("+00:00", "Z")
+
+
+def _public_server_url() -> str:
+    data = request.get_json(silent=True) or {}
+    explicit = str(data.get("server_url") or data.get("public_url") or "").strip().rstrip("/")
+    if explicit:
+        return explicit
+    # request.host_url may be http://127.0.0.1:8000/ on local browsers; the
+    # Windows UI should pass its LAN URL when generating QR.  This fallback keeps
+    # tests/dev server usable and the Android client still rejects localhost.
+    return request.host_url.rstrip("/")
+
+
+def _purge_pairing_tokens() -> None:
+    now = _utc_now()
+    expired = [token for token, payload in _PAIRING_TOKENS.items() if payload.get("expires_at") <= now or payload.get("used")]
+    for token in expired:
+        _PAIRING_TOKENS.pop(token, None)
+
+
+def _pairing_payload(token: str, server_url: str, expires_at: datetime.datetime) -> Dict[str, Any]:
+    payload = _capabilities_payload()
+    payload.update({
+        "app": "hawaa-sham",
+        "kind": "mobile_pairing",
+        "pairing_contract": PAIRING_CONTRACT_VERSION,
+        "pairing_token": token,
+        "server_url": server_url,
+        "server_name": "هوى الشام - خادم ويندوز",
+        "expires_at": _iso_utc(expires_at),
+        "ttl_seconds": max(0, int((expires_at - _utc_now()).total_seconds())),
+    })
+    return payload
+
+
+def _parse_iso_utc(value: str) -> Optional[datetime.datetime]:
+    if not value:
+        return None
+    try:
+        normalized = value.replace("Z", "+00:00")
+        dt = datetime.datetime.fromisoformat(normalized)
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=datetime.timezone.utc)
+        return dt.astimezone(datetime.timezone.utc)
+    except Exception:
+        return None
+
+
+def _validate_lan_url(url: str) -> bool:
+    try:
+        parsed = urlparse(url)
+        host = (parsed.hostname or "").lower()
+        return parsed.scheme in {"http", "https"} and bool(parsed.netloc) and host not in {"localhost", "127.0.0.1", "0.0.0.0", "::1"}
+    except Exception:
+        return False
 
 
 def _now() -> str:
@@ -228,6 +302,84 @@ def capabilities():
     ensure_db()
     payload = _capabilities_payload()
     payload["server_time"] = _now()
+    return jsonify(payload)
+
+
+@app.post("/api/mobile/pairing-token")
+@require_roles("admin", "manager")
+def create_mobile_pairing_token():
+    """Create a short-lived, one-time token encoded into a QR payload.
+
+    The token only pairs the phone with this server URL; it does not log in the
+    user and does not grant data access. Android must still authenticate via
+    /api/login after pairing.
+    """
+    _purge_pairing_tokens()
+    server_url = _public_server_url()
+    if not _validate_lan_url(server_url):
+        return _json_error("استخدم عنوان IP الشبكة المحلي للخادم، وليس localhost، قبل إنشاء QR للربط", 400)
+    token = secrets.token_urlsafe(24)
+    expires_at = _utc_now() + datetime.timedelta(seconds=PAIRING_TOKEN_TTL_SECONDS)
+    _PAIRING_TOKENS[token] = {
+        "expires_at": expires_at,
+        "server_url": server_url,
+        "created_by": (_current_user() or {}).get("id"),
+        "created_at": _utc_now(),
+        "used": False,
+    }
+    try:
+        conn = _connect()
+        try:
+            _audit(conn, "create_mobile_pairing_token", "mobile_pairing", None, f"QR pairing token generated for {server_url}")
+        finally:
+            conn.close()
+    except Exception:
+        pass
+    payload = _pairing_payload(token, server_url, expires_at)
+    # qr_text is what the Windows UI should render as QR Code.  It is included
+    # directly so the desktop UI can use any QR library without rebuilding it.
+    return jsonify({"ok": True, "qr_text": json.dumps(payload, ensure_ascii=False, separators=(",", ":")), "payload": payload})
+
+
+@app.post("/api/mobile/pair")
+def pair_mobile_client():
+    """Validate a QR pairing token from Android.
+
+    This endpoint is intentionally public: possession of the short-lived token
+    proves that the user saw the QR in the Windows app.  It still does not return
+    an auth token and does not bypass username/password login.
+    """
+    _purge_pairing_tokens()
+    data = request.get_json(silent=True) or {}
+    token = str(data.get("pairing_token") or "").strip()
+    if not token:
+        return _json_error("رمز الربط مطلوب", 400)
+    record = _PAIRING_TOKENS.get(token)
+    if not record:
+        return _json_error("رمز الربط غير صالح أو انتهت صلاحيته", 401)
+    if record.get("used"):
+        return _json_error("تم استخدام رمز الربط مسبقاً", 401)
+    if record.get("expires_at") <= _utc_now():
+        _PAIRING_TOKENS.pop(token, None)
+        return _json_error("انتهت صلاحية رمز الربط", 401)
+    record["used"] = True
+    payload = _capabilities_payload()
+    payload.update({
+        "ok": True,
+        "paired": True,
+        "server_url": record.get("server_url") or _public_server_url(),
+        "server_name": "هوى الشام - خادم ويندوز",
+        "pairing_contract": PAIRING_CONTRACT_VERSION,
+        "message": "تم ربط الهاتف بالخادم. سجّل الدخول بحسابك للمتابعة.",
+    })
+    try:
+        conn = _connect()
+        try:
+            _audit(conn, "pair_mobile_client", "mobile_pairing", None, f"Android client paired from {request.remote_addr or ''}")
+        finally:
+            conn.close()
+    except Exception:
+        pass
     return jsonify(payload)
 
 

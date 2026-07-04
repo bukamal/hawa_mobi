@@ -38,6 +38,8 @@ def main() -> int:
         "/api/payment_reminders",
         "/api/payment_reminders/count_waiting",
         "/api/exchange_rate_history",
+        "/api/mobile/pairing-token",
+        "/api/mobile/pair",
     }
     missing = sorted(required - route_names)
     assert not missing, "required pairing routes are not declared: " + ", ".join(missing)
@@ -45,6 +47,7 @@ def main() -> int:
     assert "def capabilities" in rest, "RestClient must support capabilities()"
     assert "'/api/capabilities'" in rest or '"/api/capabilities"' in rest, "RestClient must call /api/capabilities"
     assert "historic-currency-snapshot-v1" in network, "NetworkService must validate the currency contract"
+    assert "hawaa-mobile-pairing-v1" in server, "server must expose a stable mobile pairing contract"
     print("✅ api_capabilities_contract_smoke_test passed")
     return 0
 

@@ -377,6 +377,10 @@ class SettingsMobileView(ft.Column):
             color=ft.Colors.WHITE,
             on_click=self._save_network
         )
+        self.qr_pair_btn = ft.OutlinedButton(
+            content=ft.Row([ft.Icon(ft.Icons.QR_CODE_SCANNER), ft.Text("ربط عبر QR")]),
+            on_click=self._open_qr_pairing_dialog,
+        )
         return ft.Column([
             ft.Container(
                 content=ft.Row([
@@ -391,8 +395,73 @@ class SettingsMobileView(ft.Column):
             self.mode_dropdown,
             self.server_url,
             ft.Text("في وضع العميل استخدم IP جهاز الخادم داخل الشبكة، مثل http://192.168.1.100:8000، وليس localhost.", size=11, color=ft.Colors.GREY_600),
-            responsive_wrap([self.network_test_btn, self.network_save_btn], spacing=10)
+            info_banner("الأفضل للربط: افتح Windows > الإعدادات > الشبكة > ربط Android، ثم امسح QR أو الصق نص QR هنا. الربط لا يسجّل الدخول؛ ستحتاج اسم المستخدم وكلمة المرور بعده.", icon=ft.Icons.QR_CODE),
+            responsive_wrap([self.network_test_btn, self.network_save_btn, self.qr_pair_btn], spacing=10)
         ], spacing=15)
+
+
+    def _open_qr_pairing_dialog(self, e):
+        qr_field = ft.TextField(
+            label="نص QR / رمز الربط",
+            hint_text='الصق النص الذي يولده Windows من شاشة ربط Android',
+            multiline=True,
+            min_lines=4,
+            max_lines=7,
+            border_radius=14,
+        )
+        status = ft.Text('', size=12, color=ft.Colors.GREY_600, text_align=ft.TextAlign.CENTER)
+        apply_btn = ft.FilledButton(
+            content=ft.Row([ft.Icon(ft.Icons.LINK), ft.Text("ربط وحفظ")]),
+            bgcolor=ft.Colors.INDIGO,
+            color=ft.Colors.WHITE,
+        )
+
+        def do_pair(ev):
+            try:
+                apply_btn.disabled = True
+                apply_btn.content = ft.Row([ft.ProgressRing(width=16, height=16), ft.Text("جاري الربط")])
+                status.value = "جاري فحص الخادم ورمز الربط..."
+                status.color = ft.Colors.INDIGO
+                self._page.update()
+                from services.pairing_service import MobilePairingService
+                result = MobilePairingService.pair_from_qr_text(qr_field.value or '')
+                if not result.ok:
+                    status.value = result.message
+                    status.color = ft.Colors.RED
+                    return
+                self.server_url.value = result.server_url
+                self.mode_dropdown.value = "عميل"
+                status.value = f"✅ {result.message}\n{result.server_name} — {result.server_url}"
+                status.color = ft.Colors.GREEN
+                self._show_snackbar("تم ربط الهاتف بالخادم. سجّل الدخول بحسابك.", is_error=False)
+                close_control(self._page, dlg)
+                logout_hook = getattr(self._page, '_hawaa_logout', None)
+                if callable(logout_hook):
+                    logout_hook()
+            except Exception as ex:
+                status.value = f"❌ فشل الربط: {ex}"
+                status.color = ft.Colors.RED
+            finally:
+                apply_btn.disabled = False
+                apply_btn.content = ft.Row([ft.Icon(ft.Icons.LINK), ft.Text("ربط وحفظ")])
+                self._page.update()
+
+        apply_btn.on_click = do_pair
+        dlg = ft.AlertDialog(
+            modal=True,
+            title=ft.Text("ربط Android مع Windows عبر QR", weight=ft.FontWeight.BOLD),
+            content=ft.Container(
+                width=420,
+                content=ft.Column([
+                    info_banner("امسح QR من Windows. إذا لم تعمل الكاميرا في نسخة Flet الحالية، الصق نص QR هنا. الرمز مؤقت ولا يمنح صلاحيات دخول.", icon=ft.Icons.QR_CODE_SCANNER),
+                    qr_field,
+                    status,
+                ], tight=True, spacing=12),
+            ),
+            actions=[apply_btn, ft.TextButton("إلغاء", on_click=lambda ev: close_control(self._page, dlg))],
+            actions_alignment=ft.MainAxisAlignment.END,
+        )
+        open_control(self._page, dlg)
 
     def _normalize_server_url(self):
         from services.network_service import NetworkService

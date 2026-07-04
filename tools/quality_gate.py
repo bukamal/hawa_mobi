@@ -43,6 +43,7 @@ def main() -> int:
         "tools/runtime_currency_settings_smoke_test.py",
         "tools/network_contract_test.py",
         "tools/api_capabilities_contract_smoke_test.py",
+        "tools/mobile_pairing_contract_smoke_test.py",
         "tools/apk_release_preflight.py",
         "tools/server_import_smoke_test.py",
         # The following auth/network-bootstrap checks remain useful, but they

@@ -117,6 +117,9 @@ def main() -> int:
         "supports_historic_currency_snapshot",
         "amount_base",
         "exchange_rate_history",
+        "/api/mobile/pairing-token",
+        "/api/mobile/pair",
+        "hawaa-mobile-pairing-v1",
     ]
     missing_terms = [t for t in required_terms if t not in server]
     if missing_terms:
@@ -127,6 +130,19 @@ def main() -> int:
         return fail("RestClient لا يفحص /api/capabilities")
     if "localhost" not in rest or "127.0.0.1" not in rest:
         return fail("RestClient يجب أن يمنع localhost في APK client mode")
+
+    if "def pair_mobile" not in rest or "/api/mobile/pair" not in rest:
+        return fail("RestClient لا يدعم تحقق رمز ربط Android عبر /api/mobile/pair")
+    pairing = (ROOT / "services" / "pairing_service.py").read_text(encoding="utf-8")
+    if "MobilePairingService" not in pairing or "pair_from_qr_text" not in pairing:
+        return fail("خدمة ربط QR غير مكتملة في Android")
+    if "NetworkService.save_mode(\"client\"" not in pairing:
+        return fail("نجاح ربط QR يجب أن يحفظ وضع عميل الشبكة فوراً")
+    login_view = (ROOT / "views" / "login_view.py").read_text(encoding="utf-8")
+    if "ربط مع Windows عبر QR" not in login_view:
+        return fail("واجهة تسجيل الدخول يجب أن توفر ربط Android مع Windows عبر QR قبل تسجيل الدخول")
+    if "ربط عبر QR" not in settings_view:
+        return fail("إعدادات الشبكة يجب أن توفر ربط QR")
 
     # Optional sanity check for produced release ZIP/APK when the operator passes it.
     if len(sys.argv) > 1:

@@ -7,7 +7,8 @@ from database import UserRepository
 from database.connection import DatabaseConnection, get_setting, set_setting
 from auth.session import UserSession
 from i18n.translator import translate, set_language, language_code_from_label, language_label, is_rtl
-from views.ui_kit import app_brand, brand_background, brand_card, status_chip, PRIMARY, PRIMARY_SOFT, MUTED, DANGER, SUCCESS
+from views.ui_kit import app_brand, brand_background, brand_card, status_chip, info_banner, show_snackbar, PRIMARY, PRIMARY_SOFT, MUTED, DANGER, SUCCESS
+from views.flet_compat import open_control, close_control
 
 
 class LoginView(ft.Container):
@@ -39,6 +40,7 @@ class LoginView(ft.Container):
         self.brand = app_brand(translate('app_name'), translate('login_subtitle'), size=92, dark=True)
         self.form_title = ft.Text(translate('login_data'), size=16, weight=ft.FontWeight.BOLD, color="#102033")
         self.clear_saved_btn = ft.TextButton(content=ft.Text(translate('clear_saved_user'), size=12, color=PRIMARY), on_click=self._switch_account)
+        self.qr_pair_btn = ft.OutlinedButton(content=ft.Row([ft.Icon(ft.Icons.QR_CODE_SCANNER), ft.Text('ربط مع Windows عبر QR')]), width=340, on_click=self._open_qr_pairing_dialog)
         self.forgot_hint = ft.Text(translate('forgot_password_hint'), size=10, color=MUTED, text_align=ft.TextAlign.CENTER)
 
         form = ft.Column(
@@ -54,6 +56,7 @@ class LoginView(ft.Container):
                 ft.Row([self.remember, self.lang_dropdown], alignment=ft.MainAxisAlignment.SPACE_BETWEEN, vertical_alignment=ft.CrossAxisAlignment.CENTER),
                 ft.Container(height=6),
                 self.login_btn,
+                self.qr_pair_btn,
                 self.clear_saved_btn,
                 self.forgot_hint,
             ],
@@ -65,6 +68,64 @@ class LoginView(ft.Container):
         self.content = brand_background(brand_card(form, width=430, padding=24), padding=20, dark=False)
         self._populate_users()
         self._update_network_status()
+
+
+    def _open_qr_pairing_dialog(self, e):
+        qr_field = ft.TextField(
+            label='نص QR / رمز الربط',
+            hint_text='الصق نص QR الذي يولده تطبيق Windows',
+            multiline=True,
+            min_lines=4,
+            max_lines=7,
+            border_radius=14,
+        )
+        status = ft.Text('', size=12, color=MUTED, text_align=ft.TextAlign.CENTER)
+        apply_btn = ft.FilledButton(content=ft.Row([ft.Icon(ft.Icons.LINK), ft.Text('ربط وحفظ')]), bgcolor=PRIMARY, color=ft.Colors.WHITE)
+
+        def do_pair(ev):
+            try:
+                apply_btn.disabled = True
+                apply_btn.content = ft.Row([ft.ProgressRing(width=16, height=16), ft.Text('جاري الربط')])
+                status.value = 'جاري فحص الخادم ورمز الربط...'
+                status.color = PRIMARY
+                self._page.update()
+                from services.pairing_service import MobilePairingService
+                result = MobilePairingService.pair_from_qr_text(qr_field.value or '')
+                if not result.ok:
+                    status.value = result.message
+                    status.color = DANGER
+                    return
+                status.value = f'✅ {result.message}\n{result.server_url}'
+                status.color = SUCCESS
+                self._update_network_status()
+                self._populate_users()
+                self.error_msg.value = 'تم الربط. سجّل الدخول بحساب Windows Server.'
+                self.error_msg.color = SUCCESS
+                close_control(self._page, dlg)
+            except Exception as ex:
+                status.value = f'❌ فشل الربط: {ex}'
+                status.color = DANGER
+            finally:
+                apply_btn.disabled = False
+                apply_btn.content = ft.Row([ft.Icon(ft.Icons.LINK), ft.Text('ربط وحفظ')])
+                self._page.update()
+
+        apply_btn.on_click = do_pair
+        dlg = ft.AlertDialog(
+            modal=True,
+            title=ft.Text('ربط Android مع Windows عبر QR', weight=ft.FontWeight.BOLD),
+            content=ft.Container(
+                width=420,
+                content=ft.Column([
+                    info_banner('افتح Windows > الشبكة > ربط Android. امسح QR أو الصق نصه هنا. الربط لا يغني عن تسجيل الدخول.', icon=ft.Icons.QR_CODE),
+                    qr_field,
+                    status,
+                ], tight=True, spacing=12),
+            ),
+            actions=[apply_btn, ft.TextButton('إلغاء', on_click=lambda ev: close_control(self._page, dlg))],
+            actions_alignment=ft.MainAxisAlignment.END,
+        )
+        open_control(self._page, dlg)
 
     def _update_network_status(self):
         db = DatabaseConnection()

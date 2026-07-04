@@ -71,7 +71,7 @@ class RestClient:
         return headers
 
     def _requires_auth(self, endpoint: str) -> bool:
-        return not (endpoint in {'/api/login', '/api/health', '/health', '/api/capabilities'} or endpoint.startswith('/api/health'))
+        return not (endpoint in {'/api/login', '/api/health', '/health', '/api/capabilities', '/api/mobile/pair'} or endpoint.startswith('/api/health'))
 
     def _resolve_server_url(self) -> str:
         root = _clean_server_root(self.server_url)
@@ -148,6 +148,10 @@ class RestClient:
                     'supports_historic_currency_snapshot': bool(health.get('supports_historic_currency_snapshot')),
                 }
             raise
+
+
+    def pair_mobile(self, pairing_token: str) -> Dict:
+        return self._request('POST', '/api/mobile/pair', {'pairing_token': pairing_token}, retries=1)
 
     def login(self, username: str, password: str) -> Dict:
         res = self._request('POST', '/api/login', {'username': username, 'password': password})
