@@ -26,6 +26,8 @@ ast.parse(text)
 assert 'def app_mark(' in text
 assert 'ASSET_APP_SYMBOL' in text
 assert 'ft.Image' in text
+assert 'ft.ImageFit' not in text, 'Use string-based image_fit() for Flet APK compatibility'
+assert 'def image_fit(' in text
 assert 'ft.Icons.FLIGHT' not in text
 assert "ft.Text('H'" not in text
 assert 'def app_brand(' in text

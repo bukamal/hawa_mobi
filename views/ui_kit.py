@@ -29,6 +29,19 @@ ASSET_APP_WORDMARK = "/brand/app_wordmark.png"
 ASSET_APP_ICON = "/icon_android.png"
 
 
+def image_fit(name: str) -> str:
+    """Return an image fit value compatible across Flet versions.
+
+    Some APK builds use a Flet runtime that does not expose the Flet image-fit enum.
+    Flet's Image control accepts the lower-case string values used by Flutter
+    BoxFit, so keeping this helper string-based prevents startup crashes such as
+    the Android startup image-fit enum crash on Android.
+    """
+    normalized = str(name or "contain").strip().lower()
+    allowed = {"contain", "cover", "fill", "fit_width", "fit_height", "none", "scale_down"}
+    return normalized if normalized in allowed else "contain"
+
+
 def app_mark(size=86, color=PRIMARY, dark=False):
     """Real application mark loaded from the shared Hawaa brand assets.
 
@@ -51,13 +64,13 @@ def app_mark(size=86, color=PRIMARY, dark=False):
         ),
         shadow=ft.BoxShadow(blur_radius=18, spread_radius=1, color=ft.Colors.BLACK26),
         padding=max(4, size // 18),
-        content=ft.Image(src=ASSET_APP_SYMBOL, width=size, height=size, fit=ft.ImageFit.CONTAIN),
+        content=ft.Image(src=ASSET_APP_SYMBOL, width=size, height=size, fit=image_fit("contain")),
     )
 
 
 def brand_wordmark(width=260, height=92, dark=True):
     """Wordmark image used in splash/login/drawer where enough space exists."""
-    return ft.Image(src=ASSET_APP_WORDMARK, width=width, height=height, fit=ft.ImageFit.CONTAIN)
+    return ft.Image(src=ASSET_APP_WORDMARK, width=width, height=height, fit=image_fit("contain"))
 
 
 def app_brand(title='هوى الشام', subtitle='نظام الحسابات الداخلية', size=86, color=PRIMARY, dark=False, wordmark=False):

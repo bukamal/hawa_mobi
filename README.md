@@ -111,3 +111,8 @@ If any of these files are tracked by Git, remove them permanently:
 git rm -f license.dat network_license.dat auth/activation.py.tmp 2>/dev/null || true
 git rm -f flask_server.py run_server.py 2>/dev/null || true
 ```
+
+
+## Phase 23 — Flet ImageFit compatibility
+
+إذا ظهر على Android الخطأ `module 'flet' has no attribute 'ImageFit'`، فقد تم إصلاحه باستبدال `ft.ImageFit` بقيم نصية عبر `views/ui_kit.py::image_fit()`. يمنع `apk_release_preflight.py` الرجوع لهذا الاستخدام.

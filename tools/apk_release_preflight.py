@@ -71,6 +71,10 @@ def main() -> int:
         return fail("ui_kit ما زال يستخدم شعار Android القديم H + Flight بدل شعار هوى الشام الموحد")
     if "ASSET_APP_SYMBOL" not in ui_kit or "brand_wordmark" not in ui_kit:
         return fail("ui_kit لا يستخدم أصول الهوية البصرية الموحدة")
+    if "ft.ImageFit" in ui_kit:
+        return fail("ui_kit يستخدم ft.ImageFit؛ بعض إصدارات Flet داخل APK لا تدعمها. استخدم image_fit() بقيم نصية")
+    if "def image_fit(" not in ui_kit:
+        return fail("ui_kit لا يحتوي helper image_fit للتوافق مع إصدارات Flet")
 
     pyproject = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
     if "android.permission.INTERNET" not in pyproject:
