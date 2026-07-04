@@ -86,7 +86,7 @@ class CompanyDetailsMobileView(ft.Column):
         is_viewer = UserSession.get_current() and UserSession.get_current().get('role') == 'viewer'
 
         for idx, r in enumerate(self.records, 1):
-            amount_str = f"{r['amount_original']:,.2f} {r['currency_original']}"
+            amount_str = currency.format_amount(float(r.get('amount_original') or 0), r.get('currency_original') or display_curr)
             is_waiting = r.get('status') == 'waiting_payment'
             if r['type'] == 'incoming':
                 inc_out = amount_str

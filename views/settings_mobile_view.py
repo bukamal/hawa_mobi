@@ -254,18 +254,98 @@ class SettingsMobileView(ft.Column):
         self.company_address = ft.TextField(label="العنوان", value=info.get('address',''), width=350)
         self.company_phone = ft.TextField(label="الهاتف", value=info.get('phone',''), width=350)
         self.company_email = ft.TextField(label="البريد الإلكتروني", value=info.get('email',''), width=350)
-        self.company_logo = ft.TextField(label="مسار الشعار", value=info.get('logo_path',''), width=350, read_only=True)
-        logo_btn = ft.TextButton(content=ft.Text("اختيار شعار"), on_click=self._browse_logo)
+        self.company_logo = ft.TextField(label="مسار الشعار داخل التطبيق", value=info.get('logo_path',''), width=350, read_only=True)
+        self.logo_preview = ft.Container(content=self._logo_preview_control(info.get('logo_path','')), padding=8, border_radius=14, bgcolor=ft.Colors.GREY_100)
+        logo_btn = ft.FilledButton(content=ft.Row([ft.Icon(ft.Icons.IMAGE), ft.Text("اختيار شعار")]), on_click=self._browse_logo)
+        remove_logo_btn = ft.OutlinedButton(content=ft.Row([ft.Icon(ft.Icons.DELETE_OUTLINE), ft.Text("إزالة الشعار")]), on_click=self._remove_company_logo)
         save_btn = ft.FilledButton(content=ft.Text("حفظ"), bgcolor=ft.Colors.INDIGO, color=ft.Colors.WHITE, on_click=self._save_company)
-        return ft.Column([self.company_name, self.company_address, self.company_phone, self.company_email, ft.Row([self.company_logo, logo_btn]), save_btn], spacing=15)
+        return ft.Column([
+            self.company_name,
+            self.company_address,
+            self.company_phone,
+            self.company_email,
+            info_banner("يتم نسخ الشعار إلى تخزين التطبيق وإدخاله داخل تقارير HTML كصورة Base64 حتى يظهر عند الطباعة والمشاركة.", icon=ft.Icons.IMAGE),
+            self.logo_preview,
+            self.company_logo,
+            responsive_wrap([logo_btn, remove_logo_btn, save_btn], spacing=10),
+        ], spacing=15)
+
+    def _logo_preview_control(self, path: str):
+        try:
+            from services.company_logo_service import image_to_base64
+            b64 = image_to_base64(path or "")
+            if b64:
+                return ft.Row([
+                    ft.Image(src_base64=b64, width=86, height=86, fit="contain"),
+                    ft.Column([
+                        ft.Text("شعار التقارير والطباعة", size=13, weight=ft.FontWeight.BOLD),
+                        ft.Text("سيظهر في كشف الحساب والطباعة عند تفعيل إظهار الشعار.", size=11, color=ft.Colors.GREY_600),
+                    ], spacing=3, expand=True),
+                ], alignment=ft.MainAxisAlignment.START, vertical_alignment=ft.CrossAxisAlignment.CENTER)
+        except Exception:
+            pass
+        return ft.Row([
+            ft.Icon(ft.Icons.IMAGE_NOT_SUPPORTED, size=38, color=ft.Colors.GREY_500),
+            ft.Text("لم يتم اختيار شعار بعد", size=12, color=ft.Colors.GREY_600),
+        ], alignment=ft.MainAxisAlignment.START)
 
     def _save_company(self, e):
-        info = {'name': self.company_name.value, 'address': self.company_address.value, 'phone': self.company_phone.value, 'email': self.company_email.value, 'logo_path': self.company_logo.value}
+        info = {
+            'name': self.company_name.value,
+            'address': self.company_address.value,
+            'phone': self.company_phone.value,
+            'email': self.company_email.value,
+            'logo_path': self.company_logo.value,
+        }
         save_company_info(info)
         self._show_snackbar("تم حفظ معلومات الشركة", is_error=False)
 
     def _browse_logo(self, e):
-        self._show_snackbar("استخدم مسار الملف مباشرة")
+        picker = ft.FilePicker(on_result=self._on_logo_picked)
+        try:
+            self._page.overlay.append(picker)
+            self._page.update()
+        except Exception:
+            pass
+        try:
+            picker.pick_files(
+                allow_multiple=False,
+                allowed_extensions=["png", "jpg", "jpeg", "webp"],
+                dialog_title="اختيار شعار التقارير",
+            )
+        except Exception as ex:
+            self._show_snackbar(f"تعذر فتح منتقي الملفات: {ex}", True)
+
+    def _on_logo_picked(self, e):
+        try:
+            files = getattr(e, 'files', None) or []
+            if not files:
+                self._show_snackbar("لم يتم اختيار شعار", False)
+                return
+            selected = files[0]
+            source_path = getattr(selected, 'path', None) or getattr(selected, 'name', None)
+            if not source_path or not os.path.exists(source_path):
+                self._show_snackbar("لم يستطع Android إعطاء مسار قابل للقراءة. انسخ الصورة إلى Files ثم أعد المحاولة.", True)
+                return
+            from services.company_logo_service import import_logo
+            stored = import_logo(source_path)
+            self.company_logo.value = stored
+            self.logo_preview.content = self._logo_preview_control(stored)
+            self._show_snackbar("تم اختيار الشعار وسيُستخدم في الطباعة", False)
+            self._page.update()
+        except Exception as ex:
+            self._show_snackbar(f"فشل اختيار الشعار: {ex}", True)
+
+    def _remove_company_logo(self, e):
+        try:
+            from services.company_logo_service import remove_logo
+            remove_logo(self.company_logo.value)
+        except Exception:
+            pass
+        self.company_logo.value = ""
+        self.logo_preview.content = self._logo_preview_control("")
+        self._show_snackbar("تم إزالة الشعار", False)
+        self._page.update()
 
 
     def _reports_tab(self):
@@ -273,6 +353,7 @@ class SettingsMobileView(ft.Column):
         settings = get_report_settings()
         self.report_header_note = ft.TextField(label="نص الرأس", value=settings.get('header_note', ''), width=350)
         self.report_footer_note = ft.TextField(label="نص التذييل", value=settings.get('footer_note', ''), width=350, multiline=True, min_lines=2, max_lines=3)
+        self.report_show_logo = ft.Checkbox(label="إظهار شعار الشركة في الطباعة", value=bool(settings.get('show_company_logo', True)))
         self.report_show_generated_at = ft.Checkbox(label="إظهار تاريخ إنشاء التقرير", value=bool(settings.get('show_generated_at', True)))
         self.report_columns = []
         column_controls = []
@@ -286,6 +367,7 @@ class SettingsMobileView(ft.Column):
             info_banner("ترتيب كشف الحساب الافتراضي: التاريخ، الملاحظات، لنا، له، التراكمي. يمكن إظهار أعمدة إضافية مثل القيمة التاريخية للعملة."),
             self.report_header_note,
             self.report_footer_note,
+            self.report_show_logo,
             self.report_show_generated_at,
             ft.Text("أعمدة كشف الحساب", size=14, weight=ft.FontWeight.BOLD),
             ft.Column(column_controls, spacing=4),
@@ -307,6 +389,7 @@ class SettingsMobileView(ft.Column):
         save_report_settings({
             'header_note': self.report_header_note.value,
             'footer_note': self.report_footer_note.value,
+            'show_company_logo': bool(self.report_show_logo.value),
             'show_generated_at': bool(self.report_show_generated_at.value),
             'account_statement_columns': ordered,
         })
@@ -401,67 +484,16 @@ class SettingsMobileView(ft.Column):
 
 
     def _open_qr_pairing_dialog(self, e):
-        qr_field = ft.TextField(
-            label="نص QR / رمز الربط",
-            hint_text='الصق النص الذي يولده Windows من شاشة ربط Android',
-            multiline=True,
-            min_lines=4,
-            max_lines=7,
-            border_radius=14,
-        )
-        status = ft.Text('', size=12, color=ft.Colors.GREY_600, text_align=ft.TextAlign.CENTER)
-        apply_btn = ft.FilledButton(
-            content=ft.Row([ft.Icon(ft.Icons.LINK), ft.Text("ربط وحفظ")]),
-            bgcolor=ft.Colors.INDIGO,
-            color=ft.Colors.WHITE,
-        )
+        from views.dialogs.qr_pairing_dialog import open_qr_pairing_dialog
 
-        def do_pair(ev):
-            try:
-                apply_btn.disabled = True
-                apply_btn.content = ft.Row([ft.ProgressRing(width=16, height=16), ft.Text("جاري الربط")])
-                status.value = "جاري فحص الخادم ورمز الربط..."
-                status.color = ft.Colors.INDIGO
-                self._page.update()
-                from services.pairing_service import MobilePairingService
-                result = MobilePairingService.pair_from_qr_text(qr_field.value or '')
-                if not result.ok:
-                    status.value = result.message
-                    status.color = ft.Colors.RED
-                    return
-                self.server_url.value = result.server_url
-                self.mode_dropdown.value = "عميل"
-                status.value = f"✅ {result.message}\n{result.server_name} — {result.server_url}"
-                status.color = ft.Colors.GREEN
-                self._show_snackbar("تم ربط الهاتف بالخادم. سجّل الدخول بحسابك.", is_error=False)
-                close_control(self._page, dlg)
-                logout_hook = getattr(self._page, '_hawaa_logout', None)
-                if callable(logout_hook):
-                    logout_hook()
-            except Exception as ex:
-                status.value = f"❌ فشل الربط: {ex}"
-                status.color = ft.Colors.RED
-            finally:
-                apply_btn.disabled = False
-                apply_btn.content = ft.Row([ft.Icon(ft.Icons.LINK), ft.Text("ربط وحفظ")])
-                self._page.update()
+        def on_success(result):
+            self.server_url.value = result.server_url
+            self.mode_dropdown.value = "عميل"
+            logout_hook = getattr(self._page, '_hawaa_logout', None)
+            if callable(logout_hook):
+                logout_hook()
 
-        apply_btn.on_click = do_pair
-        dlg = ft.AlertDialog(
-            modal=True,
-            title=ft.Text("ربط Android مع Windows عبر QR", weight=ft.FontWeight.BOLD),
-            content=ft.Container(
-                width=420,
-                content=ft.Column([
-                    info_banner("امسح QR من Windows. إذا لم تعمل الكاميرا في نسخة Flet الحالية، الصق نص QR هنا. الرمز مؤقت ولا يمنح صلاحيات دخول.", icon=ft.Icons.QR_CODE_SCANNER),
-                    qr_field,
-                    status,
-                ], tight=True, spacing=12),
-            ),
-            actions=[apply_btn, ft.TextButton("إلغاء", on_click=lambda ev: close_control(self._page, dlg))],
-            actions_alignment=ft.MainAxisAlignment.END,
-        )
-        open_control(self._page, dlg)
+        return open_qr_pairing_dialog(self._page, on_success=on_success)
 
     def _normalize_server_url(self):
         from services.network_service import NetworkService

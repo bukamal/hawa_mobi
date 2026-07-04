@@ -71,61 +71,16 @@ class LoginView(ft.Container):
 
 
     def _open_qr_pairing_dialog(self, e):
-        qr_field = ft.TextField(
-            label='نص QR / رمز الربط',
-            hint_text='الصق نص QR الذي يولده تطبيق Windows',
-            multiline=True,
-            min_lines=4,
-            max_lines=7,
-            border_radius=14,
-        )
-        status = ft.Text('', size=12, color=MUTED, text_align=ft.TextAlign.CENTER)
-        apply_btn = ft.FilledButton(content=ft.Row([ft.Icon(ft.Icons.LINK), ft.Text('ربط وحفظ')]), bgcolor=PRIMARY, color=ft.Colors.WHITE)
+        from views.dialogs.qr_pairing_dialog import open_qr_pairing_dialog
 
-        def do_pair(ev):
-            try:
-                apply_btn.disabled = True
-                apply_btn.content = ft.Row([ft.ProgressRing(width=16, height=16), ft.Text('جاري الربط')])
-                status.value = 'جاري فحص الخادم ورمز الربط...'
-                status.color = PRIMARY
-                self._page.update()
-                from services.pairing_service import MobilePairingService
-                result = MobilePairingService.pair_from_qr_text(qr_field.value or '')
-                if not result.ok:
-                    status.value = result.message
-                    status.color = DANGER
-                    return
-                status.value = f'✅ {result.message}\n{result.server_url}'
-                status.color = SUCCESS
-                self._update_network_status()
-                self._populate_users()
-                self.error_msg.value = 'تم الربط. سجّل الدخول بحساب Windows Server.'
-                self.error_msg.color = SUCCESS
-                close_control(self._page, dlg)
-            except Exception as ex:
-                status.value = f'❌ فشل الربط: {ex}'
-                status.color = DANGER
-            finally:
-                apply_btn.disabled = False
-                apply_btn.content = ft.Row([ft.Icon(ft.Icons.LINK), ft.Text('ربط وحفظ')])
-                self._page.update()
+        def on_success(result):
+            self._update_network_status()
+            self._populate_users()
+            self.error_msg.value = 'تم الربط. سجّل الدخول بحساب Windows Server.'
+            self.error_msg.color = SUCCESS
+            self._page.update()
 
-        apply_btn.on_click = do_pair
-        dlg = ft.AlertDialog(
-            modal=True,
-            title=ft.Text('ربط Android مع Windows عبر QR', weight=ft.FontWeight.BOLD),
-            content=ft.Container(
-                width=420,
-                content=ft.Column([
-                    info_banner('افتح Windows > الشبكة > ربط Android. امسح QR أو الصق نصه هنا. الربط لا يغني عن تسجيل الدخول.', icon=ft.Icons.QR_CODE),
-                    qr_field,
-                    status,
-                ], tight=True, spacing=12),
-            ),
-            actions=[apply_btn, ft.TextButton('إلغاء', on_click=lambda ev: close_control(self._page, dlg))],
-            actions_alignment=ft.MainAxisAlignment.END,
-        )
-        open_control(self._page, dlg)
+        return open_qr_pairing_dialog(self._page, on_success=on_success)
 
     def _update_network_status(self):
         db = DatabaseConnection()

@@ -145,3 +145,16 @@ git rm -f flask_server.py run_server.py 2>/dev/null || true
 ## Phase 29 — Android Share / Print / Backup Export
 
 تم إصلاح مسار المشاركة والطباعة والنسخ الاحتياطي في Android ليمر عبر Flet Share service بدل `file://` أو Intents غير موثوقة. الطباعة تعمل بإنشاء HTML ثم اختيار تطبيق الطباعة/المتصفح من نافذة المشاركة. النسخ الاحتياطي المحلي يستخدم SQLite backup API لضمان لقطة سليمة مع WAL.
+
+
+## Phase 30 — Android Money Format Polish
+
+تم توحيد تنسيق المبالغ على Android بحيث يحترم خيار اختصار الأعداد الكبيرة فورًا داخل Dashboard وكشف الشركة والبطاقات، مع إبقاء التقارير والطباعة بالأرقام الكاملة. راجع `PHASE30_ANDROID_MONEY_FORMAT_POLISH_NOTES.md`.
+
+## Phase 31 — QR Scanner and Logo Printing
+
+- شاشة ربط Android مع Windows أصبحت موحدة وتحتوي على زر مسح بالكاميرا مع لصق نص الربط كخيار احتياطي.
+- تمت إضافة إذن CAMERA لبناء APK.
+- اختيار شعار الشركة يستخدم FilePicker ويخزن الصورة داخل app storage.
+- تقارير HTML تضمّن الشعار كـ Base64 حتى يظهر عند الطباعة والمشاركة.
+- تم منع بقاء زر FAB الخاص بصفحات أخرى داخل الإعدادات.

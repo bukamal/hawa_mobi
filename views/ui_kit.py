@@ -263,7 +263,7 @@ def stat_card(title, value, color=PRIMARY, icon=None, subtitle=None):
         ft.Row([
             ft.Column([
                 ft.Text(title, size=11, color=MUTED),
-                ft.Text(value, size=18, weight=ft.FontWeight.BOLD, color=color),
+                ft.Text(str(value), size=17, weight=ft.FontWeight.BOLD, color=color, max_lines=4, overflow=ft.TextOverflow.ELLIPSIS),
                 ft.Text(subtitle or "", size=11, color=ft.Colors.GREY_500, visible=bool(subtitle)),
             ], expand=True, spacing=3),
             ft.Container(
@@ -289,7 +289,7 @@ def section_label(text, icon=None):
 def key_value_tile(label, value, color=None, expand=True):
     return ft.Column([
         ft.Text(label, size=11, color=MUTED),
-        ft.Text(str(value), size=14, color=color, weight=ft.FontWeight.BOLD),
+        ft.Text(str(value), size=13, color=color, weight=ft.FontWeight.BOLD, text_align=ft.TextAlign.CENTER, max_lines=2, overflow=ft.TextOverflow.ELLIPSIS),
     ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, expand=expand, spacing=2)
 
 

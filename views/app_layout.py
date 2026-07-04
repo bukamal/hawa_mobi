@@ -128,6 +128,12 @@ class AppLayout(ft.Column):
 
     def switch_page(self, page_id):
         self.current_page_id = page_id
+        # Do not let a FAB from the previous page leak into settings/audit/dashboard.
+        # Individual pages that need a FAB (accounts/users) set their own button.
+        try:
+            self._page.floating_action_button = None
+        except Exception:
+            pass
         self._refresh_status_bar()
         self.content_area.content = loading_view('جاري فتح الشاشة...' if translate('settings') == 'الإعدادات' else 'Loading screen...')
         safe_update(self._page)

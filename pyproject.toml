@@ -24,7 +24,8 @@ product = "هوى الشام"
 company = "Hawaa"
 copyright = "Copyright (C) 2026 Hawaa"
 android_permissions = [
-    "android.permission.INTERNET"
+    "android.permission.INTERNET",
+    "android.permission.CAMERA"
 ]
 
 [tool.flet.app]

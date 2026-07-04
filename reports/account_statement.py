@@ -15,6 +15,7 @@ from typing import Dict, Iterable, List, Tuple
 from config import get_company_info
 from currency import currency
 from reports.config import get_report_settings
+from services.company_logo_service import image_to_data_uri
 
 
 def _safe(value) -> str:
@@ -23,7 +24,7 @@ def _safe(value) -> str:
 
 def _money(amount, code) -> str:
     try:
-        return currency.format_amount(float(amount or 0), code)
+        return currency.format_amount_full(float(amount or 0), code)
     except Exception:
         return f"{float(amount or 0):,.2f} {code}"
 
@@ -109,6 +110,8 @@ def export_account_statement_html(company_name: str, records: Iterable[Dict], ou
     output_path = output_path or os.path.join(_report_dir(), safe_filename)
 
     header_lines = [info.get("address"), info.get("phone"), info.get("email"), info.get("tax_number")]
+    logo_uri = image_to_data_uri(info.get("logo_path") or "") if settings.get("show_company_logo", True) else None
+    logo_html = f"<img src='{logo_uri}' class='company-logo' alt='logo'>" if logo_uri else ""
     header_meta = " | ".join(_safe(x) for x in header_lines if x)
     header_note = _safe(settings.get("header_note", ""))
     footer_note = _safe(settings.get("footer_note", ""))
@@ -132,6 +135,8 @@ def export_account_statement_html(company_name: str, records: Iterable[Dict], ou
   body {{ font-family: Tahoma, Arial, sans-serif; color:#111827; direction:rtl; margin:0; background:#fff; }}
   .sheet {{ max-width: 1100px; margin: 0 auto; padding: 20px; }}
   .top {{ display:flex; justify-content:space-between; align-items:flex-start; border-bottom:2px solid #1e3a8a; padding-bottom:14px; margin-bottom:18px; }}
+  .brand-wrap {{ display:flex; align-items:center; gap:12px; }}
+  .company-logo {{ width:72px; height:72px; object-fit:contain; border-radius:14px; border:1px solid #e5e7eb; background:#fff; padding:4px; }}
   .brand h1 {{ margin:0; color:#1e3a8a; font-size:24px; }}
   .brand p {{ margin:4px 0; color:#4b5563; font-size:12px; }}
   .badge {{ background:#eff6ff; color:#1e40af; padding:10px 14px; border-radius:12px; font-weight:bold; }}
@@ -154,10 +159,13 @@ def export_account_statement_html(company_name: str, records: Iterable[Dict], ou
 <body>
 <div class="sheet">
   <div class="top">
-    <div class="brand">
-      <h1>{_safe(info.get('name'))}</h1>
-      <p>{header_meta}</p>
-      <p>{header_note}</p>
+    <div class="brand-wrap">
+      {logo_html}
+      <div class="brand">
+        <h1>{_safe(info.get('name'))}</h1>
+        <p>{header_meta}</p>
+        <p>{header_note}</p>
+      </div>
     </div>
     <div class="badge">{_safe(company_name)}</div>
   </div>
