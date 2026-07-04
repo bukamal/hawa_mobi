@@ -31,6 +31,9 @@ def open_qr_pairing_dialog(page: ft.Page, *, on_success=None, initial_text: str 
         min_lines=4,
         max_lines=7,
         border_radius=14,
+        text_size=12,
+        text_align=ft.TextAlign.LEFT,
+        rtl=False,
     )
     status = ft.Text("", size=12, color=ft.Colors.GREY_600, text_align=ft.TextAlign.CENTER)
 

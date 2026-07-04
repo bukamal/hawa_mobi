@@ -96,7 +96,10 @@ class MobilePairingService:
         if str(caps.get("currency_contract") or "") != CURRENCY_CONTRACT_VERSION:
             return PairingResult(False, f"عقد العملات غير متوافق: {caps.get('currency_contract')}", server_url)
         pair_response = client.pair_mobile(payload["pairing_token"])
-        if not pair_response.get("ok") or not pair_response.get("paired"):
+        # Windows builds before the paired-flag fix returned ok=True without a
+        # dedicated paired field. Accept ok=True for compatibility; newer builds
+        # also return paired=True and a human-readable message.
+        if not pair_response.get("ok"):
             return PairingResult(False, str(pair_response.get("error") or "رفض الخادم عملية الربط"), server_url)
         NetworkService.save_mode("client", server_url)
         return PairingResult(

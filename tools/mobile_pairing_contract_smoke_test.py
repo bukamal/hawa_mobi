@@ -54,13 +54,14 @@ def main() -> int:
     parsed = MobilePairingService.validate_payload(MobilePairingService.parse_qr_text(json.dumps(payload, ensure_ascii=False)))
     assert parsed["server_url"] == "http://192.168.1.50:8000"
     assert parsed["pairing_token"] == "abc"
-    try:
-        bad = dict(payload)
-        bad["server_url"] = "http://127.0.0.1:8000"
-        MobilePairingService.validate_payload(bad)
-        raise AssertionError("localhost pairing payload must be rejected")
-    except ValueError:
-        pass
+    local = dict(payload)
+    local["server_url"] = "http://127.0.0.1:8000"
+    parsed_local = MobilePairingService.validate_payload(local)
+    assert parsed_local["server_url"] == "http://127.0.0.1:8000"
+    zero = dict(payload)
+    zero["server_url"] = "http://0.0.0.0:8000"
+    parsed_zero = MobilePairingService.validate_payload(zero)
+    assert parsed_zero["server_url"] == "http://127.0.0.1:8000"
     print("✅ mobile_pairing_contract_smoke_test passed")
     return 0
 

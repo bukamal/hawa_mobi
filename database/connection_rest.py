@@ -8,6 +8,14 @@ def _clean_server_root(server_url: str) -> str:
     root = (server_url or '').strip().rstrip('/')
     if root.endswith('/api'):
         root = root[:-4].rstrip('/')
+    try:
+        parsed = urlparse(root if '://' in root else 'http://' + root)
+        host = (parsed.hostname or '').lower()
+        if host in {'0.0.0.0', '::'}:
+            port = f":{parsed.port}" if parsed.port else ''
+            root = f"{parsed.scheme or 'http'}://127.0.0.1{port}"
+    except Exception:
+        pass
     return root
 
 
@@ -92,8 +100,9 @@ class RestClient:
             pass
         if not root:
             raise Exception('عنوان الخادم غير مضبوط. افتح الإعدادات > الشبكة وأدخل IP جهاز الخادم.')
-        if _is_localhost_url(root):
-            raise Exception('عنوان الخادم مضبوط على localhost. في APK يجب استخدام IP جهاز الخادم مثل http://192.168.2.102:8000')
+        # Localhost is allowed for same-device desktop/emulator QA. Real phones
+        # should still use the Windows LAN IP, but blocking localhost here made
+        # automated pairing tests impossible when both clients run on one host.
         self.server_url = root
         return root
 

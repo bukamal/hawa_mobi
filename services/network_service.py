@@ -32,9 +32,14 @@ class NetworkService:
         if parsed.scheme not in ("http", "https") or not parsed.netloc:
             raise ValueError("صيغة عنوان الخادم غير صحيحة")
         host = (parsed.hostname or "").lower()
-        if host in {"localhost", "127.0.0.1", "0.0.0.0", "::1"}:
-            raise ValueError("في وضع العميل استخدم IP جهاز الخادم، وليس localhost")
-        return url
+        # Same-device/emulator QA support.  0.0.0.0 is a bind address, not a
+        # destination, so the Android client stores it as 127.0.0.1.
+        if host in {"0.0.0.0", "::"}:
+            host = "127.0.0.1"
+        netloc = host
+        if parsed.port:
+            netloc = f"{host}:{parsed.port}"
+        return f"{parsed.scheme}://{netloc}{parsed.path.rstrip('/')}"
 
     @staticmethod
     def save_mode(mode: str, server_url: str = "") -> None:
