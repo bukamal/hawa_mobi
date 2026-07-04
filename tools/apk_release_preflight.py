@@ -76,6 +76,30 @@ def main() -> int:
     if "def image_fit(" not in ui_kit:
         return fail("ui_kit لا يحتوي helper image_fit للتوافق مع إصدارات Flet")
 
+    # Flet Android has shown inconsistent rendering for 8-digit alpha hex colors
+    # in early startup controls; use solid colors or named opacity controls.
+    alpha_hex_files = [ROOT / "views" / "splash_view.py", ROOT / "views" / "ui_kit.py"]
+    bad_alpha = []
+    import re
+    for candidate in alpha_hex_files:
+        content = candidate.read_text(encoding="utf-8")
+        for match in re.findall(r"#[0-9A-Fa-f]{8}", content):
+            bad_alpha.append(f"{rel(candidate)}:{match}")
+    if bad_alpha:
+        return fail("ألوان alpha hex تسبب خللاً في Flet Android: " + ", ".join(bad_alpha[:10]))
+
+    settings_view = (ROOT / "views" / "settings_mobile_view.py").read_text(encoding="utf-8")
+    if "سيتم تطبيق اللغة بعد إعادة التشغيل" in settings_view:
+        return fail("تغيير اللغة لا يزال يتطلب إعادة تشغيل؛ يجب تطبيقه فورياً عبر _hawaa_rebuild_main")
+    if "_hawaa_refresh_current_page" not in settings_view or "currency.save_runtime_settings" not in settings_view:
+        return fail("تغيير عملة العرض يجب أن يطبق فوراً عبر currency.save_runtime_settings و _hawaa_refresh_current_page")
+    currency_module = (ROOT / "currency.py").read_text(encoding="utf-8")
+    if "def invalidate_cache" not in currency_module or "def save_runtime_settings" not in currency_module:
+        return fail("CurrencyManager لا يحتوي آلية تحديث إعدادات العملة فورياً بدون إعادة تشغيل")
+    settings_repo_module = (ROOT / "database" / "repositories" / "settings_repo.py").read_text(encoding="utf-8")
+    if "_shared_cache" not in settings_repo_module or "invalidate_cache" not in settings_repo_module:
+        return fail("SettingsRepository يحتاج cache مشترك وإبطال cache لمنع بقاء عملة العرض القديمة")
+
     pyproject = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
     if "android.permission.INTERNET" not in pyproject:
         return fail("pyproject.toml لا يعلن إذن INTERNET المطلوب للاتصال بالخادم")

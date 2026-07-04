@@ -4,7 +4,7 @@ from views.flet_compat import open_control, close_control
 from views.ui_kit import page_header, data_card, show_snackbar, empty_state, info_banner, responsive_wrap
 from database import SettingsRepository
 from currency import currency
-from i18n.translator import translate, set_language
+from i18n.translator import translate, set_language, language_code_from_label, language_label, is_rtl
 from config import get_company_info, save_company_info
 from database.connection import DatabaseConnection
 from views.ui_runtime import network_status_chip
@@ -91,13 +91,25 @@ class SettingsMobileView(ft.Column):
         ], spacing=15)
 
     def _save_currency(self, e):
-        self.repo.set('base_currency', self.base_curr.value)
-        self.repo.set('display_currency', self.display_curr.value)
-        self.repo.set('currency_decimals', str(int(self.decimals.value)))
+        previous_display = currency.get_display_currency()
         fmt = 'western' if self.format_dropdown.value == 'غربية' else 'arabic'
-        self.repo.set('number_format', fmt)
-        self.repo.set('abbreviate_numbers', 'true' if self.abbreviate.value else 'false')
-        self._show_snackbar("تم حفظ إعدادات العملة", is_error=False)
+        currency.save_runtime_settings(
+            base_currency=self.base_curr.value,
+            display_currency=self.display_curr.value,
+            decimals=int(self.decimals.value),
+            number_format=fmt,
+            abbreviate_numbers=bool(self.abbreviate.value),
+        )
+        new_display = currency.get_display_currency()
+        if new_display != previous_display:
+            self._show_snackbar(f"تم تطبيق عملة العرض فوراً: {new_display}", is_error=False)
+        else:
+            self._show_snackbar("تم حفظ إعدادات العملة", is_error=False)
+        refresh = getattr(self._page, '_hawaa_refresh_current_page', None)
+        if callable(refresh):
+            refresh()
+        else:
+            self._page.update()
 
     def _rates_tab(self):
         self.rates_list = ft.Column(spacing=10, scroll=ft.ScrollMode.AUTO, expand=True)
@@ -210,8 +222,12 @@ class SettingsMobileView(ft.Column):
                     currency.update_rate(code, rate)
                 except:
                     pass
-            self._show_snackbar("تم حفظ جميع الأسعار", is_error=False)
+            currency.invalidate_cache()
+            self._show_snackbar("تم حفظ جميع الأسعار وتحديث العرض الحالي", is_error=False)
             self._load_rates_cards()
+            refresh = getattr(self._page, '_hawaa_refresh_current_page', None)
+            if callable(refresh):
+                refresh()
         except Exception as ex:
             self._show_snackbar(f"خطأ: {str(ex)}", True)
 
@@ -301,7 +317,7 @@ class SettingsMobileView(ft.Column):
         cur_theme = self.repo.get('theme','light')
         self.lang_dropdown = ft.Dropdown(
             label="اللغة",
-            value="العربية" if cur_lang=='ar' else "English" if cur_lang=='en' else "Français",
+            value=language_label(cur_lang),
             options=[ft.dropdown.Option("العربية"), ft.dropdown.Option("English"), ft.dropdown.Option("Français")],
             width=250
         )
@@ -316,11 +332,17 @@ class SettingsMobileView(ft.Column):
         return ft.Column([self.lang_dropdown, lang_btn, ft.Divider(), self.theme_dropdown, theme_btn], spacing=15)
 
     def _save_language(self, e):
-        lang_map = {"العربية":"ar","English":"en","Français":"fr"}
-        new_lang = lang_map.get(self.lang_dropdown.value,"ar")
+        new_lang = language_code_from_label(self.lang_dropdown.value)
         self.repo.set('language', new_lang)
         set_language(new_lang)
-        self._show_snackbar("سيتم تطبيق اللغة بعد إعادة التشغيل", is_error=False)
+        self._page.rtl = is_rtl(new_lang)
+        self._page.title = translate('app_title')
+        rebuild = getattr(self._page, '_hawaa_rebuild_main', None)
+        if callable(rebuild):
+            rebuild()
+        else:
+            self._show_snackbar(translate('language_applied'), is_error=False)
+            self._page.update()
 
     def _save_theme(self, e):
         theme = 'light' if self.theme_dropdown.value == 'فاتح' else 'dark'

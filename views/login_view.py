@@ -6,7 +6,7 @@ import flet as ft
 from database import UserRepository
 from database.connection import DatabaseConnection, get_setting, set_setting
 from auth.session import UserSession
-from i18n.translator import translate, set_language
+from i18n.translator import translate, set_language, language_code_from_label, language_label, is_rtl
 from views.ui_kit import app_brand, brand_background, brand_card, status_chip, PRIMARY, PRIMARY_SOFT, MUTED, DANGER, SUCCESS
 
 
@@ -26,32 +26,36 @@ class LoginView(ft.Container):
         self.alignment = ft.Alignment.CENTER
         self.padding = 0
 
-        self.network_chip = status_chip('وضع محلي', icon=ft.Icons.PHONE_ANDROID, color=SUCCESS, bgcolor="#E9F7F1")
+        self.network_chip = status_chip(translate('local_mode'), icon=ft.Icons.PHONE_ANDROID, color=SUCCESS, bgcolor="#E9F7F1")
         self.network_status = ft.Text('', size=11, color=MUTED, text_align=ft.TextAlign.CENTER)
-        self.username = ft.Dropdown(label=translate('username'), hint_text='اختر أو اكتب اسم المستخدم', options=[], editable=True, expand=True, border_radius=14)
+        self.username = ft.Dropdown(label=translate('username'), hint_text=translate('username'), options=[], editable=True, expand=True, border_radius=14)
         self.password = ft.TextField(label=translate('password'), password=True, can_reveal_password=True, expand=True, border_radius=14)
         self.password.on_submit = self._do_login
         self.error_msg = ft.Text('', color=DANGER, size=12, text_align=ft.TextAlign.CENTER)
         self.login_btn = ft.FilledButton(content=ft.Text(translate('login'), size=16, weight=ft.FontWeight.BOLD), width=340, height=48, bgcolor=PRIMARY, color=ft.Colors.WHITE, on_click=self._do_login)
-        self.lang_dropdown = ft.Dropdown(label='اللغة', width=130, value='العربية', options=[ft.dropdown.Option('العربية'), ft.dropdown.Option('English'), ft.dropdown.Option('Français')], border_radius=14)
+        self.lang_dropdown = ft.Dropdown(label=translate('language'), width=130, value=language_label(), options=[ft.dropdown.Option('العربية'), ft.dropdown.Option('English'), ft.dropdown.Option('Français')], border_radius=14)
         self.lang_dropdown.on_change = self._change_language
-        self.remember = ft.Checkbox(label='تذكر اسم المستخدم', value=(get_setting('login/remember_username', 'false') == 'true'))
+        self.remember = ft.Checkbox(label=translate('remember_username'), value=(get_setting('login/remember_username', 'false') == 'true'))
+        self.brand = app_brand(translate('app_name'), translate('login_subtitle'), size=92, dark=True)
+        self.form_title = ft.Text(translate('login_data'), size=16, weight=ft.FontWeight.BOLD, color="#102033")
+        self.clear_saved_btn = ft.TextButton(content=ft.Text(translate('clear_saved_user'), size=12, color=PRIMARY), on_click=self._switch_account)
+        self.forgot_hint = ft.Text(translate('forgot_password_hint'), size=10, color=MUTED, text_align=ft.TextAlign.CENTER)
 
         form = ft.Column(
             controls=[
-                app_brand('هوى الشام', 'تسجيل دخول إلى مساحة الحسابات', size=92, dark=True),
+                self.brand,
                 self.network_chip,
                 self.network_status,
                 ft.Container(height=8),
-                ft.Text('بيانات الدخول', size=16, weight=ft.FontWeight.BOLD, color="#102033"),
+                self.form_title,
                 self.username,
                 self.password,
                 self.error_msg,
                 ft.Row([self.remember, self.lang_dropdown], alignment=ft.MainAxisAlignment.SPACE_BETWEEN, vertical_alignment=ft.CrossAxisAlignment.CENTER),
                 ft.Container(height=6),
                 self.login_btn,
-                ft.TextButton(content=ft.Text('مسح المستخدم المحفوظ', size=12, color=PRIMARY), on_click=self._switch_account),
-                ft.Text('نسيت كلمة المرور؟ استخدم أداة scripts/reset_password.py من مجلد المشروع.', size=10, color=MUTED, text_align=ft.TextAlign.CENTER),
+                self.clear_saved_btn,
+                self.forgot_hint,
             ],
             alignment=ft.MainAxisAlignment.CENTER,
             horizontal_alignment=ft.CrossAxisAlignment.CENTER,
@@ -65,12 +69,12 @@ class LoginView(ft.Container):
     def _update_network_status(self):
         db = DatabaseConnection()
         if db.is_remote():
-            self.network_chip.content.controls[-1].value = 'عميل شبكة'
+            self.network_chip.content.controls[-1].value = translate('network_client')
             self.network_status.value = db.server_url or 'لم يتم تحديد عنوان الخادم'
             self.network_status.color = PRIMARY
         else:
-            self.network_chip.content.controls[-1].value = 'وضع محلي'
-            self.network_status.value = 'قاعدة البيانات على هذا الجهاز'
+            self.network_chip.content.controls[-1].value = translate('local_mode')
+            self.network_status.value = translate('local_database')
             self.network_status.color = SUCCESS
 
     def _populate_users(self):
@@ -88,12 +92,31 @@ class LoginView(ft.Container):
             except Exception:
                 self.username.options = []
 
-    def _change_language(self, e):
-        lang_map = {'العربية': 'ar', 'English': 'en', 'Français': 'fr'}
-        set_language(lang_map.get(self.lang_dropdown.value, 'ar'))
+    def _apply_language_texts(self):
+        self._page.rtl = is_rtl()
+        self._page.title = translate('app_title')
         self.username.label = translate('username')
+        self.username.hint_text = translate('username')
         self.password.label = translate('password')
         self.login_btn.content.value = translate('login')
+        self.lang_dropdown.label = translate('language')
+        self.lang_dropdown.value = language_label()
+        self.remember.label = translate('remember_username')
+        self.form_title.value = translate('login_data')
+        self.clear_saved_btn.content.value = translate('clear_saved_user')
+        self.forgot_hint.value = translate('forgot_password_hint')
+        try:
+            self.brand.controls[1].value = translate('app_name')
+            self.brand.controls[2].value = translate('login_subtitle')
+        except Exception:
+            pass
+        self._update_network_status()
+
+    def _change_language(self, e):
+        new_lang = language_code_from_label(self.lang_dropdown.value)
+        set_language(new_lang)
+        set_setting('language', new_lang)
+        self._apply_language_texts()
         self._page.update()
 
     def _switch_account(self, e):

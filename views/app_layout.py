@@ -14,6 +14,7 @@ class AppLayout(ft.Column):
         self.expand = True
         self.spacing = 0
 
+        self.current_page_id = 'accounts'
         self.status_area = ft.Container()
         self.content_area = ft.Container(expand=True, padding=10, bgcolor=PAGE_BG)
         self.nav_bar = self._build_nav_bar()
@@ -21,6 +22,12 @@ class AppLayout(ft.Column):
 
         self.controls = [self.status_area, self.content_area, self.nav_bar]
         self._page.drawer = self.drawer
+        try:
+            setattr(self._page, '_hawaa_app_layout', self)
+            setattr(self._page, '_hawaa_refresh_current_page', self.refresh_current_page)
+            setattr(self._page, '_hawaa_open_page', self.switch_page)
+        except Exception:
+            pass
         self._refresh_status_bar()
         self.switch_page('accounts')
         self._show_payment_alert_if_needed()
@@ -28,7 +35,7 @@ class AppLayout(ft.Column):
 
     def _refresh_status_bar(self):
         current = UserSession.get_current() or {}
-        user_label = current.get('full_name') or current.get('username') or 'جلسة نشطة'
+        user_label = current.get('full_name') or current.get('username') or translate('login')
         self.status_area.content = make_status_bar(user_label)
 
     def _show_payment_alert_if_needed(self):
@@ -86,7 +93,7 @@ class AppLayout(ft.Column):
         controls = [
             ft.Container(
                 content=ft.Column([
-                    app_brand('هوى الشام', 'نظام الحسابات الداخلية', size=72, dark=True, wordmark=True),
+                    app_brand(translate('app_name'), translate('app_subtitle'), size=72, dark=True, wordmark=True),
                 ], horizontal_alignment=ft.CrossAxisAlignment.CENTER),
                 padding=20,
                 bgcolor=PRIMARY_SOFT,
@@ -116,9 +123,13 @@ class AppLayout(ft.Column):
         if index < len(pages):
             self.switch_page(pages[index])
 
+    def refresh_current_page(self):
+        self.switch_page(getattr(self, 'current_page_id', 'accounts'))
+
     def switch_page(self, page_id):
+        self.current_page_id = page_id
         self._refresh_status_bar()
-        self.content_area.content = loading_view("جاري فتح الشاشة...")
+        self.content_area.content = loading_view('جاري فتح الشاشة...' if translate('settings') == 'الإعدادات' else 'Loading screen...')
         safe_update(self._page)
         try:
             if page_id == 'dashboard':
@@ -137,7 +148,7 @@ class AppLayout(ft.Column):
                 from views.settings_mobile_view import SettingsMobileView
                 view = SettingsMobileView(self._page)
             else:
-                view = error_view("الصفحة غير موجودة")
+                view = error_view('الصفحة غير موجودة' if translate('settings') == 'الإعدادات' else 'Page not found')
             self.content_area.content = view
         except Exception as ex:
             self.content_area.content = error_view(str(ex), on_retry=lambda e: self.switch_page(page_id))

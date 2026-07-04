@@ -116,3 +116,15 @@ git rm -f flask_server.py run_server.py 2>/dev/null || true
 ## Phase 23 — Flet ImageFit compatibility
 
 إذا ظهر على Android الخطأ `module 'flet' has no attribute 'ImageFit'`، فقد تم إصلاحه باستبدال `ft.ImageFit` بقيم نصية عبر `views/ui_kit.py::image_fit()`. يمنع `apk_release_preflight.py` الرجوع لهذا الاستخدام.
+
+## Phase 24 — Android Runtime Language & Splash Visual Fixes
+
+- Language changes in Settings now apply immediately by rebuilding the active mobile shell instead of requiring an Android app restart.
+- Login language selection now persists the language setting and updates visible login labels immediately.
+- Splash screen no longer uses 8-digit alpha hex colors in Android startup controls because some Flet Android runtimes render them incorrectly.
+- Splash card was changed to an opaque, high-contrast card over the brand gradient for better readability on phones.
+- APK preflight now blocks regressions that reintroduce Flet Android alpha-hex startup colors or the old restart-only language message.
+
+## Phase 25 — Runtime Display Currency Fix
+
+تم إصلاح تطبيق عملة العرض على Android فورياً بدون إعادة تشغيل التطبيق. يعتمد الإصلاح على إبطال cache إعدادات العملة مركزياً، وتحديث الصفحة الحالية بعد حفظ إعدادات العملة أو أسعار الصرف. راجع `PHASE25_ANDROID_RUNTIME_DISPLAY_CURRENCY_FIX_NOTES.md`.

@@ -7,6 +7,18 @@ def load_translations():
     _translations = {
         'ar': {
             'app_title': 'هوى الشام - نظام الحسابات',
+            'app_name': 'هوى الشام',
+            'app_subtitle': 'نظام الحسابات الداخلية',
+            'login_subtitle': 'تسجيل دخول إلى مساحة الحسابات',
+            'login_data': 'بيانات الدخول',
+            'remember_username': 'تذكر اسم المستخدم',
+            'clear_saved_user': 'مسح المستخدم المحفوظ',
+            'forgot_password_hint': 'نسيت كلمة المرور؟ استخدم أداة scripts/reset_password.py من مجلد المشروع.',
+            'local_mode': 'وضع محلي',
+            'network_client': 'عميل شبكة',
+            'local_database': 'قاعدة البيانات على هذا الجهاز',
+            'language': 'اللغة',
+            'language_applied': 'تم تطبيق اللغة مباشرة',
             'dashboard': 'لوحة التحكم',
             'accounts': 'حسابات هوى الشام',
             'users': 'المستخدمين',
@@ -51,6 +63,18 @@ def load_translations():
         },
         'en': {
             'app_title': 'Hawaa Al-Sham - Accounting System',
+            'app_name': 'Hawaa Al-Sham',
+            'app_subtitle': 'Internal Accounting System',
+            'login_subtitle': 'Sign in to the accounting workspace',
+            'login_data': 'Sign-in details',
+            'remember_username': 'Remember username',
+            'clear_saved_user': 'Clear saved user',
+            'forgot_password_hint': 'Forgot password? Use scripts/reset_password.py from the project folder.',
+            'local_mode': 'Local mode',
+            'network_client': 'Network client',
+            'local_database': 'Database on this device',
+            'language': 'Language',
+            'language_applied': 'Language applied immediately',
             'dashboard': 'Dashboard',
             'accounts': 'Hawaa Accounts',
             'users': 'Users',
@@ -95,6 +119,18 @@ def load_translations():
         },
         'fr': {
             'app_title': 'Hawaa Al-Sham - Système comptable',
+            'app_name': 'Hawaa Al-Sham',
+            'app_subtitle': 'Système comptable interne',
+            'login_subtitle': 'Connexion à l’espace comptable',
+            'login_data': 'Identifiants',
+            'remember_username': "Mémoriser l’utilisateur",
+            'clear_saved_user': "Effacer l’utilisateur mémorisé",
+            'forgot_password_hint': 'Mot de passe oublié ? Utilisez scripts/reset_password.py depuis le dossier du projet.',
+            'local_mode': 'Mode local',
+            'network_client': 'Client réseau',
+            'local_database': 'Base de données sur cet appareil',
+            'language': 'Langue',
+            'language_applied': 'Langue appliquée immédiatement',
             'dashboard': 'Tableau de bord',
             'accounts': 'Comptes Hawaa',
             'users': 'Utilisateurs',
@@ -141,7 +177,20 @@ def load_translations():
 
 def set_language(lang: str):
     global _current_lang
-    if lang in _translations: _current_lang = lang
+    if lang in _translations:
+        _current_lang = lang
+
+def get_language() -> str:
+    return _current_lang
+
+def is_rtl(lang: str | None = None) -> bool:
+    return (lang or _current_lang) == 'ar'
+
+def language_label(lang: str | None = None) -> str:
+    return {'ar': 'العربية', 'en': 'English', 'fr': 'Français'}.get(lang or _current_lang, 'العربية')
+
+def language_code_from_label(label: str | None) -> str:
+    return {'العربية': 'ar', 'English': 'en', 'Français': 'fr'}.get(label or '', 'ar')
 
 def translate(key: str) -> str:
     return _translations.get(_current_lang, {}).get(key, key)

@@ -8,8 +8,9 @@ import flet as ft
 from auth.activation import check_activation
 from auth.session import UserSession
 from database.connection import DatabaseConnection, get_local_db_path
+from i18n.translator import translate
 from views.flet_compat import ARABIC_FONT_FAMILY
-from views.ui_kit import app_brand, brand_background, PRIMARY, ACCENT, status_chip
+from views.ui_kit import app_brand, brand_background, PRIMARY, PRIMARY_DARK, PRIMARY_SOFT, ACCENT, TEXT, MUTED, BORDER, status_chip
 
 
 class SplashView(ft.Container):
@@ -21,19 +22,30 @@ class SplashView(ft.Container):
         self.expand = True
         self.alignment = ft.Alignment.CENTER
 
-        self.brand = app_brand('هوى الشام', 'نظام الحسابات الداخلية', size=108, dark=False)
-        self.progress = ft.ProgressBar(width=330, bgcolor="#FFFFFF33", color=ACCENT, value=0)
-        self.status = ft.Text('جاري تهيئة النظام...', size=13, color=ft.Colors.WHITE, text_align=ft.TextAlign.CENTER, font_family=ARABIC_FONT_FAMILY, weight=ft.FontWeight.BOLD)
-        self.detail = ft.Text('', size=11, color="#FFFFFFB3", text_align=ft.TextAlign.CENTER, font_family=ARABIC_FONT_FAMILY)
-        self.mode_chip = status_chip('تهيئة', icon=ft.Icons.HOURGLASS_EMPTY, color=ft.Colors.WHITE, bgcolor="#FFFFFF22")
+        # Use an opaque card on Android.  Some Flet Android runtimes render
+        # 8-digit alpha hex colors incorrectly, which made the splash card
+        # appear as a neon yellow block.  Keep the outer gradient, but make the
+        # card itself solid and high-contrast.
+        self.brand = app_brand(translate('app_name'), translate('app_subtitle'), size=96, dark=True)
+        self.progress = ft.ProgressBar(width=300, bgcolor="#E4ECEA", color=ACCENT, value=0)
+        self.status = ft.Text('جاري تهيئة النظام...', size=13, color=TEXT, text_align=ft.TextAlign.CENTER, font_family=ARABIC_FONT_FAMILY, weight=ft.FontWeight.BOLD)
+        self.detail = ft.Text('', size=11, color=MUTED, text_align=ft.TextAlign.CENTER, font_family=ARABIC_FONT_FAMILY)
+        self.mode_chip = status_chip('تهيئة', icon=ft.Icons.HOURGLASS_EMPTY, color=PRIMARY, bgcolor=PRIMARY_SOFT)
+
+        width = 430
+        try:
+            if getattr(page, 'width', None):
+                width = max(300, min(410, int(page.width) - 48))
+        except Exception:
+            pass
 
         card = ft.Container(
             content=ft.Column(
                 controls=[
                     self.brand,
-                    ft.Container(height=20),
+                    ft.Container(height=14),
                     self.mode_chip,
-                    ft.Container(height=20),
+                    ft.Container(height=18),
                     self.progress,
                     ft.Container(height=8),
                     self.status,
@@ -43,16 +55,17 @@ class SplashView(ft.Container):
                 horizontal_alignment=ft.CrossAxisAlignment.CENTER,
                 tight=True,
             ),
-            width=430,
-            padding=28,
-            border_radius=28,
-            bgcolor="#FFFFFF18",
+            width=width,
+            padding=26,
+            border_radius=30,
+            bgcolor="#FFFFFF",
             border=ft.Border(
-                left=ft.BorderSide(1, "#FFFFFF44"),
-                top=ft.BorderSide(1, "#FFFFFF44"),
-                right=ft.BorderSide(1, "#FFFFFF44"),
-                bottom=ft.BorderSide(1, "#FFFFFF44"),
+                left=ft.BorderSide(1, BORDER),
+                top=ft.BorderSide(1, BORDER),
+                right=ft.BorderSide(1, BORDER),
+                bottom=ft.BorderSide(1, BORDER),
             ),
+            shadow=ft.BoxShadow(blur_radius=22, spread_radius=1, color="#20302D"),
         )
         self.content = brand_background(card, padding=24, dark=True)
         asyncio.create_task(self._load_sequence())

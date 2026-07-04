@@ -40,6 +40,7 @@ def main() -> int:
         "tools/architecture_smoke_test.py",
         "tools/local_crud_smoke_test.py",
         "tools/currency_ledger_contract_smoke_test.py",
+        "tools/runtime_currency_settings_smoke_test.py",
         "tools/network_contract_test.py",
         "tools/api_capabilities_contract_smoke_test.py",
         "tools/apk_release_preflight.py",

@@ -10,7 +10,7 @@ import sqlite3
 from database.migrations import ensure_db
 from auth.activation import check_activation, start_license_checker, stop_license_checker
 from auth.session import UserSession
-from i18n.translator import translate, set_language
+from i18n.translator import translate, set_language, is_rtl
 from views.login_view import LoginView
 from views.splash_view import SplashView
 from views.app_layout import AppLayout
@@ -96,6 +96,8 @@ def main(page: ft.Page):
 
     repo = SettingsRepository()
     set_language(repo.get('language', 'ar'))
+    page.rtl = is_rtl()
+    page.title = translate('app_title')
     theme = repo.get('theme', 'light')
     page.theme_mode = ft.ThemeMode.LIGHT if theme == 'light' else ft.ThemeMode.DARK
 
@@ -143,15 +145,23 @@ def main(page: ft.Page):
         open_control(page, dialog)
 
     def show_main_app():
-        # Expose a central logout/navigation hook for nested views such as settings.
-        # This is intentionally page-scoped so child views do not import main.py.
+        # Expose central hooks for nested views such as settings.
+        # The language hook rebuilds the current shell immediately after a
+        # language change instead of requiring an Android process restart.
+        def rebuild_main_app():
+            page.rtl = is_rtl()
+            page.title = translate('app_title')
+            page.controls.clear()
+            app = AppLayout(page=page, on_logout=logout)
+            page.add(app)
+            page.update()
+
         try:
             setattr(page, '_hawaa_logout', logout)
+            setattr(page, '_hawaa_rebuild_main', rebuild_main_app)
         except Exception:
             pass
-        page.controls.clear()
-        app = AppLayout(page=page, on_logout=logout)
-        page.add(app)
+        rebuild_main_app()
         start_license_checker(24, on_license_invalid)
 
     def logout():

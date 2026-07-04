@@ -49,8 +49,8 @@ def app_mark(size=86, color=PRIMARY, dark=False):
     look like a different product than Windows.  This helper now uses the same
     accounting/ledger symbol shipped with the desktop application.
     """
-    bg = ft.Colors.WHITE if dark else "#FFFFFF22"
-    border_color = BORDER if dark else "#FFFFFF55"
+    bg = ft.Colors.WHITE if dark else "#F8FAFC"
+    border_color = BORDER if dark else "#E7F5F2"
     return ft.Container(
         width=size,
         height=size,
@@ -75,7 +75,7 @@ def brand_wordmark(width=260, height=92, dark=True):
 
 def app_brand(title='هوى الشام', subtitle='نظام الحسابات الداخلية', size=86, color=PRIMARY, dark=False, wordmark=False):
     text_color = ft.Colors.WHITE if not dark else TEXT
-    sub_color = "#FFFFFFB3" if not dark else MUTED
+    sub_color = "#DDEDEA" if not dark else MUTED
     controls = [app_mark(size=size, color=color, dark=dark)]
     if wordmark:
         controls.append(brand_wordmark(width=max(220, int(size * 3.4)), height=max(70, int(size * 1.1)), dark=dark))

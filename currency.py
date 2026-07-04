@@ -5,16 +5,49 @@ import datetime
 
 class CurrencyManager:
     _instance = None
+    SUPPORTED_CURRENCIES = ['USD','SAR','SYP','EUR','GBP','AED','QAR','KWD','OMR']
     def __new__(cls):
         if cls._instance is None:
             cls._instance = super().__new__(cls)
             cls._settings_repo = SettingsRepository()
         return cls._instance
 
+    def invalidate_cache(self):
+        try:
+            self._settings_repo.clear_cache()
+        except Exception:
+            pass
+
+    def _normalize_currency(self, code: str | None, default: str = 'USD') -> str:
+        code = (code or default).upper().strip()
+        return code if code in self.SUPPORTED_CURRENCIES else default
+
     def get_base_currency(self) -> str:
-        return self._settings_repo.get('base_currency', 'USD')
+        return self._normalize_currency(self._settings_repo.get('base_currency', 'USD'), 'USD')
+
     def get_display_currency(self) -> str:
-        return self._settings_repo.get('display_currency', 'USD')
+        return self._normalize_currency(self._settings_repo.get('display_currency', 'USD'), 'USD')
+
+    def set_base_currency(self, currency_code: str):
+        self._settings_repo.set('base_currency', self._normalize_currency(currency_code, 'USD'))
+        self.invalidate_cache()
+
+    def set_display_currency(self, currency_code: str):
+        self._settings_repo.set('display_currency', self._normalize_currency(currency_code, 'USD'))
+        self.invalidate_cache()
+
+    def save_runtime_settings(self, base_currency=None, display_currency=None, decimals=None, number_format=None, abbreviate_numbers=None):
+        if base_currency is not None:
+            self._settings_repo.set('base_currency', self._normalize_currency(base_currency, 'USD'))
+        if display_currency is not None:
+            self._settings_repo.set('display_currency', self._normalize_currency(display_currency, 'USD'))
+        if decimals is not None:
+            self._settings_repo.set('currency_decimals', str(int(decimals)))
+        if number_format is not None:
+            self._settings_repo.set('number_format', str(number_format))
+        if abbreviate_numbers is not None:
+            self._settings_repo.set('abbreviate_numbers', 'true' if bool(abbreviate_numbers) else 'false')
+        self.invalidate_cache()
     def get_currency_symbol(self, currency_code: str = None) -> str:
         if currency_code is None:
             currency_code = self.get_display_currency()
