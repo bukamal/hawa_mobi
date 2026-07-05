@@ -13,6 +13,38 @@ from views.flet_compat import open_control, close_control
 from views.ui_kit import info_banner, show_snackbar
 
 
+def _payload_server_url(payload: str) -> str:
+    try:
+        from services.pairing_service import MobilePairingService
+        data = MobilePairingService.parse_qr_text(payload)
+        return str(data.get("server_url") or "")
+    except Exception:
+        return ""
+
+
+def _format_payload_summary(payload: str) -> str:
+    try:
+        from services.pairing_service import MobilePairingService
+        data = MobilePairingService.parse_qr_text(payload)
+        server_url = str(data.get("server_url") or "—")
+        expires_at = str(data.get("expires_at") or "—")
+        contract = str(data.get("currency_contract") or "—")
+        token = str(data.get("pairing_token") or "")
+        token_hint = (token[:6] + "…" + token[-4:]) if len(token) > 12 else (token or "—")
+        return f"الخادم: {server_url}\nينتهي: {expires_at}\nالعقد: {contract}\nرمز مؤقت: {token_hint}"
+    except Exception:
+        return ""
+
+
+def _friendly_error(payload: str, exc: Exception) -> str:
+    try:
+        from services.network_diagnostics_service import classify_connection_error
+        hint = classify_connection_error(_payload_server_url(payload), exc)
+        return f"❌ {hint.title}: {hint.message}"
+    except Exception:
+        return f"❌ فشل الربط: {exc}"
+
+
 def _set_button_loading(button, text: str, loading: bool = True):
     try:
         button.disabled = loading
@@ -28,14 +60,34 @@ def open_qr_pairing_dialog(page: ft.Page, *, on_success=None, initial_text: str 
         hint_text="الصق نص الربط الذي يولده Windows أو امسح QR بالكاميرا",
         value=initial_text or "",
         multiline=True,
-        min_lines=4,
-        max_lines=7,
+        min_lines=3,
+        max_lines=4,
         border_radius=14,
-        text_size=12,
+        text_size=11,
         text_align=ft.TextAlign.LEFT,
         rtl=False,
     )
+    summary_text = ft.Text("", size=11, color=ft.Colors.BLUE_GREY_700, text_align=ft.TextAlign.RIGHT)
+    summary_box = ft.Container(
+        visible=False,
+        bgcolor=ft.Colors.BLUE_GREY_50,
+        border_radius=10,
+        padding=10,
+        content=summary_text,
+    )
     status = ft.Text("", size=12, color=ft.Colors.GREY_600, text_align=ft.TextAlign.CENTER)
+
+    def refresh_summary(ev=None):
+        text = qr_field.value or ""
+        summary = _format_payload_summary(text) if text.strip() else ""
+        summary_text.value = summary
+        summary_box.visible = bool(summary)
+        try:
+            page.update()
+        except Exception:
+            pass
+
+    qr_field.on_change = refresh_summary
 
     apply_btn = ft.FilledButton(
         content=ft.Row([ft.Icon(ft.Icons.LINK), ft.Text("ربط وحفظ")], alignment=ft.MainAxisAlignment.CENTER),
@@ -67,7 +119,7 @@ def open_qr_pairing_dialog(page: ft.Page, *, on_success=None, initial_text: str 
                 on_success(result)
             close_control(page, dlg)
         except Exception as ex:
-            status.value = f"❌ فشل الربط: {ex}"
+            status.value = _friendly_error(payload, ex)
             status.color = ft.Colors.RED
         finally:
             try:
@@ -96,6 +148,7 @@ def open_qr_pairing_dialog(page: ft.Page, *, on_success=None, initial_text: str 
                         qr_field.value = str(text or "")
                         status.value = "تم لصق نص الربط من الحافظة"
                         status.color = ft.Colors.GREEN
+                        refresh_summary()
                         page.update()
                     except Exception as ex:
                         status.value = f"تعذر قراءة الحافظة: {ex}"
@@ -112,6 +165,7 @@ def open_qr_pairing_dialog(page: ft.Page, *, on_success=None, initial_text: str 
             qr_field.value = str(value or "")
             status.value = "تم لصق نص الربط من الحافظة"
             status.color = ft.Colors.GREEN
+            refresh_summary()
             page.update()
         except Exception as ex:
             status.value = f"تعذر قراءة الحافظة: {ex}"
@@ -120,9 +174,23 @@ def open_qr_pairing_dialog(page: ft.Page, *, on_success=None, initial_text: str 
 
     def scan_camera(ev):
         """Attempt to use any Flet scanner service/control if the runtime exposes it."""
+        try:
+            from services.camera_permission_service import CameraPermissionService
+            ok, message = CameraPermissionService.request(page)
+            if not ok:
+                status.value = message
+                status.color = ft.Colors.RED
+                page.update()
+                return
+            if message:
+                status.value = message
+                status.color = ft.Colors.GREY_600
+                page.update()
+        except Exception:
+            pass
         scanner_cls = getattr(ft, "BarcodeScanner", None) or getattr(ft, "QrScanner", None) or getattr(ft, "QRScanner", None)
         if scanner_cls is None:
-            status.value = "ماسح الكاميرا غير مضمّن في نسخة Flet الحالية. استخدم لصق نص الربط كخيار احتياطي."
+            status.value = "صلاحية الكاميرا لا تكفي وحدها: نسخة Flet الحالية لا تحتوي قارئ QR مدمج. استخدم لصق نص الربط، أو ابنِ نسخة تحتوي QR scanner extension."
             status.color = ft.Colors.ORANGE
             page.update()
             return
@@ -133,6 +201,7 @@ def open_qr_pairing_dialog(page: ft.Page, *, on_success=None, initial_text: str 
                 qr_field.value = text
                 status.value = "تم مسح QR. اضغط ربط وحفظ للتأكيد."
                 status.color = ft.Colors.GREEN
+                refresh_summary()
                 page.update()
             except Exception as ex:
                 status.value = f"تعذر قراءة نتيجة المسح: {ex}"
@@ -190,6 +259,7 @@ def open_qr_pairing_dialog(page: ft.Page, *, on_success=None, initial_text: str 
                 camera_btn,
                 ft.Text("أو استخدم النص الاحتياطي", size=12, color=ft.Colors.GREY_600, text_align=ft.TextAlign.CENTER),
                 qr_field,
+                summary_box,
                 paste_btn,
                 status,
             ], tight=True, spacing=12),

@@ -205,6 +205,48 @@ def close_all_dialogs(page: ft.Page):
     return None
 
 
+
+def make_file_picker(on_result=None):
+    """Create FilePicker across Flet versions.
+
+    Some mobile/runtime builds reject ``FilePicker(on_result=...)`` with
+    ``unexpected keyword argument 'on_result'``.  The compatible path is to
+    instantiate first and then assign ``picker.on_result`` when available.
+    """
+    picker = None
+    if on_result is not None:
+        try:
+            picker = ft.FilePicker(on_result=on_result)
+        except TypeError:
+            picker = None
+        except Exception:
+            picker = None
+    if picker is None:
+        picker = ft.FilePicker()
+        if on_result is not None:
+            try:
+                picker.on_result = on_result
+            except Exception:
+                pass
+    return picker
+
+
+def attach_service_control(page: ft.Page, control):
+    """Attach service controls such as FilePicker/PermissionHandler safely."""
+    if page is None or control is None:
+        return control
+    try:
+        ov = _overlay(page)
+        if ov is not None and control not in ov:
+            ov.append(control)
+    except Exception:
+        pass
+    try:
+        page.update()
+    except Exception:
+        pass
+    return control
+
 def show_snackbar(page: ft.Page, message: str, is_error: bool = False, duration: int = 3000):
     snack = ft.SnackBar(
         content=ft.Text(message, size=13),

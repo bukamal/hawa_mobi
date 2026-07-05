@@ -51,6 +51,7 @@ def main() -> int:
         "tools/apk_release_preflight.py",
         "tools/backup_restore_smoke_test.py",
         "tools/network_diagnostics_smoke_test.py",
+        "tools/filepicker_permission_compat_smoke_test.py",
         # Server import is useful when Flask dependencies are installed; run it manually when validating server packaging:
         # tools/server_import_smoke_test.py
         # The following auth/network-bootstrap checks remain useful, but they

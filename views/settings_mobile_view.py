@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 import flet as ft
-from views.flet_compat import open_control, close_control
+from views.flet_compat import open_control, close_control, make_file_picker, attach_service_control
 from views.ui_kit import page_header, data_card, show_snackbar, empty_state, info_banner, responsive_wrap
 from database import SettingsRepository
 from currency import currency
@@ -301,12 +301,8 @@ class SettingsMobileView(ft.Column):
         self._show_snackbar("تم حفظ معلومات الشركة", is_error=False)
 
     def _browse_logo(self, e):
-        picker = ft.FilePicker(on_result=self._on_logo_picked)
-        try:
-            self._page.overlay.append(picker)
-            self._page.update()
-        except Exception:
-            pass
+        picker = make_file_picker(self._on_logo_picked)
+        attach_service_control(self._page, picker)
         try:
             picker.pick_files(
                 allow_multiple=False,
@@ -678,9 +674,8 @@ class SettingsMobileView(ft.Column):
             if DatabaseConnection().is_remote():
                 self._show_snackbar("أنت في وضع العميل. الاستعادة تتم من نسخة Windows فقط. غيّر الوضع إلى محلي لاستعادة نسخة داخل الهاتف.", True)
                 return
-            picker = ft.FilePicker(on_result=self._on_restore_backup_picked)
-            self._page.overlay.append(picker)
-            self._page.update()
+            picker = make_file_picker(self._on_restore_backup_picked)
+            attach_service_control(self._page, picker)
             picker.pick_files(
                 allow_multiple=False,
                 allowed_extensions=["zip", "db", "sqlite", "sqlite3"],

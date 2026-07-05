@@ -173,3 +173,15 @@ PYTHONPATH=. python tools/quality_gate.py
 
 ## Phase 36 — API Parity + Real Network Contract
 تم توحيد عقد API بين Windows Server وAndroid. الربط عبر QR لا يُقبل إلا إذا أعلن الخادم دعم `amount_base`، السعر التاريخي، سجل أسعار الصرف، ملخص القيود، تنبيهات الدفع، وإرسال سجل التدقيق من Android. لاختبار الشبكة من هاتف حقيقي افتح أولًا: `http://IP_WINDOWS:8000/api/health` من متصفح الهاتف.
+
+
+## Phase 37 — Android FilePicker + Camera Permission Compatibility
+
+- إصلاح استيراد النسخة الاحتياطية على Flet runtimes التي ترفض `FilePicker(on_result=...)`.
+- إصلاح اختيار شعار الشركة بنفس مسار التوافق.
+- إضافة صيغة أذونات الكاميرا الحديثة في pyproject وطلب صلاحية وقت التشغيل عند توفر PermissionHandler.
+- ملاحظة: صلاحية الكاميرا لا تكفي وحدها لماسح QR؛ يجب توفر QR scanner control/extension داخل نسخة Flet، ويبقى لصق نص الربط خيارًا احتياطيًا.
+
+## Phase 38 — Pairing UX + Local QA Fixes
+
+This phase improves Android/Windows pairing diagnostics and permits localhost pairing for same-device/emulator QA. Real phones must still use the Windows LAN IP, and the Android dialog now summarizes QR payloads and hides low-level network exceptions behind clearer diagnostic messages.

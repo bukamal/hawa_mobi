@@ -16,6 +16,8 @@ def main() -> int:
     assert "مسح بالكاميرا" in dialog and "CAMERA_ALT" in dialog, "dialog must expose camera scan button"
     assert "لصق من الحافظة" in dialog and "CONTENT_PASTE" in dialog, "dialog must keep paste fallback"
     assert "BarcodeScanner" in dialog or "QRScanner" in dialog or "QrScanner" in dialog, "dialog must be camera-scanner ready"
+    assert "_format_payload_summary" in dialog and "summary_box" in dialog, "dialog must summarize long QR payload instead of relying on raw JSON only"
+    assert "classify_connection_error" in dialog and "_friendly_error" in dialog, "dialog must hide HTTPConnectionPool details behind friendly diagnostics"
     assert "open_qr_pairing_dialog" in settings and "views.dialogs.qr_pairing_dialog" in settings, "settings must use reusable QR dialog"
     assert "open_qr_pairing_dialog" in login and "views.dialogs.qr_pairing_dialog" in login, "login must use reusable QR dialog"
     print("✅ qr_pairing_ui_smoke_test passed")

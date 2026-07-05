@@ -6,6 +6,7 @@ requires-python = ">=3.10"
 dependencies = [
     "flet==0.85.2",
     "requests>=2.25.0",
+    "flet-permission-handler>=0.1.0",
 ]
 
 [build-system]
@@ -19,6 +20,7 @@ py-modules = ["main", "config", "currency"]
 include = ["auth*", "database*", "i18n*", "views*", "services*", "reports*"]
 
 [tool.flet]
+permissions = ["camera"]
 org = "com.hawaa"
 product = "هوى الشام"
 company = "Hawaa"
@@ -44,3 +46,7 @@ web = true
 
 [tool.flet.android]
 adaptive_icon_background = "#0B5F57"
+
+[tool.flet.android.permission]
+"android.permission.INTERNET" = true
+"android.permission.CAMERA" = true

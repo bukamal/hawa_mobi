@@ -118,6 +118,10 @@ def main() -> int:
 
     if "android.permission.CAMERA" not in pyproject:
         return fail("pyproject.toml لا يعلن إذن CAMERA المطلوب لمسح QR بالكاميرا")
+    if "[tool.flet.android.permission]" not in pyproject or '"android.permission.CAMERA" = true' not in pyproject:
+        return fail("إذن الكاميرا يجب أن يعلن بصيغة Flet الحديثة داخل [tool.flet.android.permission]")
+    if 'permissions = ["camera"]' not in pyproject:
+        return fail('أضف permissions = ["camera"] كحزمة Flet cross-platform للكاميرا')
     if '"server*"' in pyproject or "Flask" in pyproject or "waitress" in pyproject:
         return fail("pyproject.toml لا يجب أن يحزم server/ أو Flask داخل APK client")
     if "resources/sounds" in pyproject:
@@ -158,13 +162,20 @@ def main() -> int:
         return fail("واجهة تسجيل الدخول يجب أن توفر ربط Android مع Windows عبر QR قبل تسجيل الدخول")
     if "ربط عبر QR" not in settings_view:
         return fail("إعدادات الشبكة يجب أن توفر ربط QR")
+    camera_permission = (ROOT / "services" / "camera_permission_service.py").read_text(encoding="utf-8")
+    if "PermissionHandler" not in camera_permission or "request_permission" not in camera_permission:
+        return fail("خدمة صلاحية الكاميرا يجب أن تستخدم PermissionHandler عند توفره")
     qr_dialog = (ROOT / "views" / "dialogs" / "qr_pairing_dialog.py").read_text(encoding="utf-8")
     if "مسح بالكاميرا" not in qr_dialog or "لصق من الحافظة" not in qr_dialog:
         return fail("واجهة ربط QR يجب أن توفر مسحاً بالكاميرا مع لصق احتياطي")
     if "استخدم مسار الملف مباشرة" in settings_view:
         return fail("اختيار شعار الشركة لا يزال يعتمد على مسار يدوي؛ يجب استخدام FilePicker ونسخ الشعار للتخزين الداخلي")
-    if "FilePicker" not in settings_view or "company_logo_service" not in settings_view:
-        return fail("اختيار شعار الشركة يجب أن يستخدم FilePicker و company_logo_service")
+    if "make_file_picker" not in settings_view or "company_logo_service" not in settings_view:
+        return fail("اختيار شعار الشركة يجب أن يستخدم make_file_picker و company_logo_service")
+    if "FilePicker(on_result" in settings_view:
+        return fail("لا تستخدم FilePicker(on_result=...)؛ بعض إصدارات Flet ترفضها. استخدم make_file_picker().")
+    if "make_file_picker" not in settings_view:
+        return fail("اختيار الملفات يجب أن يستخدم make_file_picker للتوافق مع إصدارات Flet المختلفة")
     logo_service = (ROOT / "services" / "company_logo_service.py").read_text(encoding="utf-8")
     if "image_to_data_uri" not in logo_service or "base64" not in logo_service:
         return fail("خدمة شعار الشركة يجب أن تدعم تضمين Base64 في التقارير")
