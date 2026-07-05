@@ -95,6 +95,26 @@ class MobilePairingService:
             return PairingResult(False, "الخادم لا يدعم السعر التاريخي للعملات", server_url)
         if str(caps.get("currency_contract") or "") != CURRENCY_CONTRACT_VERSION:
             return PairingResult(False, f"عقد العملات غير متوافق: {caps.get('currency_contract')}", server_url)
+        required_flags = {
+            "supports_amount_base": "الخادم لا يدعم amount_base",
+            "supports_exchange_rate_history": "الخادم لا يدعم تاريخ أسعار الصرف",
+            "supports_expense_summary": "الخادم لا يدعم ملخص القيود المطلوب لتطبيق Android",
+            "supports_payment_reminders": "الخادم لا يدعم تنبيهات الدفع المطلوبة لتطبيق Android",
+            "supports_audit_post": "الخادم لا يدعم إرسال سجل التدقيق من Android",
+        }
+        missing = [message for key, message in required_flags.items() if not caps.get(key)]
+        endpoints = set(caps.get("endpoints") or [])
+        required_endpoints = {
+            "/api/health",
+            "/api/expenses/summary",
+            "/api/payment_reminders",
+            "/api/payment_reminders/count_waiting",
+            "/api/audit_log",
+        }
+        if endpoints:
+            missing.extend(f"الخادم لا يعلن endpoint المطلوب: {ep}" for ep in sorted(required_endpoints - endpoints))
+        if missing:
+            return PairingResult(False, "الخادم قديم أو غير متوافق مع APK الحالي: " + "؛ ".join(missing), server_url)
         pair_response = client.pair_mobile(payload["pairing_token"])
         # Windows builds before the paired-flag fix returned ok=True without a
         # dedicated paired field. Accept ok=True for compatibility; newer builds

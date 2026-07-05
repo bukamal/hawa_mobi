@@ -464,6 +464,11 @@ class SettingsMobileView(ft.Column):
             content=ft.Row([ft.Icon(ft.Icons.QR_CODE_SCANNER), ft.Text("ربط عبر QR")]),
             on_click=self._open_qr_pairing_dialog,
         )
+        self.network_diag = ft.Column(spacing=6)
+        self.network_diag_btn = ft.OutlinedButton(
+            content=ft.Row([ft.Icon(ft.Icons.MEDICAL_INFORMATION_OUTLINED), ft.Text("تشخيص الشبكة")]),
+            on_click=self._show_network_diagnostics,
+        )
         return ft.Column([
             ft.Container(
                 content=ft.Row([
@@ -479,7 +484,8 @@ class SettingsMobileView(ft.Column):
             self.server_url,
             ft.Text("في وضع العميل استخدم IP جهاز الخادم داخل الشبكة، مثل http://192.168.1.100:8000، وليس localhost.", size=11, color=ft.Colors.GREY_600),
             info_banner("الأفضل للربط: افتح Windows > الإعدادات > الشبكة > ربط Android، ثم امسح QR أو الصق نص QR هنا. الربط لا يسجّل الدخول؛ ستحتاج اسم المستخدم وكلمة المرور بعده.", icon=ft.Icons.QR_CODE),
-            responsive_wrap([self.network_test_btn, self.network_save_btn, self.qr_pair_btn], spacing=10)
+            responsive_wrap([self.network_test_btn, self.network_diag_btn, self.network_save_btn, self.qr_pair_btn], spacing=10),
+            self.network_diag,
         ], spacing=15)
 
 
@@ -507,6 +513,38 @@ class SettingsMobileView(ft.Column):
         except ValueError:
             return True
 
+    def _render_network_diagnostics(self, title: str, message: str, steps=None, technical: str = ""):
+        steps = list(steps or [])
+        controls = [
+            ft.Row([ft.Icon(ft.Icons.INFO_OUTLINE, color=ft.Colors.BLUE_700), ft.Text(title, weight=ft.FontWeight.BOLD, expand=True)]),
+            ft.Text(message, size=12, color=ft.Colors.GREY_800),
+        ]
+        if steps:
+            controls.append(ft.Text("خطوات الفحص:", size=12, weight=ft.FontWeight.BOLD))
+            controls.extend([ft.Text(f"• {x}", size=11, color=ft.Colors.GREY_700) for x in steps])
+        if technical:
+            controls.append(ft.Text("تفاصيل تقنية:", size=11, weight=ft.FontWeight.BOLD, color=ft.Colors.GREY_600))
+            controls.append(ft.Container(
+                content=ft.Text(technical, size=10, selectable=True, color=ft.Colors.GREY_700),
+                bgcolor=ft.Colors.GREY_100,
+                border_radius=10,
+                padding=8,
+            ))
+        self.network_diag.controls = [ft.Container(content=ft.Column(controls, spacing=5), bgcolor=ft.Colors.BLUE_50, border_radius=14, padding=12)]
+        self._page.update()
+
+    def _show_network_diagnostics(self, e=None):
+        try:
+            from services.network_diagnostics_service import build_diagnostic_steps
+            url = self._normalize_server_url()
+            self._render_network_diagnostics(
+                "تشخيص الاتصال",
+                "إذا فشل الربط، اختبر الرابط من متصفح الهاتف أولًا. QR لا يحل مشكلة الشبكة إذا كان الهاتف لا يصل إلى خادم Windows.",
+                build_diagnostic_steps(url),
+            )
+        except Exception as ex:
+            self._show_snackbar(f"تعذر بناء التشخيص: {ex}", True)
+
     def _test_connection(self, e):
         try:
             if hasattr(self, 'network_test_btn'):
@@ -514,10 +552,20 @@ class SettingsMobileView(ft.Column):
                 self.network_test_btn.content = ft.Row([ft.ProgressRing(width=16, height=16), ft.Text("جاري الاختبار")])
                 self._page.update()
             from services.network_service import NetworkService
+            from services.network_diagnostics_service import build_diagnostic_steps
             result = NetworkService.check_connection(self.server_url.value or "")
             self._show_snackbar(("✅ " if result.ok else "❌ ") + result.message, is_error=not result.ok)
+            if result.ok:
+                self.network_diag.controls = [ft.Container(content=ft.Text(result.message, size=12, color=ft.Colors.GREEN_800), bgcolor=ft.Colors.GREEN_50, border_radius=12, padding=10)]
+                self._page.update()
+            else:
+                self._render_network_diagnostics("فشل الاتصال", result.message, build_diagnostic_steps(result.server_url or self.server_url.value or ""))
         except Exception as ex:
-            self._show_snackbar(f"❌ فشل الاتصال: {str(ex)}", True)
+            from services.network_diagnostics_service import classify_connection_error, build_diagnostic_steps
+            url = self.server_url.value or ""
+            hint = classify_connection_error(url, ex)
+            self._show_snackbar(f"❌ {hint.title}", True)
+            self._render_network_diagnostics(hint.title, hint.message, build_diagnostic_steps(url), hint.technical)
         finally:
             if hasattr(self, 'network_test_btn'):
                 self.network_test_btn.disabled = False
@@ -566,6 +614,10 @@ class SettingsMobileView(ft.Column):
             content=ft.Row([ft.Icon(ft.Icons.IOS_SHARE), ft.Text("تصدير CSV ومشاركته")]),
             on_click=self._export_csv
         )
+        import_btn = ft.OutlinedButton(
+            content=ft.Row([ft.Icon(ft.Icons.RESTORE), ft.Text("استيراد نسخة احتياطية")]),
+            on_click=self._pick_backup_to_restore
+        )
         vacuum_btn = ft.FilledButton(
             content=ft.Row([ft.Icon(ft.Icons.COMPRESS), ft.Text("ضغط قاعدة البيانات")]),
             on_click=self._vacuum_db
@@ -583,6 +635,7 @@ class SettingsMobileView(ft.Column):
             ),
             backup_btn,
             export_btn,
+            import_btn,
             vacuum_btn,
             ft.Divider(),
             ft.Text("⚠️ إعادة التهيئة تحذف جميع البيانات نهائياً", color=ft.Colors.RED, size=12),
@@ -618,6 +671,70 @@ class SettingsMobileView(ft.Column):
             self._show_snackbar(result.message if result.ok else result.message or f"تم إنشاء ملف CSV: {export_path}", is_error=not result.ok)
         except Exception as ex:
             self._show_snackbar(f"فشل التصدير: {str(ex)}", True)
+
+    def _pick_backup_to_restore(self, e):
+        try:
+            from database.connection import DatabaseConnection
+            if DatabaseConnection().is_remote():
+                self._show_snackbar("أنت في وضع العميل. الاستعادة تتم من نسخة Windows فقط. غيّر الوضع إلى محلي لاستعادة نسخة داخل الهاتف.", True)
+                return
+            picker = ft.FilePicker(on_result=self._on_restore_backup_picked)
+            self._page.overlay.append(picker)
+            self._page.update()
+            picker.pick_files(
+                allow_multiple=False,
+                allowed_extensions=["zip", "db", "sqlite", "sqlite3"],
+                dialog_title="اختيار نسخة هوى الشام الاحتياطية",
+            )
+        except Exception as ex:
+            self._show_snackbar(f"تعذر فتح اختيار النسخة: {ex}", True)
+
+    def _on_restore_backup_picked(self, e):
+        try:
+            files = getattr(e, 'files', None) or []
+            if not files:
+                self._show_snackbar("لم يتم اختيار ملف", False)
+                return
+            selected = files[0]
+            path = getattr(selected, 'path', None) or getattr(selected, 'name', None)
+            if not path or not os.path.exists(path):
+                self._show_snackbar("لم يستطع Android إعطاء مسار قابل للقراءة. احفظ النسخة في Files ثم أعد المحاولة.", True)
+                return
+            from services.file_export_service import FileExportService
+            info = FileExportService.inspect_backup_archive(path)
+            counts = info.get('counts', {})
+            msg = (
+                "سيتم استبدال قاعدة البيانات الحالية. سيتم إنشاء نسخة أمان قبل الاستعادة.\n\n"
+                f"النوع: {info.get('format')}\n"
+                f"إصدار المخطط: {info.get('schema_version') or 'غير محدد'}\n"
+                f"المستخدمون: {counts.get('users', 0)} | القيود: {counts.get('expenses', 0)}"
+            )
+            dlg = ft.AlertDialog(
+                title=ft.Text("تأكيد استيراد النسخة الاحتياطية", weight=ft.FontWeight.BOLD),
+                content=ft.Text(msg),
+                actions=[
+                    ft.TextButton("إلغاء", on_click=lambda ev: self._close_dialog(dlg)),
+                    ft.FilledButton("استيراد الآن", bgcolor=ft.Colors.RED, color=ft.Colors.WHITE, on_click=lambda ev, p=path, d=dlg: self._confirm_restore_backup(p, d)),
+                ],
+            )
+            open_control(self._page, dlg)
+        except Exception as ex:
+            self._show_snackbar(f"النسخة غير صالحة: {ex}", True)
+
+    def _confirm_restore_backup(self, path: str, dialog):
+        try:
+            self._close_dialog(dialog)
+            from services.file_export_service import FileExportService
+            result = FileExportService.restore_backup_archive(path)
+            safety = result.get('safety_backup')
+            suffix = f" نسخة الأمان: {os.path.basename(safety)}" if safety else ""
+            self._show_snackbar("تم استيراد النسخة الاحتياطية. أعد تشغيل التطبيق لتحديث كل الشاشات." + suffix, False)
+            # Rebuild current page as much as possible; a full restart remains safest.
+            refresh = getattr(self._page, '_hawaa_refresh_current_page', None)
+            if callable(refresh):
+                refresh()
+        except Exception as ex:
+            self._show_snackbar(f"فشل استيراد النسخة: {ex}", True)
 
     def _vacuum_db(self, e):
         try:

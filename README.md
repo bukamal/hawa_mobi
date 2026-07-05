@@ -158,3 +158,18 @@ git rm -f flask_server.py run_server.py 2>/dev/null || true
 - اختيار شعار الشركة يستخدم FilePicker ويخزن الصورة داخل app storage.
 - تقارير HTML تضمّن الشعار كـ Base64 حتى يظهر عند الطباعة والمشاركة.
 - تم منع بقاء زر FAB الخاص بصفحات أخرى داخل الإعدادات.
+
+## Phase 35 — Network diagnostics and backup restore
+
+Android now includes a local-mode backup restore flow. Restore is disabled in client mode because the authoritative database belongs to Windows Server. Network errors are also translated into user-facing diagnostics instead of raw `HTTPConnectionPool` messages.
+
+Run:
+
+```bash
+PYTHONPATH=. python tools/backup_restore_smoke_test.py
+PYTHONPATH=. python tools/network_diagnostics_smoke_test.py
+PYTHONPATH=. python tools/quality_gate.py
+```
+
+## Phase 36 — API Parity + Real Network Contract
+تم توحيد عقد API بين Windows Server وAndroid. الربط عبر QR لا يُقبل إلا إذا أعلن الخادم دعم `amount_base`، السعر التاريخي، سجل أسعار الصرف، ملخص القيود، تنبيهات الدفع، وإرسال سجل التدقيق من Android. لاختبار الشبكة من هاتف حقيقي افتح أولًا: `http://IP_WINDOWS:8000/api/health` من متصفح الهاتف.

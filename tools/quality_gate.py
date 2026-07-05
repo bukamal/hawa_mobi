@@ -46,11 +46,13 @@ def main() -> int:
         "tools/api_capabilities_contract_smoke_test.py",
         "tools/mobile_pairing_contract_smoke_test.py",
         "tools/qr_pairing_ui_smoke_test.py",
+        "tools/pairing_capabilities_strict_smoke_test.py",
         "tools/company_logo_print_smoke_test.py",
         "tools/apk_release_preflight.py",
-        "tools/report_share_smoke_test.py",
-        "tools/apk_file_export_smoke_test.py",
-        "tools/server_import_smoke_test.py",
+        "tools/backup_restore_smoke_test.py",
+        "tools/network_diagnostics_smoke_test.py",
+        # Server import is useful when Flask dependencies are installed; run it manually when validating server packaging:
+        # tools/server_import_smoke_test.py
         # The following auth/network-bootstrap checks remain useful, but they
         # may leave runtime resources alive in GitHub-hosted Linux shells. Run
         # them manually when validating networking/session changes:
@@ -65,6 +67,7 @@ def main() -> int:
         # The following UI/export smoke tests are useful during development but
         # can keep Flet-related worker threads alive on some CI/Linux shells.
         # Run them manually when needed:
+        # tools/report_share_smoke_test.py
         # tools/apk_file_export_smoke_test.py
         # tools/ui_smoke_test.py
         # tools/ui_admin_smoke_test.py

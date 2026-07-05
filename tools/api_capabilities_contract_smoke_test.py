@@ -27,6 +27,9 @@ def main() -> int:
     assert 'supports_historic_currency_snapshot' in server, "capabilities must declare historic currency support"
     assert 'supports_amount_base' in server, "capabilities must declare amount_base support"
     assert 'supports_exchange_rate_history' in server, "capabilities must declare exchange-rate history support"
+    assert 'supports_payment_reminders' in server, "capabilities must declare payment reminder support"
+    assert 'supports_audit_post' in server, "capabilities must declare audit POST support"
+    assert 'supports_expense_summary' in server, "capabilities must declare expense summary support"
 
     route_names = set(re.findall(r'"(/api/[^"]+)"', server))
     required = {

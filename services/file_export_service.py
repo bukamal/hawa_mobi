@@ -74,7 +74,7 @@ class FileExportService:
         if not db_path or not os.path.exists(db_path):
             raise FileNotFoundError("ملف قاعدة البيانات غير موجود")
 
-        timestamp = _dt.datetime.now().strftime("%Y%m%d_%H%M%S")
+        timestamp = _dt.datetime.now().strftime("%Y%m%d_%H%M%S_%f")
         zip_path = FileExportService.build_path(f"hawaa_backup_{timestamp}.zip", "backups", temporary=True)
 
         # SQLite is configured with WAL. Copying hawaa_data.db alone can miss
@@ -112,7 +112,7 @@ class FileExportService:
         if db.is_remote():
             raise RuntimeError("لا يمكن تصدير قاعدة البيانات مباشرة في وضع العميل")
         conn = db.get_connection()
-        timestamp = _dt.datetime.now().strftime("%Y%m%d_%H%M%S")
+        timestamp = _dt.datetime.now().strftime("%Y%m%d_%H%M%S_%f")
         zip_path = FileExportService.build_path(f"hawaa_csv_export_{timestamp}.zip", "exports", temporary=True)
         tables = list(tables or ["expenses", "users", "audit_log"])
         with zipfile.ZipFile(zip_path, "w", compression=zipfile.ZIP_DEFLATED) as zf:
@@ -130,31 +130,127 @@ class FileExportService:
         return zip_path
 
     @staticmethod
-    def restore_backup_archive(backup_zip_path: str) -> None:
-        """Restore a backup ZIP created by create_backup_archive.
+    def _validate_sqlite_backup_db(db_path: str) -> dict:
+        """Validate a candidate Hawaa SQLite database before restore."""
+        if not db_path or not os.path.exists(db_path):
+            raise FileNotFoundError("ملف قاعدة البيانات داخل النسخة غير موجود")
+        conn = sqlite3.connect(db_path)
+        try:
+            integrity = conn.execute("PRAGMA integrity_check").fetchone()[0]
+            if str(integrity).lower() != "ok":
+                raise ValueError(f"فحص سلامة SQLite فشل: {integrity}")
+            rows = conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()
+            tables = {r[0] for r in rows}
+            required = {"users", "expenses", "settings", "exchange_rates"}
+            missing = sorted(required - tables)
+            if missing:
+                raise ValueError("النسخة لا تحتوي الجداول الأساسية: " + ", ".join(missing))
+            schema_version = None
+            try:
+                row = conn.execute("SELECT value FROM settings WHERE key='schema_version'").fetchone()
+                schema_version = row[0] if row else None
+            except Exception:
+                schema_version = None
+            counts = {}
+            for table in ("users", "expenses", "settings"):
+                try:
+                    counts[table] = int(conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0])
+                except Exception:
+                    counts[table] = 0
+            return {"schema_version": schema_version, "tables": sorted(tables), "counts": counts}
+        finally:
+            conn.close()
 
-        This is intentionally conservative and only accepts files containing
-        hawaa_data.db. The caller should ask the user for confirmation first.
-        """
-        if not backup_zip_path or not os.path.exists(backup_zip_path):
+    @staticmethod
+    def inspect_backup_archive(backup_path: str) -> dict:
+        """Inspect a backup ZIP or direct .db file without modifying current data."""
+        if not backup_path or not os.path.exists(backup_path):
             raise FileNotFoundError("ملف النسخة الاحتياطية غير موجود")
-        from database.connection import get_local_db_path
+        ext = os.path.splitext(str(backup_path))[1].lower()
+        if ext in {".db", ".sqlite", ".sqlite3"}:
+            info = FileExportService._validate_sqlite_backup_db(backup_path)
+            info.update({"format": "sqlite-db", "source": backup_path})
+            return info
+        if ext != ".zip":
+            raise ValueError("صيغة النسخة غير مدعومة. اختر ملف ZIP أو DB")
+        with zipfile.ZipFile(backup_path, "r") as zf:
+            names = set(zf.namelist())
+            if "hawaa_data.db" not in names:
+                raise ValueError("ملف النسخة الاحتياطية غير صالح: لا يحتوي hawaa_data.db")
+            tmp_dir = tempfile.mkdtemp(prefix="hawaa_inspect_")
+            try:
+                zf.extract("hawaa_data.db", tmp_dir)
+                info = FileExportService._validate_sqlite_backup_db(os.path.join(tmp_dir, "hawaa_data.db"))
+                info.update({"format": "hawaa-backup-zip", "source": backup_path, "has_config": "config.json" in names})
+                return info
+            finally:
+                shutil.rmtree(tmp_dir, ignore_errors=True)
+
+    @staticmethod
+    def restore_backup_archive(backup_path: str) -> dict:
+        """Restore a Hawaa backup ZIP or direct SQLite DB into local Android storage.
+
+        Safety rules:
+        - restore is allowed only in local mode; client mode data belongs to Windows Server.
+        - validate the candidate database before replacing current data.
+        - create a safety backup of current data first.
+        - close SQLite and remove WAL/SHM sidecars before replacing the database.
+        """
+        from database.connection import DatabaseConnection, get_local_db_path
+
+        db = DatabaseConnection()
+        if db.is_remote():
+            raise RuntimeError("أنت في وضع العميل. الاستعادة تتم من نسخة Windows فقط. غيّر الوضع إلى محلي لاستعادة نسخة داخل الهاتف.")
+        if not backup_path or not os.path.exists(backup_path):
+            raise FileNotFoundError("ملف النسخة الاحتياطية غير موجود")
+
+        inspected = FileExportService.inspect_backup_archive(backup_path)
+        safety_backup = None
+        try:
+            safety_backup = FileExportService.create_backup_archive()
+        except Exception:
+            safety_backup = None
+
         target_db = get_local_db_path()
         target_dir = os.path.dirname(target_db)
         os.makedirs(target_dir, exist_ok=True)
-        with zipfile.ZipFile(backup_zip_path, "r") as zf:
-            names = set(zf.namelist())
-            if "hawaa_data.db" not in names:
-                raise ValueError("ملف النسخة الاحتياطية غير صالح")
-            tmp_dir = tempfile.mkdtemp(prefix="hawaa_restore_")
+        tmp_dir = tempfile.mkdtemp(prefix="hawaa_restore_")
+        try:
+            ext = os.path.splitext(str(backup_path))[1].lower()
+            candidate_db = os.path.join(tmp_dir, "hawaa_data.db")
+            config_candidate = None
+            if ext in {".db", ".sqlite", ".sqlite3"}:
+                shutil.copy2(backup_path, candidate_db)
+            else:
+                with zipfile.ZipFile(backup_path, "r") as zf:
+                    zf.extract("hawaa_data.db", tmp_dir)
+                    if "config.json" in set(zf.namelist()):
+                        zf.extract("config.json", tmp_dir)
+                        config_candidate = os.path.join(tmp_dir, "config.json")
+            FileExportService._validate_sqlite_backup_db(candidate_db)
+
+            # Close singleton connection before replacing.
+            db.close()
+            for sidecar in (target_db + "-wal", target_db + "-shm"):
+                try:
+                    if os.path.exists(sidecar):
+                        os.remove(sidecar)
+                except Exception:
+                    pass
+            shutil.copy2(candidate_db, target_db)
+            if config_candidate and os.path.exists(config_candidate):
+                shutil.copy2(config_candidate, os.path.join(target_dir, "config.json"))
+
+            # Run migrations/ensure schema on restored DB.
             try:
-                zf.extract("hawaa_data.db", tmp_dir)
-                shutil.copy2(os.path.join(tmp_dir, "hawaa_data.db"), target_db)
-                if "config.json" in names:
-                    zf.extract("config.json", tmp_dir)
-                    shutil.copy2(os.path.join(tmp_dir, "config.json"), os.path.join(target_dir, "config.json"))
-            finally:
-                shutil.rmtree(tmp_dir, ignore_errors=True)
+                from database.migrations import ensure_db
+                ensure_db()
+            except Exception:
+                # Re-raise after preserving replacement; caller should display details.
+                raise
+            return {"ok": True, "safety_backup": safety_backup, "restored_db": target_db, "inspected": inspected}
+        finally:
+            shutil.rmtree(tmp_dir, ignore_errors=True)
 
     @staticmethod
     async def share_file_async(page, path: str, text: str = "", *, phone: str | None = None, open_whatsapp: bool = False, title: str = "مشاركة ملف هوى الشام"):

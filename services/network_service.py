@@ -98,4 +98,6 @@ class NetworkService:
             version = caps.get("api_contract_version") or health.get("api_contract_version") or "legacy"
             return NetworkCheckResult(True, f"الاتصال بالخادم ناجح — عقد API: {version}", url)
         except Exception as exc:
-            return NetworkCheckResult(False, f"فشل الاتصال بالخادم: {exc}", url)
+            from services.network_diagnostics_service import classify_connection_error
+            hint = classify_connection_error(url, exc)
+            return NetworkCheckResult(False, f"{hint.title}: {hint.message}", url)
