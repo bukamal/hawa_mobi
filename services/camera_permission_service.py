@@ -47,10 +47,8 @@ class CameraPermissionService:
 
             handler = permission_handler_cls()
             try:
-                ov = getattr(page, "overlay", None)
-                if ov is not None and handler not in ov:
-                    ov.append(handler)
-                    page.update()
+                from views.flet_compat import attach_service_control
+                attach_service_control(page, handler)
             except Exception:
                 pass
             perm = _camera_permission_type()

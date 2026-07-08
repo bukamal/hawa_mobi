@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 import flet as ft
-from views.flet_compat import open_control, close_control, make_file_picker, attach_service_control
+from views.flet_compat import open_control, close_control, make_file_picker, attach_service_control, service_control_attached, filepicker_unavailable_message
 from views.ui_kit import page_header, data_card, show_snackbar, empty_state, info_banner, responsive_wrap
 from database import SettingsRepository
 from currency import currency
@@ -303,6 +303,9 @@ class SettingsMobileView(ft.Column):
     def _browse_logo(self, e):
         picker = make_file_picker(self._on_logo_picked)
         attach_service_control(self._page, picker)
+        if not service_control_attached(picker):
+            self._show_snackbar(filepicker_unavailable_message(), True)
+            return
         try:
             picker.pick_files(
                 allow_multiple=False,
@@ -676,6 +679,9 @@ class SettingsMobileView(ft.Column):
                 return
             picker = make_file_picker(self._on_restore_backup_picked)
             attach_service_control(self._page, picker)
+            if not service_control_attached(picker):
+                self._show_snackbar(filepicker_unavailable_message(), True)
+                return
             picker.pick_files(
                 allow_multiple=False,
                 allowed_extensions=["zip", "db", "sqlite", "sqlite3"],

@@ -231,21 +231,90 @@ def make_file_picker(on_result=None):
     return picker
 
 
+def _platform_name(page) -> str:
+    """Return a lowercase platform name when Flet exposes one."""
+    try:
+        value = getattr(page, "platform", "") or ""
+        name = getattr(value, "value", value)
+        return str(name or "").lower()
+    except Exception:
+        return ""
+
+
+def _is_mobile_page(page) -> bool:
+    name = _platform_name(page)
+    return "android" in name or "ios" in name
+
+
 def attach_service_control(page: ft.Page, control):
-    """Attach service controls such as FilePicker/PermissionHandler safely."""
+    """Attach service controls such as FilePicker/PermissionHandler safely.
+
+    Flet changed FilePicker/PermissionHandler from overlay-style controls to
+    service controls in recent runtimes.  Some Android/Web builds show a fatal
+    red overlay: ``Unknown control: FilePicker`` when the service is appended to
+    ``page.overlay``.  Therefore we prefer ``page.services`` when available and
+    never force service controls into overlay on mobile.
+    """
     if page is None or control is None:
         return control
+
+    attached = False
+
+    # Newer Flet service API.
+    for attr in ("services", "_services"):
+        try:
+            services = getattr(page, attr, None)
+            if services is not None and control not in services:
+                services.append(control)
+                attached = True
+                break
+        except Exception:
+            pass
+
+    # Android builds with Flet 0.8x may expose FilePicker in Python while the
+    # Flutter client does not accept it as an overlay control. Avoid the known
+    # red ``Unknown control: FilePicker`` failure and let callers show a fallback.
+    if not attached and _is_mobile_page(page):
+        try:
+            setattr(control, "_hawaa_service_attached", False)
+        except Exception:
+            pass
+        return control
+
+    # Legacy desktop/web fallback.
+    if not attached:
+        try:
+            ov = _overlay(page)
+            if ov is not None and control not in ov:
+                ov.append(control)
+                attached = True
+        except Exception:
+            pass
+
     try:
-        ov = _overlay(page)
-        if ov is not None and control not in ov:
-            ov.append(control)
+        setattr(control, "_hawaa_service_attached", bool(attached))
     except Exception:
         pass
-    try:
-        page.update()
-    except Exception:
-        pass
+    if attached:
+        try:
+            page.update()
+        except Exception:
+            pass
     return control
+
+
+def service_control_attached(control) -> bool:
+    try:
+        return bool(getattr(control, "_hawaa_service_attached", False))
+    except Exception:
+        return False
+
+
+def filepicker_unavailable_message() -> str:
+    return (
+        "منتقي الملفات غير مدعوم في نسخة Flet/Android الحالية أو لم يكتمل تسجيله في الواجهة. "
+        "استخدم نسخة APK مبنية بـ Flet يدعم FilePicker، أو استخدم مسار النسخة الاحتياطي داخل تخزين التطبيق كحل مؤقت."
+    )
 
 def show_snackbar(page: ft.Page, message: str, is_error: bool = False, duration: int = 3000):
     snack = ft.SnackBar(

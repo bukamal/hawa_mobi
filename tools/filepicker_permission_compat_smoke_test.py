@@ -22,6 +22,10 @@ def main() -> int:
     assert 'permissions = ["camera"]' in pyproject, "cross-platform camera permission bundle missing"
     assert "CameraPermissionService.request" in qr_dialog, "QR scanner must request/check camera permission"
     assert "PermissionHandler" in camera_service and "request_permission" in camera_service, "permission handler bridge missing"
+    assert "page.overlay" not in camera_service and "overlay" not in camera_service, "camera permission service must not append service controls to overlay directly"
+    assert "page.services" in compat or '"services"' in compat, "service controls should prefer page.services"
+    assert "_is_mobile_page" in compat and "Unknown control: FilePicker" in compat, "compat must avoid mobile overlay Unknown FilePicker failures"
+    assert "service_control_attached" in settings, "settings must not call FilePicker if service was not attached"
     print("✅ filepicker_permission_compat_smoke_test passed")
     return 0
 

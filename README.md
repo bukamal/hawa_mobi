@@ -185,3 +185,6 @@ PYTHONPATH=. python tools/quality_gate.py
 ## Phase 38 — Pairing UX + Local QA Fixes
 
 This phase improves Android/Windows pairing diagnostics and permits localhost pairing for same-device/emulator QA. Real phones must still use the Windows LAN IP, and the Android dialog now summarizes QR payloads and hides low-level network exceptions behind clearer diagnostic messages.
+
+## Phase 39
+- Android service controls now avoid fatal `Unknown control: FilePicker` red overlay by preferring service registration and refusing unsafe mobile overlay fallback.
