@@ -304,7 +304,7 @@ class SettingsMobileView(ft.Column):
         picker = make_file_picker(self._on_logo_picked)
         attach_service_control(self._page, picker)
         if not service_control_attached(picker):
-            self._show_snackbar(filepicker_unavailable_message(), True)
+            self._open_logo_path_fallback_dialog(filepicker_unavailable_message())
             return
         try:
             picker.pick_files(
@@ -680,7 +680,7 @@ class SettingsMobileView(ft.Column):
             picker = make_file_picker(self._on_restore_backup_picked)
             attach_service_control(self._page, picker)
             if not service_control_attached(picker):
-                self._show_snackbar(filepicker_unavailable_message(), True)
+                self._open_restore_fallback_dialog(filepicker_unavailable_message())
                 return
             picker.pick_files(
                 allow_multiple=False,
@@ -689,6 +689,137 @@ class SettingsMobileView(ft.Column):
             )
         except Exception as ex:
             self._show_snackbar(f"تعذر فتح اختيار النسخة: {ex}", True)
+
+
+    def _open_restore_fallback_dialog(self, reason: str = ""):
+        """Fallback restore path when Flet FilePicker is not available on APK."""
+        try:
+            from services.file_export_service import FileExportService
+            recent = FileExportService.find_recent_backup_archives(limit=6)
+        except Exception:
+            recent = []
+        path_field = ft.TextField(
+            label="مسار ملف النسخة داخل تخزين التطبيق",
+            hint_text="مثال: /data/user/0/.../hawaa_backup_....zip",
+            multiline=True,
+            min_lines=1,
+            max_lines=3,
+            text_align=ft.TextAlign.LEFT,
+            rtl=False,
+            expand=True,
+        )
+        recent_controls = []
+        if recent:
+            recent_controls.append(ft.Text("نسخ أنشأها التطبيق مؤخرًا:", size=12, weight=ft.FontWeight.BOLD))
+            for path in recent:
+                try:
+                    label = FileExportService.describe_backup_file(path)
+                except Exception:
+                    label = os.path.basename(path)
+                recent_controls.append(
+                    ft.OutlinedButton(
+                        content=ft.Row([ft.Icon(ft.Icons.ARCHIVE_OUTLINED), ft.Text(label, overflow=ft.TextOverflow.ELLIPSIS)], alignment=ft.MainAxisAlignment.START),
+                        on_click=lambda ev, p=path: self._restore_from_fallback_path(p, dlg),
+                    )
+                )
+        else:
+            recent_controls.append(ft.Text("لم يتم العثور على نسخ احتياطية داخل تخزين التطبيق. أنشئ نسخة أولًا أو الصق مسار ملف ZIP/DB يدويًا.", size=11, color=ft.Colors.GREY_700))
+
+        dlg = ft.AlertDialog(
+            modal=True,
+            title=ft.Text("استيراد نسخة احتياطية بدون FilePicker", weight=ft.FontWeight.BOLD),
+            content=ft.Container(
+                width=430,
+                content=ft.Column([
+                    info_banner("نسخة Flet/Android الحالية لا تدعم منتقي الملفات. يمكنك استيراد آخر نسخة أنشأها التطبيق أو لصق مسار ملف ZIP/DB داخل تخزين التطبيق.", icon=ft.Icons.INFO),
+                    ft.Text(reason or "", size=10, color=ft.Colors.GREY_600, selectable=True),
+                    *recent_controls,
+                    ft.Divider(),
+                    path_field,
+                ], tight=True, spacing=10),
+            ),
+            actions=[
+                ft.FilledButton("استيراد من المسار", on_click=lambda ev: self._restore_from_fallback_path(path_field.value or "", dlg)),
+                ft.TextButton("إلغاء", on_click=lambda ev: self._close_dialog(dlg)),
+            ],
+        )
+        open_control(self._page, dlg)
+
+    def _restore_from_fallback_path(self, path: str, dialog=None):
+        path = (path or "").strip().strip('"').strip("'")
+        if not path:
+            self._show_snackbar("أدخل مسار النسخة أو اختر واحدة من القائمة", True)
+            return
+        try:
+            if dialog is not None:
+                self._close_dialog(dialog)
+            from services.file_export_service import FileExportService
+            info = FileExportService.inspect_backup_archive(path)
+            counts = info.get('counts', {})
+            msg = (
+                "سيتم استبدال قاعدة البيانات الحالية. سيتم إنشاء نسخة أمان قبل الاستعادة.\n\n"
+                f"المصدر: {os.path.basename(path)}\n"
+                f"النوع: {info.get('format')}\n"
+                f"إصدار المخطط: {info.get('schema_version') or 'غير محدد'}\n"
+                f"المستخدمون: {counts.get('users', 0)} | القيود: {counts.get('expenses', 0)}"
+            )
+            confirm = ft.AlertDialog(
+                modal=True,
+                title=ft.Text("تأكيد استيراد النسخة الاحتياطية", weight=ft.FontWeight.BOLD),
+                content=ft.Text(msg),
+                actions=[
+                    ft.TextButton("إلغاء", on_click=lambda ev: self._close_dialog(confirm)),
+                    ft.FilledButton("استيراد الآن", bgcolor=ft.Colors.RED, color=ft.Colors.WHITE, on_click=lambda ev, p=path, d=confirm: self._confirm_restore_backup(p, d)),
+                ],
+            )
+            open_control(self._page, confirm)
+        except Exception as ex:
+            self._show_snackbar(f"تعذر استخدام المسار: {ex}", True)
+
+    def _open_logo_path_fallback_dialog(self, reason: str = ""):
+        path_field = ft.TextField(
+            label="مسار صورة الشعار داخل تخزين التطبيق",
+            hint_text="PNG / JPG / WEBP",
+            text_align=ft.TextAlign.LEFT,
+            rtl=False,
+            multiline=True,
+            min_lines=1,
+            max_lines=3,
+        )
+        dlg = ft.AlertDialog(
+            modal=True,
+            title=ft.Text("اختيار شعار بدون FilePicker", weight=ft.FontWeight.BOLD),
+            content=ft.Container(
+                width=420,
+                content=ft.Column([
+                    info_banner("نسخة Flet/Android الحالية لا تدعم منتقي الملفات. انسخ صورة الشعار إلى تخزين التطبيق أو أدخل مسارًا قابلًا للقراءة.", icon=ft.Icons.IMAGE),
+                    ft.Text(reason or "", size=10, color=ft.Colors.GREY_600, selectable=True),
+                    path_field,
+                ], tight=True, spacing=10),
+            ),
+            actions=[
+                ft.FilledButton("استخدام هذا الشعار", on_click=lambda ev: self._import_logo_from_path(path_field.value or "", dlg)),
+                ft.TextButton("إلغاء", on_click=lambda ev: self._close_dialog(dlg)),
+            ],
+        )
+        open_control(self._page, dlg)
+
+    def _import_logo_from_path(self, source_path: str, dialog=None):
+        source_path = (source_path or "").strip().strip('"').strip("'")
+        if not source_path:
+            self._show_snackbar("أدخل مسار صورة الشعار", True)
+            return
+        try:
+            if dialog is not None:
+                self._close_dialog(dialog)
+            from services.company_logo_service import import_logo
+            stored = import_logo(source_path)
+            self.company_logo.value = stored
+            self.logo_preview.content = self._logo_preview_control(stored)
+            self._show_snackbar("تم اختيار الشعار وسيُستخدم في الطباعة", False)
+            self._page.update()
+        except Exception as ex:
+            self._show_snackbar(f"فشل اختيار الشعار من المسار: {ex}", True)
 
     def _on_restore_backup_picked(self, e):
         try:

@@ -188,3 +188,6 @@ This phase improves Android/Windows pairing diagnostics and permits localhost pa
 
 ## Phase 39
 - Android service controls now avoid fatal `Unknown control: FilePicker` red overlay by preferring service registration and refusing unsafe mobile overlay fallback.
+
+## Phase 40 — FilePicker fallback on Android
+If the APK runtime does not support Flet FilePicker, backup restore and logo import now show an in-app fallback: recent Hawaa backups created by the app, or a manual readable path inside app storage. This avoids the red `Unknown control: FilePicker` failure and keeps restore possible without a native picker.

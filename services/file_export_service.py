@@ -103,6 +103,46 @@ class FileExportService:
             zf.writestr("manifest.txt", manifest)
         return zip_path
 
+
+    @staticmethod
+    def find_recent_backup_archives(limit: int = 10) -> list[str]:
+        """Return recent backup archives from app-owned cache/storage.
+
+        This is the no-FilePicker fallback for Android runtimes that do not
+        support the FilePicker service. It scans only Hawaa-owned directories,
+        not arbitrary external storage.
+        """
+        roots = []
+        for root in (
+            os.path.join(_cache_root(), "backups"),
+            os.path.join(_app_storage_dir(), "exports", "backups"),
+            os.path.join(_app_storage_dir(), "backups"),
+        ):
+            if root and root not in roots:
+                roots.append(root)
+        found: list[str] = []
+        for root in roots:
+            try:
+                if not os.path.isdir(root):
+                    continue
+                for name in os.listdir(root):
+                    lower = name.lower()
+                    if lower.startswith("hawaa_backup_") and lower.endswith(".zip"):
+                        found.append(os.path.join(root, name))
+            except Exception:
+                continue
+        found = sorted(set(found), key=lambda x: os.path.getmtime(x) if os.path.exists(x) else 0, reverse=True)
+        return found[: max(1, int(limit or 10))]
+
+    @staticmethod
+    def describe_backup_file(path: str) -> str:
+        try:
+            size = os.path.getsize(path)
+            mtime = _dt.datetime.fromtimestamp(os.path.getmtime(path)).strftime("%Y-%m-%d %H:%M")
+            return f"{os.path.basename(path)} — {size/1024:.1f} KB — {mtime}"
+        except Exception:
+            return os.path.basename(path or "")
+
     @staticmethod
     def create_csv_archive(tables: Sequence[str] | None = None) -> str:
         """Export selected SQLite tables to a ZIP of CSV files in app cache."""
