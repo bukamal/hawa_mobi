@@ -219,6 +219,20 @@ def main(page: ft.Page):
     except Exception as e:
         handle_exception(page, e, "خطأ في تشغيل التطبيق")
 
+def run_hawaa_app():
+    """Run the Flet app across old and new Flet runtimes.
+
+    The Android APK currently pins the FilePicker-stable Flet 0.28.x line.
+    That runtime exposes ``ft.app(...)`` but not ``ft.run(...)``.  Newer Flet
+    documentation may use ``ft.run(...)``.  Keep both paths so the same source
+    can start under either runtime without crashing before Splash/Login.
+    """
+    if hasattr(ft, "run") and callable(getattr(ft, "run")):
+        return ft.run(main, assets_dir="assets")
+    # Flet 0.28.x compatible path.
+    return ft.app(target=main, assets_dir="assets")
+
+
 if __name__ == "__main__":
     sys.excepthook = lambda exctype, value, tb: print(f"[CRITICAL] Unhandled exception: {value}")
-    ft.run(main, assets_dir="assets")
+    run_hawaa_app()

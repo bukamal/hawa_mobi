@@ -54,6 +54,7 @@ def main() -> int:
         "tools/network_diagnostics_smoke_test.py",
         "tools/flet_filepicker_runtime_pin_smoke_test.py",
         "tools/flet_build_command_smoke_test.py",
+        "tools/flet_entrypoint_compat_smoke_test.py",
         "tools/filepicker_permission_compat_smoke_test.py",
         # Server import is useful when Flask dependencies are installed; run it manually when validating server packaging:
         # tools/server_import_smoke_test.py

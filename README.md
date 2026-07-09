@@ -207,3 +207,7 @@ rm -rf ~/.flet ~/.cache/flet build/flutter build/apk
 PYTHONPATH=. python tools/quality_gate.py
 flet build apk --verbose --clear-cache
 ```
+
+### Phase 44 note — Flet entrypoint compatibility
+
+The APK pins `flet==0.28.3` for a real Android FilePicker path. This line uses `ft.app(target=main, assets_dir="assets")`, while newer Flet runtimes may expose `ft.run(...)`. `main.py` now uses `run_hawaa_app()` to support both entrypoints. Do not replace it with a direct `ft.run(...)` call unless the APK is rebuilt on a verified newer Flet line with FilePicker working on a real device.
