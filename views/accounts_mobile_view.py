@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 import flet as ft
-from views.flet_compat import open_control, close_control
+from views.flet_compat import open_control, close_control, make_floating_action_button
 from database import ExpenseRepository
 from auth.session import UserSession
 from i18n.translator import translate
@@ -30,7 +30,7 @@ class AccountsMobileView(ft.Column):
 
         self.cards_container = ft.Column(spacing=10, scroll=ft.ScrollMode.AUTO, expand=True)
 
-        self.fab = ft.FloatingActionButton(
+        self.fab = make_floating_action_button(
             icon=ft.Icons.ADD,
             bgcolor=ft.Colors.GREEN,
             foreground_color=ft.Colors.WHITE,

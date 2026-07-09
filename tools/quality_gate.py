@@ -56,6 +56,7 @@ def main() -> int:
         "tools/flet_build_command_smoke_test.py",
         "tools/flet_entrypoint_compat_smoke_test.py",
         "tools/flet_alignment_compat_smoke_test.py",
+        "tools/flet_fab_compat_smoke_test.py",
         "tools/flet_async_task_compat_smoke_test.py",
         "tools/sqlite_thread_safety_smoke_test.py",
         "tools/filepicker_permission_compat_smoke_test.py",

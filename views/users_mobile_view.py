@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 import flet as ft
-from views.flet_compat import open_control, close_control
+from views.flet_compat import open_control, close_control, make_floating_action_button
 from views.ui_kit import page_header, summary_bar, metric_tile, data_card, pill, empty_state, action_text_button, show_snackbar
 from database import UserRepository
 from i18n.translator import translate
@@ -14,7 +14,7 @@ class UsersMobileView(ft.Column):
         self.spacing = 8
         self.scroll = ft.ScrollMode.AUTO
 
-        self.add_btn = ft.FloatingActionButton(
+        self.add_btn = make_floating_action_button(
             icon=ft.Icons.PERSON_ADD,
             bgcolor=ft.Colors.INDIGO,
             foreground_color=ft.Colors.WHITE,

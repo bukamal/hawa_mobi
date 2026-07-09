@@ -378,6 +378,79 @@ def run_async_task(page, async_callable, *args, **kwargs):
     return thread
 
 
+def _filter_constructor_kwargs(constructor, kwargs: dict, always_drop: set[str] | None = None) -> tuple[dict, dict]:
+    """Return kwargs accepted by a Flet constructor plus rejected kwargs.
+
+    Android Flet runtime bindings can lag behind Python examples.  Passing a
+    new layout argument to an older control constructor raises TypeError during
+    screen construction.  Keep that incompatibility here instead of crashing a
+    whole view.
+    """
+    always_drop = always_drop or set()
+    rejected = {}
+    accepted = {}
+    try:
+        signature = inspect.signature(constructor)
+        params = signature.parameters
+        has_var_kwargs = any(p.kind == inspect.Parameter.VAR_KEYWORD for p in params.values())
+        allowed = set(params)
+    except Exception:
+        has_var_kwargs = False
+        allowed = set()
+
+    for key, value in dict(kwargs).items():
+        if key in always_drop:
+            rejected[key] = value
+            continue
+        if has_var_kwargs or key in allowed:
+            accepted[key] = value
+        else:
+            rejected[key] = value
+    return accepted, rejected
+
+
+def _construct_with_keyword_fallback(constructor, kwargs: dict, *, always_drop: set[str] | None = None):
+    """Construct a Flet control and remove unsupported keyword arguments if needed."""
+    accepted, rejected = _filter_constructor_kwargs(constructor, kwargs, always_drop=always_drop)
+    try:
+        control = constructor(**accepted)
+    except TypeError as exc:
+        # Last-resort parser for runtimes whose signature is too permissive or
+        # unavailable but the constructor still rejects a concrete keyword.
+        message = str(exc)
+        bad_key = None
+        for quote in ("'", '"'):
+            marker = "unexpected keyword argument " + quote
+            if marker in message:
+                bad_key = message.split(marker, 1)[1].split(quote, 1)[0]
+                break
+        if bad_key and bad_key in accepted:
+            rejected[bad_key] = accepted.pop(bad_key)
+            control = constructor(**accepted)
+        else:
+            raise
+    try:
+        setattr(control, "_hawaa_rejected_kwargs", rejected)
+    except Exception:
+        pass
+    return control
+
+
+def make_floating_action_button(**kwargs):
+    """Create a FloatingActionButton across Flet Android/Desktop variants.
+
+    Flet 0.28.x accepts the visual/action parameters used by the app, but it
+    rejects ``margin`` on ``FloatingActionButton``.  The margin belongs to layout
+    containers, not to the FAB constructor in this runtime.  A direct call would
+    crash a screen with: ``unexpected keyword argument 'margin'``.
+    """
+    return _construct_with_keyword_fallback(
+        ft.FloatingActionButton,
+        kwargs,
+        always_drop={"margin"},
+    )
+
+
 def make_file_picker(on_result=None):
     """Create FilePicker across Flet versions.
 
