@@ -1,13 +1,11 @@
 # -*- coding: utf-8 -*-
-"""Flet compatibility helpers for dialogs and transient controls.
+"""Flet compatibility helpers for dialogs, transient controls and services.
 
-The project targets Flet 0.85.x.  In that line the documented imperative dialog
-API is ``page.show_dialog(control)`` and ``page.pop_dialog()``.  Older builds and
-some examples still use ``page.overlay.append(control); control.open=True``.
-
-Do not mix those APIs casually: opening with raw overlay and closing with a
-newer stack API can leave modal barriers or stale controls above the app, which
-makes buttons look dead or keeps dialogs visible after Save/Cancel.
+The APK deliberately pins a FilePicker-stable Flet line for Android backup
+restore/logo import.  Newer Flet lines may expose FilePicker in Python while the
+Flutter client rejects it at runtime with ``Unknown control: FilePicker``.  Keep
+all service controls behind helpers in this module instead of appending them
+directly from views.
 """
 from __future__ import annotations
 
@@ -15,6 +13,39 @@ import flet as ft
 
 ARABIC_FONT_FAMILY = "Arial"
 _STACK_ATTR = "_hawaa_dialog_stack"
+
+
+def _flet_version_tuple():
+    """Best-effort Flet version tuple.
+
+    Flet 0.80+ Android builds observed in this project can expose FilePicker in
+    Python while the Flutter client rejects it with ``Unknown control: FilePicker``.
+    Flet 0.28.x keeps the legacy overlay FilePicker path working on Android.
+    """
+    try:
+        raw = str(getattr(ft, "__version__", "") or "")
+    except Exception:
+        raw = ""
+    parts = []
+    for chunk in raw.replace("-", ".").split("."):
+        if chunk.isdigit():
+            parts.append(int(chunk))
+        else:
+            break
+    while len(parts) < 3:
+        parts.append(0)
+    return tuple(parts[:3])
+
+
+def _allow_legacy_filepicker_overlay() -> bool:
+    """Return True for the FilePicker-stable Flet line pinned by this app.
+
+    The APK must use a real Android picker for backup import/logo selection;
+    the fallback path is not sufficient for production.  Flet 0.28.x is the
+    pinned line here because it avoids the 0.80+ ``Unknown control: FilePicker``
+    regression seen on Android builds.
+    """
+    return _flet_version_tuple() < (0, 80, 0)
 
 
 def _overlay(page):
@@ -69,7 +100,7 @@ def _remove_from_overlay(page, control) -> None:
 
 
 def open_control(page: ft.Page, control):
-    """Open a dialog/transient control using the native Flet 0.85 stack first.
+    """Open a dialog/transient control using the native Flet dialog stack first.
 
     Fallback is the classic overlay/open path.  The local stack lets close_control
     know whether ``page.pop_dialog()`` is safe to call for the exact top dialog.
@@ -118,7 +149,7 @@ def open_control(page: ft.Page, control):
 def close_control(page: ft.Page, control):
     """Close one exact control reliably.
 
-    For Flet 0.85 dialogs opened with ``show_dialog`` the correct close operation
+    For dialogs opened with ``show_dialog`` the correct close operation
     is ``page.pop_dialog()``.  We call it only when the requested control is the
     top item in our stack; otherwise we do a specific fallback close to avoid
     accidentally popping the visible parent dialog while trying to close an
@@ -271,17 +302,20 @@ def attach_service_control(page: ft.Page, control):
         except Exception:
             pass
 
-    # Android builds with Flet 0.8x may expose FilePicker in Python while the
-    # Flutter client does not accept it as an overlay control. Avoid the known
-    # red ``Unknown control: FilePicker`` failure and let callers show a fallback.
-    if not attached and _is_mobile_page(page):
+    # Android builds on Flet 0.80+ may expose FilePicker in Python while the
+    # Flutter client rejects it as an overlay control (red screen:
+    # ``Unknown control: FilePicker``).  However Flet 0.28.x is the stable
+    # line for this app and requires the legacy overlay path.
+    if not attached and _is_mobile_page(page) and not _allow_legacy_filepicker_overlay():
         try:
             setattr(control, "_hawaa_service_attached", False)
         except Exception:
             pass
         return control
 
-    # Legacy desktop/web fallback.
+    # Legacy desktop/web/mobile fallback.  This is required for the pinned
+    # Flet 0.28.x APK so Android opens the native file picker instead of using
+    # the internal fallback-only import path.
     if not attached:
         try:
             ov = _overlay(page)

@@ -76,6 +76,27 @@ def open_qr_pairing_dialog(page: ft.Page, *, on_success=None, initial_text: str 
         content=summary_text,
     )
     status = ft.Text("", size=12, color=ft.Colors.GREY_600, text_align=ft.TextAlign.CENTER)
+    try:
+        from database.connection import DatabaseConnection
+        default_server_url = DatabaseConnection().server_url or ""
+    except Exception:
+        default_server_url = ""
+    manual_server_field = ft.TextField(
+        label="عنوان الخادم",
+        hint_text="http://192.168.1.100:8000",
+        value=default_server_url,
+        text_align=ft.TextAlign.LEFT,
+        rtl=False,
+        text_size=12,
+    )
+    manual_code_field = ft.TextField(
+        label="رمز الربط اليدوي",
+        hint_text="مثال: 482913",
+        text_align=ft.TextAlign.CENTER,
+        rtl=False,
+        text_size=18,
+        keyboard_type=ft.KeyboardType.NUMBER,
+    )
 
     def refresh_summary(ev=None):
         text = qr_field.value or ""
@@ -131,6 +152,42 @@ def open_qr_pairing_dialog(page: ft.Page, *, on_success=None, initial_text: str 
 
     def do_pair(ev):
         _apply_payload(qr_field.value or "")
+
+    def do_pair_code(ev):
+        try:
+            server_url = manual_server_field.value or ""
+            code = manual_code_field.value or ""
+            if not server_url.strip() or not code.strip():
+                status.value = "أدخل عنوان الخادم ورمز الربط اليدوي"
+                status.color = ft.Colors.RED
+                page.update()
+                return
+            _set_button_loading(code_pair_btn, "جاري الربط", True)
+            status.value = "جاري فحص الخادم والرمز اليدوي..."
+            status.color = ft.Colors.INDIGO
+            page.update()
+            from services.pairing_service import MobilePairingService
+            result = MobilePairingService.pair_with_code(server_url, code)
+            if not result.ok:
+                status.value = result.message
+                status.color = ft.Colors.RED
+                return
+            status.value = f"✅ {result.message}\n{result.server_name} — {result.server_url}"
+            status.color = ft.Colors.GREEN
+            show_snackbar(page, "تم ربط الهاتف بالخادم. سجّل الدخول بحسابك.", False)
+            if callable(on_success):
+                on_success(result)
+            close_control(page, dlg)
+        except Exception as ex:
+            status.value = _friendly_error(server_url, ex)
+            status.color = ft.Colors.RED
+        finally:
+            try:
+                code_pair_btn.disabled = False
+                code_pair_btn.content = ft.Row([ft.Icon(ft.Icons.PIN), ft.Text("ربط بالرمز اليدوي")], alignment=ft.MainAxisAlignment.CENTER)
+                page.update()
+            except Exception:
+                pass
 
     def paste_clipboard(ev):
         try:
@@ -248,6 +305,10 @@ def open_qr_pairing_dialog(page: ft.Page, *, on_success=None, initial_text: str 
         content=ft.Row([ft.Icon(ft.Icons.CONTENT_PASTE), ft.Text("لصق من الحافظة")], alignment=ft.MainAxisAlignment.CENTER),
         on_click=paste_clipboard,
     )
+    code_pair_btn = ft.OutlinedButton(
+        content=ft.Row([ft.Icon(ft.Icons.PIN), ft.Text("ربط بالرمز اليدوي")], alignment=ft.MainAxisAlignment.CENTER),
+        on_click=do_pair_code,
+    )
 
     dlg = ft.AlertDialog(
         modal=True,
@@ -261,6 +322,11 @@ def open_qr_pairing_dialog(page: ft.Page, *, on_success=None, initial_text: str 
                 qr_field,
                 summary_box,
                 paste_btn,
+                ft.Divider(),
+                ft.Text("أو أدخل عنوان الخادم والرمز القصير الظاهر في Windows", size=11, color=ft.Colors.GREY_600, text_align=ft.TextAlign.CENTER),
+                manual_server_field,
+                manual_code_field,
+                code_pair_btn,
                 status,
             ], tight=True, spacing=12),
         ),

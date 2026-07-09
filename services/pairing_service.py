@@ -86,15 +86,14 @@ class MobilePairingService:
         return validated
 
     @staticmethod
-    def pair_from_qr_text(qr_text: str) -> PairingResult:
-        payload = MobilePairingService.validate_payload(MobilePairingService.parse_qr_text(qr_text))
-        server_url = payload["server_url"]
+    def _verify_capabilities(server_url: str) -> tuple[RestClient, Dict[str, Any], list[str]]:
         client = RestClient(server_url)
         caps = client.capabilities()
+        missing: list[str] = []
         if not caps.get("supports_historic_currency_snapshot"):
-            return PairingResult(False, "الخادم لا يدعم السعر التاريخي للعملات", server_url)
+            missing.append("الخادم لا يدعم السعر التاريخي للعملات")
         if str(caps.get("currency_contract") or "") != CURRENCY_CONTRACT_VERSION:
-            return PairingResult(False, f"عقد العملات غير متوافق: {caps.get('currency_contract')}", server_url)
+            missing.append(f"عقد العملات غير متوافق: {caps.get('currency_contract')}")
         required_flags = {
             "supports_amount_base": "الخادم لا يدعم amount_base",
             "supports_exchange_rate_history": "الخادم لا يدعم تاريخ أسعار الصرف",
@@ -102,7 +101,7 @@ class MobilePairingService:
             "supports_payment_reminders": "الخادم لا يدعم تنبيهات الدفع المطلوبة لتطبيق Android",
             "supports_audit_post": "الخادم لا يدعم إرسال سجل التدقيق من Android",
         }
-        missing = [message for key, message in required_flags.items() if not caps.get(key)]
+        missing.extend(message for key, message in required_flags.items() if not caps.get(key))
         endpoints = set(caps.get("endpoints") or [])
         required_endpoints = {
             "/api/health",
@@ -113,12 +112,16 @@ class MobilePairingService:
         }
         if endpoints:
             missing.extend(f"الخادم لا يعلن endpoint المطلوب: {ep}" for ep in sorted(required_endpoints - endpoints))
+        return client, caps, missing
+
+    @staticmethod
+    def pair_from_qr_text(qr_text: str) -> PairingResult:
+        payload = MobilePairingService.validate_payload(MobilePairingService.parse_qr_text(qr_text))
+        server_url = payload["server_url"]
+        client, caps, missing = MobilePairingService._verify_capabilities(server_url)
         if missing:
             return PairingResult(False, "الخادم قديم أو غير متوافق مع APK الحالي: " + "؛ ".join(missing), server_url)
         pair_response = client.pair_mobile(payload["pairing_token"])
-        # Windows builds before the paired-flag fix returned ok=True without a
-        # dedicated paired field. Accept ok=True for compatibility; newer builds
-        # also return paired=True and a human-readable message.
         if not pair_response.get("ok"):
             return PairingResult(False, str(pair_response.get("error") or "رفض الخادم عملية الربط"), server_url)
         NetworkService.save_mode("client", server_url)
@@ -127,6 +130,28 @@ class MobilePairingService:
             str(pair_response.get("message") or "تم ربط الهاتف بالخادم. سجّل الدخول بحسابك."),
             server_url=server_url,
             server_name=str(pair_response.get("server_name") or payload.get("server_name") or "هوى الشام"),
+            api_contract_version=str(pair_response.get("api_contract_version") or caps.get("api_contract_version") or ""),
+            currency_contract=str(pair_response.get("currency_contract") or caps.get("currency_contract") or ""),
+        )
+
+    @staticmethod
+    def pair_with_code(server_url: str, pairing_code: str) -> PairingResult:
+        server_url = NetworkService.normalize_server_url(str(server_url or ""))
+        code = "".join(ch for ch in str(pairing_code or "") if ch.isdigit())
+        if not code:
+            return PairingResult(False, "أدخل رمز الربط اليدوي الذي يظهر في Windows", server_url)
+        client, caps, missing = MobilePairingService._verify_capabilities(server_url)
+        if missing:
+            return PairingResult(False, "الخادم قديم أو غير متوافق مع APK الحالي: " + "؛ ".join(missing), server_url)
+        pair_response = client.pair_mobile_code(code, server_url)
+        if not pair_response.get("ok"):
+            return PairingResult(False, str(pair_response.get("error") or "رفض الخادم رمز الربط اليدوي"), server_url)
+        NetworkService.save_mode("client", server_url)
+        return PairingResult(
+            True,
+            str(pair_response.get("message") or "تم ربط الهاتف بالخادم. سجّل الدخول بحسابك."),
+            server_url=server_url,
+            server_name=str(pair_response.get("server_name") or caps.get("server_name") or "هوى الشام"),
             api_contract_version=str(pair_response.get("api_contract_version") or caps.get("api_contract_version") or ""),
             currency_contract=str(pair_response.get("currency_contract") or caps.get("currency_contract") or ""),
         )

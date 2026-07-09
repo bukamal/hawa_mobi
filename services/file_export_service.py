@@ -101,6 +101,17 @@ class FileExportService:
                 "restore_hint=استورد هذا الملف من شاشة النسخ الاحتياطي داخل التطبيق.\n"
             )
             zf.writestr("manifest.txt", manifest)
+
+        # Keep a persistent internal copy for APK builds where FilePicker is not
+        # available. Android may clear cache files; the app-owned backups folder
+        # gives the Restore fallback dialog something stable to offer.
+        try:
+            persistent_dir = os.path.join(_app_storage_dir(), "backups")
+            os.makedirs(persistent_dir, exist_ok=True)
+            persistent_path = os.path.join(persistent_dir, os.path.basename(zip_path))
+            shutil.copy2(zip_path, persistent_path)
+        except Exception:
+            pass
         return zip_path
 
 

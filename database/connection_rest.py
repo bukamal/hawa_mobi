@@ -162,6 +162,12 @@ class RestClient:
     def pair_mobile(self, pairing_token: str) -> Dict:
         return self._request('POST', '/api/mobile/pair', {'pairing_token': pairing_token}, retries=1)
 
+    def pair_mobile_code(self, pairing_code: str, server_url: str | None = None) -> Dict:
+        data = {'pairing_code': pairing_code}
+        if server_url:
+            data['server_url'] = server_url
+        return self._request('POST', '/api/mobile/pair', data, retries=1)
+
     def login(self, username: str, password: str) -> Dict:
         res = self._request('POST', '/api/login', {'username': username, 'password': password})
         token = res.get('token') or res.get('access_token')

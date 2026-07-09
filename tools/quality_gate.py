@@ -46,11 +46,13 @@ def main() -> int:
         "tools/api_capabilities_contract_smoke_test.py",
         "tools/mobile_pairing_contract_smoke_test.py",
         "tools/qr_pairing_ui_smoke_test.py",
+        "tools/manual_pairing_code_smoke_test.py",
         "tools/pairing_capabilities_strict_smoke_test.py",
         "tools/company_logo_print_smoke_test.py",
         "tools/apk_release_preflight.py",
         "tools/backup_restore_smoke_test.py",
         "tools/network_diagnostics_smoke_test.py",
+        "tools/flet_filepicker_runtime_pin_smoke_test.py",
         "tools/filepicker_permission_compat_smoke_test.py",
         # Server import is useful when Flask dependencies are installed; run it manually when validating server packaging:
         # tools/server_import_smoke_test.py

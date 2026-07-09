@@ -191,3 +191,19 @@ This phase improves Android/Windows pairing diagnostics and permits localhost pa
 
 ## Phase 40 — FilePicker fallback on Android
 If the APK runtime does not support Flet FilePicker, backup restore and logo import now show an in-app fallback: recent Hawaa backups created by the app, or a manual readable path inside app storage. This avoids the red `Unknown control: FilePicker` failure and keeps restore possible without a native picker.
+
+## Phase 41 — Manual Pairing Code + Persistent Backup Fallback
+
+Android now supports manual pairing with Windows using server URL + short code, in addition to QR/paste pairing. Backup creation also keeps a persistent internal copy so Restore fallback can list app-created backups when FilePicker is not available in the current Flet runtime.
+
+## Phase 42 - Android real backup import
+
+The Android project pins `flet==0.28.3` to restore the real native FilePicker path for backup import and company-logo selection. Newer Flet 0.80+ APK builds may expose `FilePicker` in Python while the Android runtime rejects it with `Unknown control: FilePicker`; the quality gate now blocks those builds.
+
+Before building APK after this phase, clear Flet/Flutter cache:
+
+```bash
+rm -rf ~/.flet ~/.cache/flet build/flutter build/apk
+PYTHONPATH=. python tools/quality_gate.py
+flet build apk --yes --verbose --clear-cache
+```

@@ -4,7 +4,7 @@ version = "1.0.1"
 description = "نظام حسابات هوى الشام الداخلي"
 requires-python = ">=3.10"
 dependencies = [
-    "flet==0.85.2",
+    "flet==0.28.3",
     "requests>=2.25.0",
     "flet-permission-handler>=0.1.0",
 ]
