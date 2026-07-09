@@ -15,6 +15,62 @@ ARABIC_FONT_FAMILY = "Arial"
 _STACK_ATTR = "_hawaa_dialog_stack"
 
 
+def _resolve_alignment(lower_name: str, upper_name: str, x: float, y: float):
+    """Return an Alignment value across Flet runtime naming variants.
+
+    The pinned Android runtime exposes ``ft.Alignment`` as a type, but does not
+    expose enum-like members such as ``ft.Alignment.CENTER``.  The canonical
+    Flet value is usually under ``ft.alignment.center``.  Keep a constructor
+    fallback so startup cannot fail before Splash/Login.
+    """
+    try:
+        alignment_module = getattr(ft, "alignment", None)
+        value = getattr(alignment_module, lower_name, None) if alignment_module is not None else None
+        if value is not None:
+            return value
+    except Exception:
+        pass
+    try:
+        return getattr(ft.Alignment, upper_name)
+    except Exception:
+        pass
+    try:
+        return ft.Alignment(x, y)
+    except Exception:
+        try:
+            return ft.Alignment(horizontal=x, vertical=y)
+        except Exception:
+            return None
+
+
+ALIGN_CENTER = _resolve_alignment("center", "CENTER", 0, 0)
+ALIGN_TOP_LEFT = _resolve_alignment("top_left", "TOP_LEFT", -1, -1)
+ALIGN_BOTTOM_RIGHT = _resolve_alignment("bottom_right", "BOTTOM_RIGHT", 1, 1)
+
+
+def patch_flet_alignment_aliases() -> None:
+    """Install legacy ``ft.Alignment.*`` aliases when a runtime omits them.
+
+    This is a defensive guard for older project code and third-party snippets.
+    The app source should prefer the compatibility constants above.
+    """
+    for name, value in {
+        "CENTER": ALIGN_CENTER,
+        "TOP_LEFT": ALIGN_TOP_LEFT,
+        "BOTTOM_RIGHT": ALIGN_BOTTOM_RIGHT,
+    }.items():
+        if value is None:
+            continue
+        try:
+            if not hasattr(ft.Alignment, name):
+                setattr(ft.Alignment, name, value)
+        except Exception:
+            pass
+
+
+patch_flet_alignment_aliases()
+
+
 def _flet_version_tuple():
     """Best-effort Flet version tuple.
 

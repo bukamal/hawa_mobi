@@ -5,6 +5,7 @@ import asyncio
 import flet as ft
 from auth.activation import activate, get_device_id, get_license_details
 from views.ui_kit import app_brand, brand_background, brand_card, status_chip, PRIMARY, MUTED, DANGER, SUCCESS, WARNING
+from views.flet_compat import ALIGN_CENTER
 
 
 class ActivationView(ft.Container):
@@ -15,7 +16,7 @@ class ActivationView(ft.Container):
         self.on_cancel = on_cancel
         self._busy = False
         self.expand = True
-        self.alignment = ft.Alignment.CENTER
+        self.alignment = ALIGN_CENTER
         self.padding = 0
 
         details = get_license_details()

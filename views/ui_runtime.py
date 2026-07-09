@@ -9,6 +9,7 @@ from __future__ import annotations
 import flet as ft
 
 from views import ui_kit
+from views.flet_compat import ALIGN_CENTER
 
 
 def safe_update(page) -> None:
@@ -27,7 +28,7 @@ def loading_view(message: str = "جاري التحميل..."):
             horizontal_alignment=ft.CrossAxisAlignment.CENTER,
             spacing=12,
         ),
-        alignment=ft.Alignment.CENTER,
+        alignment=ALIGN_CENTER,
         expand=True,
         padding=30,
     )
@@ -43,7 +44,7 @@ def error_view(message: str, on_retry=None):
         controls.append(ft.FilledButton("إعادة المحاولة", icon=ft.Icons.REFRESH, on_click=on_retry))
     return ft.Container(
         content=ft.Column(controls, alignment=ft.MainAxisAlignment.CENTER, horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=10),
-        alignment=ft.Alignment.CENTER,
+        alignment=ALIGN_CENTER,
         expand=True,
         padding=30,
     )

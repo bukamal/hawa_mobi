@@ -7,6 +7,7 @@ It is safe for APK builds and keeps visual behavior consistent across screens.
 from __future__ import annotations
 
 import flet as ft
+from views.flet_compat import ALIGN_CENTER, ALIGN_TOP_LEFT, ALIGN_BOTTOM_RIGHT
 
 # Windows-compatible Hawaa brand tokens.  Keep these centralized so Android
 # does not drift visually from the desktop product.
@@ -99,8 +100,8 @@ def brand_background(content, padding=24, dark=True):
     return ft.Container(
         expand=True,
         padding=padding,
-        alignment=ft.Alignment.CENTER,
-        gradient=ft.LinearGradient(begin=ft.Alignment.TOP_LEFT, end=ft.Alignment.BOTTOM_RIGHT, colors=colors),
+        alignment=ALIGN_CENTER,
+        gradient=ft.LinearGradient(begin=ALIGN_TOP_LEFT, end=ALIGN_BOTTOM_RIGHT, colors=colors),
         content=content,
     )
 
@@ -210,7 +211,7 @@ def empty_state(title, subtitle=None, icon=ft.Icons.INFO_OUTLINE, padding=50):
             alignment=ft.MainAxisAlignment.CENTER,
             horizontal_alignment=ft.CrossAxisAlignment.CENTER,
         ),
-        alignment=ft.Alignment.CENTER,
+        alignment=ALIGN_CENTER,
         expand=True,
         padding=padding,
     )

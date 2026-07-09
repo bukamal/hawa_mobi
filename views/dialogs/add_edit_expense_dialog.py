@@ -5,7 +5,7 @@ from database import ExpenseRepository
 from auth.session import UserSession
 from i18n.translator import translate
 from currency import currency
-from views.flet_compat import open_control, close_control
+from views.flet_compat import open_control, close_control, ALIGN_CENTER
 from views.dialogs.dialog_kit import dialog_title, dialog_body, cancel_button, save_button, show_snackbar, set_button_busy, normalize_text, parse_non_negative_amount
 
 class AddEditExpenseDialog(ft.AlertDialog):
@@ -124,7 +124,7 @@ class AddEditExpenseDialog(ft.AlertDialog):
                 ft.Row([self.amount_field, self.currency_dropdown], spacing=10, wrap=True),
                 ft.Row([self.type_dropdown, self.date_picker_field], spacing=10, wrap=True),
                 ft.Container(content=self.exchange_rate_text, margin=ft.Margin(top=5, bottom=5, left=0, right=0)),
-                ft.Container(content=self.converted_amount_text, alignment=ft.Alignment.CENTER),
+                ft.Container(content=self.converted_amount_text, alignment=ALIGN_CENTER),
                 self.zero_amount_notice,
                 ft.Row([self.payment_due_field], spacing=10, wrap=True),
                 self.payment_note_field,

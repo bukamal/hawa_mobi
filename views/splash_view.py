@@ -9,7 +9,7 @@ from auth.activation import check_activation
 from auth.session import UserSession
 from database.connection import DatabaseConnection, get_local_db_path
 from i18n.translator import translate
-from views.flet_compat import ARABIC_FONT_FAMILY
+from views.flet_compat import ARABIC_FONT_FAMILY, ALIGN_CENTER
 from views.ui_kit import app_brand, brand_background, PRIMARY, PRIMARY_DARK, PRIMARY_SOFT, ACCENT, TEXT, MUTED, BORDER, status_chip
 
 
@@ -20,7 +20,7 @@ class SplashView(ft.Container):
         self.on_complete = on_complete
         self.on_error = on_error
         self.expand = True
-        self.alignment = ft.Alignment.CENTER
+        self.alignment = ALIGN_CENTER
 
         # Use an opaque card on Android.  Some Flet Android runtimes render
         # 8-digit alpha hex colors incorrectly, which made the splash card

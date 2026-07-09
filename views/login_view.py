@@ -8,7 +8,7 @@ from database.connection import DatabaseConnection, get_setting, set_setting
 from auth.session import UserSession
 from i18n.translator import translate, set_language, language_code_from_label, language_label, is_rtl
 from views.ui_kit import app_brand, brand_background, brand_card, status_chip, info_banner, show_snackbar, PRIMARY, PRIMARY_SOFT, MUTED, DANGER, SUCCESS
-from views.flet_compat import open_control, close_control
+from views.flet_compat import open_control, close_control, ALIGN_CENTER
 
 
 class LoginView(ft.Container):
@@ -24,7 +24,7 @@ class LoginView(ft.Container):
         self._failed_attempts = 0
         self._locked_until = 0.0
         self.expand = True
-        self.alignment = ft.Alignment.CENTER
+        self.alignment = ALIGN_CENTER
         self.padding = 0
 
         self.network_chip = status_chip(translate('local_mode'), icon=ft.Icons.PHONE_ANDROID, color=SUCCESS, bgcolor="#E9F7F1")

@@ -16,7 +16,7 @@ from views.splash_view import SplashView
 from views.app_layout import AppLayout
 from database import SettingsRepository
 from database.connection import get_local_db_path
-from views.flet_compat import open_control, close_control, apply_arabic_ui_defaults
+from views.flet_compat import open_control, close_control, apply_arabic_ui_defaults, ALIGN_CENTER
 
 print("[INFO] بدء تشغيل تطبيق هوى الشام")
 
@@ -210,7 +210,7 @@ def main(page: ft.Page):
         page.add(
             ft.Container(
                 content=ft.Column(controls, alignment=ft.MainAxisAlignment.CENTER, horizontal_alignment=ft.CrossAxisAlignment.CENTER),
-                alignment=ft.Alignment.CENTER, expand=True, padding=24
+                alignment=ALIGN_CENTER, expand=True, padding=24
             )
         )
 
