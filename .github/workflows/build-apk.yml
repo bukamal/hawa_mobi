@@ -50,7 +50,7 @@ jobs:
 
       - name: Build APK
         run: |
-          flet build apk --yes --verbose --clear-cache \
+          flet build apk --verbose --clear-cache \
             --product "هوى الشام" \
             --org com.hawaa
 

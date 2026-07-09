@@ -205,5 +205,5 @@ Before building APK after this phase, clear Flet/Flutter cache:
 ```bash
 rm -rf ~/.flet ~/.cache/flet build/flutter build/apk
 PYTHONPATH=. python tools/quality_gate.py
-flet build apk --yes --verbose --clear-cache
+flet build apk --verbose --clear-cache
 ```

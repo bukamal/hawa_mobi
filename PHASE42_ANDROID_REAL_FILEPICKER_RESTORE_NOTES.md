@@ -26,7 +26,7 @@
 
 ```bash
 rm -rf ~/.flet ~/.cache/flet build/flutter build/apk
-flet build apk --yes --verbose --clear-cache
+flet build apk --verbose --clear-cache
 ```
 
 - إذا بقي `Unknown control: FilePicker` بعد هذا الإصلاح، فهذا يعني أن الـ APK لم يُبنَ فعليًا من التثبيت الجديد أو أن GitHub Action يستخدم كاش قديم.
