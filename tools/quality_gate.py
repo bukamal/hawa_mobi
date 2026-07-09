@@ -57,6 +57,7 @@ def main() -> int:
         "tools/flet_entrypoint_compat_smoke_test.py",
         "tools/flet_alignment_compat_smoke_test.py",
         "tools/flet_async_task_compat_smoke_test.py",
+        "tools/sqlite_thread_safety_smoke_test.py",
         "tools/filepicker_permission_compat_smoke_test.py",
         # Server import is useful when Flask dependencies are installed; run it manually when validating server packaging:
         # tools/server_import_smoke_test.py
@@ -92,4 +93,10 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    # Some Flet/mobile smoke tests can leave runtime helper threads alive in
+    # Linux shells even after the test body passes.  The quality gate is a CLI
+    # verifier, so force process termination after all checks have completed.
+    code = main()
+    sys.stdout.flush()
+    sys.stderr.flush()
+    os._exit(int(code))

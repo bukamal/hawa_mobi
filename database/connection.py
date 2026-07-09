@@ -20,7 +20,16 @@ def get_local_db_path():
 
 class DatabaseConnection:
     _instance = None
-    _local_conn = None
+    # SQLite connections are thread-affine by default.  Flet Android can run
+    # startup/tasks/event callbacks on different worker threads, so a singleton
+    # process-wide sqlite3.Connection is unsafe and causes:
+    # "SQLite objects created in a thread can only be used in that same thread".
+    # Keep one connection per Python thread and expose the current thread's
+    # connection through get_connection().
+    _local_conn = None  # compatibility alias for the current thread connection
+    _thread_local = threading.local()
+    _connections = {}
+    _connections_lock = threading.RLock()
     _lock = threading.Lock()
 
     def __new__(cls):
@@ -96,14 +105,38 @@ class DatabaseConnection:
         if self._rest_client:
             self._rest_client.set_token(token)
 
+    def _open_local_connection(self):
+        db_path = get_local_db_path()
+        # check_same_thread=False is intentional here: the connection registry is
+        # per-thread, but some Flet callbacks can still hand repository objects
+        # across task boundaries.  WAL + busy_timeout reduce lock contention, and
+        # ordinary app code should still call get_connection() rather than storing
+        # raw connection objects.
+        conn = sqlite3.connect(db_path, isolation_level=None, check_same_thread=False)
+        conn.row_factory = sqlite3.Row
+        try:
+            conn.execute('PRAGMA journal_mode=WAL')
+            conn.execute('PRAGMA foreign_keys=ON')
+            conn.execute('PRAGMA busy_timeout=5000')
+        except Exception:
+            pass
+        return conn
+
     def get_connection(self):
         if self.mode != "client":
-            if self._local_conn is None:
-                db_path = get_local_db_path()
-                self._local_conn = sqlite3.connect(db_path, isolation_level=None)
-                self._local_conn.row_factory = sqlite3.Row
-                self._local_conn.execute('PRAGMA journal_mode=WAL')
-            return self._local_conn
+            tid = threading.get_ident()
+            conn = getattr(self._thread_local, "conn", None)
+            if conn is not None:
+                self._local_conn = conn
+                return conn
+            with self._connections_lock:
+                conn = self._connections.get(tid)
+                if conn is None:
+                    conn = self._open_local_connection()
+                    self._connections[tid] = conn
+                self._thread_local.conn = conn
+                self._local_conn = conn
+                return conn
         return None
 
     def _log_audit_local(self, user_id, username, action, table_name, record_id, details):
@@ -160,9 +193,20 @@ class DatabaseConnection:
             self.execute("BEGIN TRANSACTION")
 
     def close(self):
-        if self._local_conn:
-            self._local_conn.close()
-            self._local_conn = None
+        # Close all cached per-thread SQLite handles.  This is used before
+        # replacing/restoring the database and by migrations during bootstrap.
+        with self._connections_lock:
+            for conn in list(self._connections.values()):
+                try:
+                    conn.close()
+                except Exception:
+                    pass
+            self._connections.clear()
+        try:
+            self._thread_local.conn = None
+        except Exception:
+            pass
+        self._local_conn = None
 
     # ========== CRUD helpers (تدعم local و client) ==========
     def get_expenses(self) -> List[Dict]:
@@ -287,8 +331,8 @@ class DatabaseConnection:
         return [dict(row) for row in rows]
 
     def vacuum(self):
-        if self.mode != "client" and self._local_conn:
-            self._local_conn.execute("VACUUM")
+        if self.mode != "client":
+            self.get_connection().execute("VACUUM")
 
     def refresh_mode(self):
         """إعادة تحميل وضع التشغيل من قاعدة البيانات (بعد تغيير الإعدادات)"""
