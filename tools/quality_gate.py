@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import compileall
 import os
+import signal
 import subprocess
 import sys
 from pathlib import Path
@@ -16,13 +17,46 @@ def run_py(script: str) -> None:
     env["PYTHONPATH"] = str(ROOT) + os.pathsep + env.get("PYTHONPATH", "")
     env.setdefault("PYTHONUNBUFFERED", "1")
     print(f"▶ {script}", flush=True)
-    subprocess.run(
+
+    use_process_group = os.name != "nt"
+    proc = subprocess.Popen(
         [sys.executable, str(ROOT / script)],
         cwd=str(ROOT),
         env=env,
-        timeout=80,
-        check=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        start_new_session=use_process_group,
     )
+    try:
+        out, err = proc.communicate(timeout=80)
+    except subprocess.TimeoutExpired:
+        # Some Flet/mobile smoke tests can finish their Python body but leave
+        # helper processes/threads with inherited stdout handles alive.  Kill
+        # the whole process group so the release gate never hangs indefinitely.
+        if use_process_group:
+            try:
+                os.killpg(proc.pid, signal.SIGTERM)
+            except ProcessLookupError:
+                pass
+        else:
+            proc.kill()
+        out, err = proc.communicate(timeout=10)
+
+    if out:
+        print(out, end="")
+    if err:
+        print(err, end="", file=sys.stderr)
+    if proc.returncode != 0:
+        raise subprocess.CalledProcessError(proc.returncode, [sys.executable, str(ROOT / script)])
+
+    if use_process_group:
+        try:
+            os.killpg(proc.pid, signal.SIGTERM)
+        except ProcessLookupError:
+            pass
+        except PermissionError:
+            pass
 
 
 def main() -> int:
@@ -52,13 +86,15 @@ def main() -> int:
         "tools/apk_release_preflight.py",
         "tools/backup_restore_smoke_test.py",
         "tools/network_diagnostics_smoke_test.py",
+        "tools/sqlite_thread_safety_smoke_test.py",
+        "tools/third_party_payment_smoke_test.py",
         "tools/flet_filepicker_runtime_pin_smoke_test.py",
         "tools/flet_build_command_smoke_test.py",
         "tools/flet_entrypoint_compat_smoke_test.py",
         "tools/flet_alignment_compat_smoke_test.py",
         "tools/flet_fab_compat_smoke_test.py",
+        "tools/flet_expansion_tile_compat_smoke_test.py",
         "tools/flet_async_task_compat_smoke_test.py",
-        "tools/sqlite_thread_safety_smoke_test.py",
         "tools/filepicker_permission_compat_smoke_test.py",
         # Server import is useful when Flask dependencies are installed; run it manually when validating server packaging:
         # tools/server_import_smoke_test.py

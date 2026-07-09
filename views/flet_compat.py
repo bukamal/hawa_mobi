@@ -439,17 +439,54 @@ def _construct_with_keyword_fallback(constructor, kwargs: dict, *, always_drop: 
 def make_floating_action_button(**kwargs):
     """Create a FloatingActionButton across Flet Android/Desktop variants.
 
-    Flet 0.28.x accepts the visual/action parameters used by the app, but it
-    rejects ``margin`` on ``FloatingActionButton``.  The margin belongs to layout
-    containers, not to the FAB constructor in this runtime.  A direct call would
-    crash a screen with: ``unexpected keyword argument 'margin'``.
+    Android/Flet 0.28.x rejects ``margin`` on ``FloatingActionButton``.
+    The app must not pass layout-only kwargs to the FAB constructor.  Keep an
+    explicit pop here as a runtime backstop, even though the call sites are also
+    guarded by ``tools/flet_fab_compat_smoke_test.py``.
     """
+    # Defensive copy and explicit runtime removal.  This avoids relying on
+    # introspection because mobile-embedded Flet signatures can differ from the
+    # desktop wheel used during tests.
+    kwargs = dict(kwargs)
+    kwargs.pop("margin", None)
     return _construct_with_keyword_fallback(
         ft.FloatingActionButton,
         kwargs,
         always_drop={"margin"},
     )
 
+
+
+def make_expansion_tile(**kwargs):
+    """Create ExpansionTile across Flet variants.
+
+    The Android runtime pinned by this APK rejects ``expanded=`` on
+    ``ExpansionTile``.  Some Flet versions use ``initially_expanded`` instead,
+    and some have no constructor-level initial expansion flag.  Keep the
+    compatibility decision here so Settings cannot crash during screen load.
+    """
+    kwargs = dict(kwargs)
+    expanded_value = kwargs.pop("expanded", None)
+    if expanded_value is not None:
+        try:
+            signature = inspect.signature(ft.ExpansionTile)
+            if "initially_expanded" in signature.parameters:
+                kwargs["initially_expanded"] = bool(expanded_value)
+        except Exception:
+            # If introspection is unavailable, try the common legacy name and let
+            # _construct_with_keyword_fallback remove it if the runtime rejects it.
+            kwargs["initially_expanded"] = bool(expanded_value)
+    tile = _construct_with_keyword_fallback(
+        ft.ExpansionTile,
+        kwargs,
+        always_drop={"expanded"},
+    )
+    try:
+        if expanded_value is not None and hasattr(tile, "expanded"):
+            tile.expanded = bool(expanded_value)
+    except Exception:
+        pass
+    return tile
 
 def make_file_picker(on_result=None):
     """Create FilePicker across Flet versions.

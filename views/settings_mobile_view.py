@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 import flet as ft
-from views.flet_compat import open_control, close_control, make_file_picker, attach_service_control, service_control_attached, filepicker_unavailable_message, run_async_task
+from views.flet_compat import open_control, close_control, make_file_picker, attach_service_control, service_control_attached, filepicker_unavailable_message, run_async_task, make_expansion_tile
 from views.ui_kit import page_header, data_card, show_snackbar, empty_state, info_banner, responsive_wrap
 from database import SettingsRepository
 from currency import currency
@@ -37,7 +37,7 @@ class SettingsMobileView(ft.Column):
 
     def _settings_tile(self, title, content, expanded=False):
         return data_card(
-            ft.ExpansionTile(
+            make_expansion_tile(
                 title=ft.Text(title, size=15, weight=ft.FontWeight.BOLD),
                 expanded=expanded,
                 controls=[ft.Container(content=content, padding=ft.Padding(left=4, right=4, top=6, bottom=4))],

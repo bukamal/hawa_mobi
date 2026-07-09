@@ -70,6 +70,8 @@ class ExpenseRepository(BaseRepository):
         if not self.data.is_remote():
             existing = self.db.get_connection().execute('SELECT * FROM expenses WHERE id=?', (expense_id,)).fetchone()
             existing = dict(existing) if existing else None
+            if existing and existing.get('source_type') in ('third_party_payment', 'third_party_payment_reversal'):
+                raise ValueError('هذا القيد مولّد من عملية سداد بالنيابة ولا يُعدّل منفرداً')
         data = {'company_name': company_name, 'amount': amount, 'type': type_val, 'date': date, 'notes': notes,
                 'currency': currency_code, 'updated_by': user_id, 'updated_at': now,
                 'payment_due_date': payment_due_date, 'payment_reminder_note': payment_note}
@@ -107,7 +109,9 @@ class ExpenseRepository(BaseRepository):
             self.data.delete_expense(expense_id)
         else:
             conn = self.db.get_connection()
-            row = conn.execute('SELECT company_name, amount_original, currency_original FROM expenses WHERE id=?', (expense_id,)).fetchone()
+            row = conn.execute('SELECT company_name, amount_original, currency_original, source_type, source_ref FROM expenses WHERE id=?', (expense_id,)).fetchone()
+            if row and row['source_type'] in ('third_party_payment', 'third_party_payment_reversal'):
+                raise ValueError('هذا القيد مولّد من عملية سداد بالنيابة. استخدم عكس العملية بدلاً من الحذف.')
             details = f"الشركة: {row['company_name']}, المبلغ: {row['amount_original']} {row['currency_original']}" if row else ""
             cur = conn.execute('DELETE FROM expenses WHERE id=?', (expense_id,))
             if cur.rowcount != 1:

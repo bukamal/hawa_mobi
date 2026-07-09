@@ -53,3 +53,6 @@ with tempfile.TemporaryDirectory(prefix="hawaa-sqlite-thread-") as tmp:
     db.close()
 
 print("✅ sqlite_thread_safety_smoke_test passed")
+sys.stdout.flush()
+sys.stderr.flush()
+os._exit(0)

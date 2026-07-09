@@ -200,6 +200,17 @@ class RestClient:
     def get_expense_summary(self) -> Dict:
         return self._request('GET', '/api/expenses/summary')
 
+    def add_third_party_payment(self, data: Dict) -> Dict:
+        try:
+            return self._request('POST', '/api/third_party_payments', data)
+        except Exception as exc:
+            if 'API error 404' in str(exc):
+                raise Exception('خادم ويندوز لا يدعم سداد بالنيابة بعد. حدّث مشروع الويندوز إلى Phase 50 أو شغّل server/run_server.py من النسخة الجديدة.') from exc
+            raise
+
+    def reverse_third_party_payment(self, reference: str) -> Dict:
+        return self._request('POST', f'/api/third_party_payments/{reference}/reverse')
+
     def get_pending_payment_reminders(self) -> List[Dict]:
         return self._request('GET', '/api/payment_reminders')
 

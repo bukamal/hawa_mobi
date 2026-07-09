@@ -16,17 +16,20 @@ def init_database():
     cursor.executescript('''
         CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT UNIQUE NOT NULL, password_hash TEXT NOT NULL, salt TEXT NOT NULL, full_name TEXT, role TEXT DEFAULT 'user', created_at TEXT, last_login TEXT, force_password_change INTEGER DEFAULT 0);
         CREATE TABLE IF NOT EXISTS audit_log (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, username TEXT, action TEXT, table_name TEXT, record_id INTEGER, details TEXT, ip_address TEXT, timestamp TEXT);
-        CREATE TABLE IF NOT EXISTS expenses (id INTEGER PRIMARY KEY AUTOINCREMENT, company_name TEXT NOT NULL, amount REAL NOT NULL, amount_base REAL NOT NULL DEFAULT 0, type TEXT NOT NULL CHECK(type IN ('incoming','outgoing')), date TEXT NOT NULL, notes TEXT, currency TEXT DEFAULT 'USD', created_by INTEGER, created_at TEXT, updated_by INTEGER, updated_at TEXT, amount_original REAL NOT NULL DEFAULT 0, currency_original TEXT NOT NULL DEFAULT 'USD', exchange_rate_to_usd REAL NOT NULL DEFAULT 1.0, status TEXT NOT NULL DEFAULT 'approved', payment_due_date TEXT, payment_reminder_note TEXT);
+        CREATE TABLE IF NOT EXISTS expenses (id INTEGER PRIMARY KEY AUTOINCREMENT, company_name TEXT NOT NULL, amount REAL NOT NULL, amount_base REAL NOT NULL DEFAULT 0, type TEXT NOT NULL CHECK(type IN ('incoming','outgoing')), date TEXT NOT NULL, notes TEXT, currency TEXT DEFAULT 'USD', created_by INTEGER, created_at TEXT, updated_by INTEGER, updated_at TEXT, amount_original REAL NOT NULL DEFAULT 0, currency_original TEXT NOT NULL DEFAULT 'USD', exchange_rate_to_usd REAL NOT NULL DEFAULT 1.0, status TEXT NOT NULL DEFAULT 'approved', payment_due_date TEXT, payment_reminder_note TEXT, source_type TEXT, source_ref TEXT, counterparty_company_name TEXT);
         CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT);
         CREATE TABLE IF NOT EXISTS exchange_rates (currency_code TEXT PRIMARY KEY, rate_to_usd REAL NOT NULL, updated_at TEXT);
         CREATE TABLE IF NOT EXISTS exchange_rate_history (id INTEGER PRIMARY KEY AUTOINCREMENT, currency_code TEXT NOT NULL, rate_to_usd REAL NOT NULL, previous_rate_to_usd REAL, changed_by INTEGER, changed_at TEXT NOT NULL);
         CREATE TABLE IF NOT EXISTS token_blacklist (jti TEXT PRIMARY KEY, created_at TEXT);
         CREATE TABLE IF NOT EXISTS payment_reminders (id INTEGER PRIMARY KEY AUTOINCREMENT, expense_id INTEGER NOT NULL, reminder_date TEXT NOT NULL, note TEXT, is_done INTEGER NOT NULL DEFAULT 0, created_at TEXT, FOREIGN KEY(expense_id) REFERENCES expenses(id) ON DELETE CASCADE);
+        CREATE TABLE IF NOT EXISTS third_party_payments (id INTEGER PRIMARY KEY AUTOINCREMENT, reference TEXT UNIQUE NOT NULL, payer_company_name TEXT NOT NULL, paid_to_company_name TEXT NOT NULL, amount_original REAL NOT NULL, currency_original TEXT NOT NULL, exchange_rate_to_usd REAL NOT NULL DEFAULT 1.0, amount_base REAL NOT NULL DEFAULT 0, date TEXT NOT NULL, notes TEXT, status TEXT NOT NULL DEFAULT 'approved', payer_expense_id INTEGER, paid_to_expense_id INTEGER, created_by INTEGER, created_at TEXT, reversed_at TEXT, reversal_ref TEXT);
     ''')
     cursor.executescript('''
         CREATE INDEX IF NOT EXISTS idx_expenses_company ON expenses(company_name);
         CREATE INDEX IF NOT EXISTS idx_expenses_date ON expenses(date);
         CREATE INDEX IF NOT EXISTS idx_expenses_status ON expenses(status);
+        CREATE INDEX IF NOT EXISTS idx_expenses_source_ref ON expenses(source_ref);
+        CREATE INDEX IF NOT EXISTS idx_third_party_payments_ref ON third_party_payments(reference);
         CREATE INDEX IF NOT EXISTS idx_payment_reminders_date ON payment_reminders(reminder_date);
         CREATE INDEX IF NOT EXISTS idx_audit_log_user ON audit_log(user_id);
         CREATE INDEX IF NOT EXISTS idx_audit_log_timestamp ON audit_log(timestamp);
@@ -39,7 +42,7 @@ def init_database():
             ('theme','light'),
             ('base_currency','USD'),
             ('display_currency','USD'),
-            ('schema_version','18'),
+            ('schema_version','19'),
             ('abbreviate_numbers','false'),
             ('network/mode','local'),
             ('network/server_url','');
@@ -109,16 +112,25 @@ def ensure_db():
                 cursor.execute("ALTER TABLE expenses ADD COLUMN payment_due_date TEXT")
             if 'payment_reminder_note' not in cols:
                 cursor.execute("ALTER TABLE expenses ADD COLUMN payment_reminder_note TEXT")
+            if 'source_type' not in cols:
+                cursor.execute("ALTER TABLE expenses ADD COLUMN source_type TEXT")
+            if 'source_ref' not in cols:
+                cursor.execute("ALTER TABLE expenses ADD COLUMN source_ref TEXT")
+            if 'counterparty_company_name' not in cols:
+                cursor.execute("ALTER TABLE expenses ADD COLUMN counterparty_company_name TEXT")
             cursor.execute("CREATE TABLE IF NOT EXISTS exchange_rate_history (id INTEGER PRIMARY KEY AUTOINCREMENT, currency_code TEXT NOT NULL, rate_to_usd REAL NOT NULL, previous_rate_to_usd REAL, changed_by INTEGER, changed_at TEXT NOT NULL)")
-            cursor.execute("INSERT OR REPLACE INTO settings (key, value) VALUES (?,?)", ('schema_version','18'))
+            cursor.execute("INSERT OR REPLACE INTO settings (key, value) VALUES (?,?)", ('schema_version','19'))
             cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='token_blacklist'")
             if not cursor.fetchone():
                 cursor.execute("CREATE TABLE token_blacklist (jti TEXT PRIMARY KEY, created_at TEXT)")
             cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='payment_reminders'")
             if not cursor.fetchone():
                 cursor.execute("CREATE TABLE payment_reminders (id INTEGER PRIMARY KEY AUTOINCREMENT, expense_id INTEGER NOT NULL, reminder_date TEXT NOT NULL, note TEXT, is_done INTEGER NOT NULL DEFAULT 0, created_at TEXT, FOREIGN KEY(expense_id) REFERENCES expenses(id) ON DELETE CASCADE)")
+            cursor.execute("CREATE TABLE IF NOT EXISTS third_party_payments (id INTEGER PRIMARY KEY AUTOINCREMENT, reference TEXT UNIQUE NOT NULL, payer_company_name TEXT NOT NULL, paid_to_company_name TEXT NOT NULL, amount_original REAL NOT NULL, currency_original TEXT NOT NULL, exchange_rate_to_usd REAL NOT NULL DEFAULT 1.0, amount_base REAL NOT NULL DEFAULT 0, date TEXT NOT NULL, notes TEXT, status TEXT NOT NULL DEFAULT 'approved', payer_expense_id INTEGER, paid_to_expense_id INTEGER, created_by INTEGER, created_at TEXT, reversed_at TEXT, reversal_ref TEXT)")
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_expenses_status ON expenses(status)")
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_payment_reminders_date ON payment_reminders(reminder_date)")
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_expenses_source_ref ON expenses(source_ref)")
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_third_party_payments_ref ON third_party_payments(reference)")
             conn.commit()
             conn.close()
         except Exception as e:

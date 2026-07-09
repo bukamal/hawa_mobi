@@ -23,7 +23,6 @@ class UsersMobileView(ft.Column):
             mini=False,
             elevation=6,
             shape=ft.CircleBorder(),
-            margin=ft.Margin(left=0, right=16, top=0, bottom=80),
         )
         self._page.floating_action_button = self.add_btn
 

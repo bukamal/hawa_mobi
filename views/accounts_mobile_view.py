@@ -34,12 +34,11 @@ class AccountsMobileView(ft.Column):
             icon=ft.Icons.ADD,
             bgcolor=ft.Colors.GREEN,
             foreground_color=ft.Colors.WHITE,
-            on_click=self._add_record,
+            on_click=self._open_add_menu,
             tooltip=translate('add'),
             mini=False,
             elevation=6,
-            shape=ft.CircleBorder(),
-            margin=ft.Margin(left=0, right=16, top=0, bottom=80)
+            shape=ft.CircleBorder()
         )
 
         self.controls = [
@@ -109,6 +108,7 @@ class AccountsMobileView(ft.Column):
                     ft.Row([
                         action_text_button("تفاصيل", ft.Icons.INFO_OUTLINE, lambda e, c=company, r=vals['records']: self._show_details(c, r)),
                         action_text_button("قيد", ft.Icons.ADD, lambda e, c=company: self._add_record(c), color=ft.Colors.GREEN),
+                        action_text_button("سداد عني", ft.Icons.SWAP_HORIZ, lambda e, c=company: self._add_third_party_payment(paid_to_company=c), color=ft.Colors.INDIGO),
                     ], alignment=ft.MainAxisAlignment.SPACE_AROUND)
                 ], spacing=10),
                 padding=15,
@@ -143,6 +143,53 @@ class AccountsMobileView(ft.Column):
 
     def _close_dialog(self, dialog):
         close_control(self._page, dialog)
+
+    def _open_add_menu(self, e):
+        if UserSession.get_current() and UserSession.get_current().get('role') == 'viewer':
+            self._show_snackbar("ليس لديك صلاحية لإضافة قيود", True)
+            return
+        dlg = None
+
+        def open_normal(_):
+            self._close_dialog(dlg)
+            self._add_record()
+
+        def open_third_party(_):
+            self._close_dialog(dlg)
+            self._add_third_party_payment()
+
+        dlg = ft.AlertDialog(
+            title=ft.Text(translate('choose_operation'), weight=ft.FontWeight.BOLD),
+            content=ft.Column([
+                ft.FilledButton(
+                    content=ft.Row([ft.Icon(ft.Icons.ADD), ft.Text(translate('normal_entry'))], tight=True),
+                    on_click=open_normal,
+                    bgcolor=ft.Colors.GREEN,
+                    color=ft.Colors.WHITE,
+                ),
+                ft.FilledButton(
+                    content=ft.Row([ft.Icon(ft.Icons.SWAP_HORIZ), ft.Text(translate('third_party_payment'))], tight=True),
+                    on_click=open_third_party,
+                    bgcolor=ft.Colors.INDIGO,
+                    color=ft.Colors.WHITE,
+                ),
+            ], spacing=12, tight=True),
+            actions=[ft.TextButton(translate('cancel'), on_click=lambda _: self._close_dialog(dlg))],
+        )
+        open_control(self._page, dlg)
+
+    def _add_third_party_payment(self, payer_company=None, paid_to_company=None):
+        if UserSession.get_current() and UserSession.get_current().get('role') == 'viewer':
+            self._show_snackbar("ليس لديك صلاحية لإضافة قيود", True)
+            return
+        from views.dialogs.third_party_payment_dialog import ThirdPartyPaymentDialog
+        dialog = ThirdPartyPaymentDialog(
+            page=self._page,
+            on_save=lambda _: self._refresh_cards(None),
+            payer_company_name=payer_company,
+            paid_to_company_name=paid_to_company,
+        )
+        open_control(self._page, dialog)
 
     def _add_record(self, company_name=None):
         if UserSession.get_current() and UserSession.get_current().get('role') == 'viewer':

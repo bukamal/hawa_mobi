@@ -7,6 +7,8 @@ handlers may run without a public asyncio loop.  Raw ``asyncio.create_task`` the
 raises ``RuntimeError: no running event loop`` before the app reaches login.
 """
 from pathlib import Path
+import os
+import sys
 import re
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -30,3 +32,6 @@ for rel in ("main.py", "views/splash_view.py", "views/activation_view.py", "view
     assert "run_async_task" in text, f"{rel} must use run_async_task for delayed/background async work"
 
 print("flet_async_task_compat_smoke_test passed")
+sys.stdout.flush()
+sys.stderr.flush()
+os._exit(0)

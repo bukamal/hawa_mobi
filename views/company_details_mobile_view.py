@@ -126,9 +126,15 @@ class CompanyDetailsMobileView(ft.Column):
                         bgcolor=ft.Colors.ORANGE_50,
                     ) if is_waiting else ft.Container(width=0, height=0),
                     ft.Text(r['notes'] or '', size=12, color=ft.Colors.GREY_600, max_lines=2, overflow=ft.TextOverflow.ELLIPSIS),
+                    pill(
+                        "🔁 سداد بالنيابة" if r.get('source_type') == 'third_party_payment' else "↩️ عكس سداد بالنيابة",
+                        color=ft.Colors.INDIGO if r.get('source_type') == 'third_party_payment' else ft.Colors.ORANGE_900,
+                        bgcolor=ft.Colors.INDIGO_50 if r.get('source_type') == 'third_party_payment' else ft.Colors.ORANGE_50,
+                    ) if r.get('source_type') in ('third_party_payment', 'third_party_payment_reversal') else ft.Container(width=0, height=0),
                     ft.Row([
-                        action_text_button("تعديل", ft.Icons.EDIT, lambda e, rec=r: self._edit_record(rec), color=ft.Colors.INDIGO, visible=not is_viewer),
-                        action_text_button("حذف", ft.Icons.DELETE, lambda e, rec=r: self._delete_record(rec), color=ft.Colors.RED, visible=not is_viewer),
+                        action_text_button("تعديل", ft.Icons.EDIT, lambda e, rec=r: self._edit_record(rec), color=ft.Colors.INDIGO, visible=(not is_viewer and not r.get('source_type'))),
+                        action_text_button("حذف", ft.Icons.DELETE, lambda e, rec=r: self._delete_record(rec), color=ft.Colors.RED, visible=(not is_viewer and not r.get('source_type'))),
+                        action_text_button("عكس", ft.Icons.UNDO, lambda e, rec=r: self._reverse_third_party(rec), color=ft.Colors.ORANGE, visible=(not is_viewer and r.get('source_type') == 'third_party_payment')),
                     ], alignment=ft.MainAxisAlignment.END)
                 ], spacing=8),
                 padding=12,
@@ -209,6 +215,30 @@ class CompanyDetailsMobileView(ft.Column):
             title=ft.Text("تأكيد الحذف"),
             content=ft.Text(f"حذف قيد بمبلغ {record['amount_original']} {record['currency_original']}؟"),
             actions=[btn_yes, btn_no]
+        )
+        open_control(self._page, dlg)
+
+    def _reverse_third_party(self, record):
+        ref = record.get('source_ref') or ''
+        if not ref:
+            self._show_snackbar("لا يوجد مرجع لعكس العملية", True)
+            return
+
+        def confirm(e):
+            try:
+                from database import ThirdPartyPaymentRepository
+                repo = ThirdPartyPaymentRepository()
+                repo.reverse_payment_on_behalf(ref, UserSession.get_current().get('id') if UserSession.get_current() else None)
+                self._show_snackbar("تم عكس عملية السداد بالنيابة", False)
+                self._reload()
+            except Exception as ex:
+                self._show_snackbar(f"خطأ: {str(ex)}", True)
+            self._close_dialog(dlg)
+
+        dlg = ft.AlertDialog(
+            title=ft.Text("عكس سداد بالنيابة"),
+            content=ft.Text(f"سيتم إنشاء قيود عكسية للعملية {ref}. هل تريد المتابعة؟"),
+            actions=[ft.TextButton("نعم", on_click=confirm), ft.TextButton("لا", on_click=lambda e: self._close_dialog(dlg))],
         )
         open_control(self._page, dlg)
 
