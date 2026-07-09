@@ -20,6 +20,7 @@ from typing import Optional
 from urllib.parse import quote
 
 
+
 @dataclass
 class ShareResultInfo:
     ok: bool
@@ -167,13 +168,14 @@ def share_file(page, path: str, text: str = "", *, phone: Optional[str] = None, 
     native share task when possible and returns True only if scheduling happened.
     """
     try:
-        coro = share_file_async(page, path, text, phone=phone, open_whatsapp=open_whatsapp)
         runner = getattr(page, "run_task", None)
         if callable(runner):
-            runner(coro)
+            from views.flet_compat import run_async_task
+            run_async_task(page, share_file_async, page, path, text, phone=phone, open_whatsapp=open_whatsapp)
             return True
+        coro = share_file_async(page, path, text, phone=phone, open_whatsapp=open_whatsapp)
         try:
-            loop = asyncio.get_event_loop()
+            loop = asyncio.get_running_loop()
             if loop.is_running():
                 asyncio.ensure_future(coro)
                 return True
@@ -196,6 +198,19 @@ async def share_text_to_whatsapp_async(page, text: str, phone: Optional[str] = N
 
 def share_text_to_whatsapp(page, text: str, phone: Optional[str] = None) -> bool:
     try:
-        return asyncio.run(share_text_to_whatsapp_async(page, text, phone)).ok
+        runner = getattr(page, "run_task", None)
+        if callable(runner):
+            from views.flet_compat import run_async_task
+            run_async_task(page, share_text_to_whatsapp_async, page, text, phone)
+            return True
+        coro = share_text_to_whatsapp_async(page, text, phone)
+        try:
+            loop = asyncio.get_running_loop()
+            if loop.is_running():
+                asyncio.ensure_future(coro)
+                return True
+        except Exception:
+            pass
+        return asyncio.run(coro).ok
     except Exception:
         return False

@@ -9,6 +9,11 @@ directly from views.
 """
 from __future__ import annotations
 
+import asyncio
+import inspect
+import threading
+import traceback
+
 import flet as ft
 
 ARABIC_FONT_FAMILY = "Arial"
@@ -291,6 +296,86 @@ def close_all_dialogs(page: ft.Page):
         pass
     return None
 
+
+
+def run_async_task(page, async_callable, *args, **kwargs):
+    """Schedule an async callable without requiring a globally running loop.
+
+    Flet 0.28.x can invoke synchronous view constructors/event handlers outside
+    a public ``asyncio`` loop on Android. Calling ``asyncio.create_task(...)``
+    there raises ``RuntimeError: no running event loop`` and crashes startup.
+
+    Prefer ``page.run_task`` because it attaches the coroutine to Flet's own
+    runtime loop. Keep loop/thread fallbacks for desktop tests and older Flet
+    shells so callers can use one helper everywhere.
+    """
+    async def _runner():
+        if inspect.isawaitable(async_callable):
+            return await async_callable
+        result = async_callable(*args, **kwargs)
+        if inspect.isawaitable(result):
+            return await result
+        return result
+
+    def _log_failure(prefix: str, exc: BaseException) -> None:
+        try:
+            print(f"[ERROR] {prefix}: {exc}\n{traceback.format_exc()}", flush=True)
+        except Exception:
+            pass
+
+    flet_runner = getattr(page, "run_task", None) if page is not None else None
+    if callable(flet_runner):
+        # Flet's documented form is page.run_task(async_fn, *args, **kwargs).
+        if inspect.iscoroutinefunction(async_callable):
+            try:
+                return flet_runner(async_callable, *args, **kwargs)
+            except TypeError:
+                pass
+            except RuntimeError as exc:
+                _log_failure("فشل جدولة المهمة عبر Flet run_task", exc)
+            except Exception as exc:
+                _log_failure("فشل جدولة المهمة عبر Flet run_task", exc)
+        try:
+            return flet_runner(_runner)
+        except TypeError:
+            try:
+                return flet_runner(_runner())
+            except Exception as exc:
+                _log_failure("فشل جدولة المهمة عبر Flet run_task", exc)
+        except RuntimeError as exc:
+            _log_failure("فشل جدولة المهمة عبر Flet run_task", exc)
+        except Exception as exc:
+            _log_failure("فشل جدولة المهمة عبر Flet run_task", exc)
+
+    try:
+        loop = asyncio.get_running_loop()
+        task = loop.create_task(_runner())
+        try:
+            task.add_done_callback(lambda t: t.exception() if not t.cancelled() else None)
+        except Exception:
+            pass
+        return task
+    except RuntimeError:
+        pass
+    except Exception as exc:
+        _log_failure("فشل جدولة المهمة عبر asyncio", exc)
+
+    def _thread_target():
+        try:
+            asyncio.run(_runner())
+        except Exception as exc:
+            _log_failure("فشل تنفيذ المهمة المؤجلة", exc)
+
+    thread_runner = getattr(page, "run_thread", None) if page is not None else None
+    if callable(thread_runner):
+        try:
+            return thread_runner(_thread_target)
+        except Exception as exc:
+            _log_failure("فشل تشغيل المهمة في Flet thread", exc)
+
+    thread = threading.Thread(target=_thread_target, name="hawaa-async-fallback", daemon=True)
+    thread.start()
+    return thread
 
 
 def make_file_picker(on_result=None):

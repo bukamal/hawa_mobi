@@ -5,7 +5,7 @@ import asyncio
 import flet as ft
 from auth.activation import activate, get_device_id, get_license_details
 from views.ui_kit import app_brand, brand_background, brand_card, status_chip, PRIMARY, MUTED, DANGER, SUCCESS, WARNING
-from views.flet_compat import ALIGN_CENTER
+from views.flet_compat import ALIGN_CENTER, run_async_task
 
 
 class ActivationView(ft.Container):
@@ -117,7 +117,7 @@ class ActivationView(ft.Container):
                 self.status_text.value = 'تم التفعيل بنجاح'
                 self.status_text.color = SUCCESS
                 self._page.update()
-                asyncio.create_task(self._delayed_success())
+                run_async_task(self._page, self._delayed_success)
             else:
                 self.status_text.value = f'فشل التفعيل: {msg}'
                 self.status_text.color = DANGER

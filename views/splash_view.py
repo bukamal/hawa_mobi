@@ -9,7 +9,7 @@ from auth.activation import check_activation
 from auth.session import UserSession
 from database.connection import DatabaseConnection, get_local_db_path
 from i18n.translator import translate
-from views.flet_compat import ARABIC_FONT_FAMILY, ALIGN_CENTER
+from views.flet_compat import ARABIC_FONT_FAMILY, ALIGN_CENTER, run_async_task
 from views.ui_kit import app_brand, brand_background, PRIMARY, PRIMARY_DARK, PRIMARY_SOFT, ACCENT, TEXT, MUTED, BORDER, status_chip
 
 
@@ -68,7 +68,7 @@ class SplashView(ft.Container):
             shadow=ft.BoxShadow(blur_radius=22, spread_radius=1, color="#20302D"),
         )
         self.content = brand_background(card, padding=24, dark=True)
-        asyncio.create_task(self._load_sequence())
+        run_async_task(self._page, self._load_sequence)
 
     def _set_status(self, value: float, message: str, detail: str = '', mode: str | None = None):
         self.progress.value = value

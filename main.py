@@ -16,7 +16,7 @@ from views.splash_view import SplashView
 from views.app_layout import AppLayout
 from database import SettingsRepository
 from database.connection import get_local_db_path
-from views.flet_compat import open_control, close_control, apply_arabic_ui_defaults, ALIGN_CENTER
+from views.flet_compat import open_control, close_control, apply_arabic_ui_defaults, ALIGN_CENTER, run_async_task
 
 print("[INFO] بدء تشغيل تطبيق هوى الشام")
 
@@ -176,7 +176,7 @@ def main(page: ft.Page):
 
     def on_license_invalid():
         def close_app_after_dialog(e):
-            asyncio.create_task(close_app_async())
+            run_async_task(page, close_app_async)
         dlg = ft.AlertDialog(
             title=ft.Text("ترخيص منتهي", size=20, weight=ft.FontWeight.BOLD),
             content=ft.Text("انتهت صلاحية الترخيص.\nسيتم إغلاق التطبيق."),
@@ -194,7 +194,7 @@ def main(page: ft.Page):
             print(f"[ERROR] خطأ أثناء الإغلاق: {e}")
 
     def close_app():
-        asyncio.create_task(close_app_async())
+        run_async_task(page, close_app_async)
 
     def show_error(message, retry=None):
         print(f"[ERROR] عرض خطأ فادح: {message}")

@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 import flet as ft
-from views.flet_compat import open_control, close_control, make_file_picker, attach_service_control, service_control_attached, filepicker_unavailable_message
+from views.flet_compat import open_control, close_control, make_file_picker, attach_service_control, service_control_attached, filepicker_unavailable_message, run_async_task
 from views.ui_kit import page_header, data_card, show_snackbar, empty_state, info_banner, responsive_wrap
 from database import SettingsRepository
 from currency import currency
@@ -913,7 +913,7 @@ class SettingsMobileView(ft.Column):
             conn.commit()
             init_database()
             self._show_snackbar("تم إعادة تهيئة النظام بنجاح. يرجى إعادة تشغيل التطبيق.", is_error=False)
-            asyncio.create_task(self._restart_app())
+            run_async_task(self._page, self._restart_app)
         except Exception as ex:
             self._show_snackbar(f"فشل إعادة التهيئة: {str(ex)}", True)
 

@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import inspect
 import flet as ft
-from views.flet_compat import open_control, close_control
+from views.flet_compat import open_control, close_control, run_async_task
 from views.ui_kit import info_banner, show_snackbar
 
 
@@ -211,13 +211,7 @@ def open_qr_pairing_dialog(page: ft.Page, *, on_success=None, initial_text: str 
                         status.value = f"تعذر قراءة الحافظة: {ex}"
                         status.color = ft.Colors.RED
                         page.update()
-                runner = getattr(page, "run_task", None)
-                if callable(runner):
-                    runner(_await_clip())
-                else:
-                    status.value = "الصق النص يدوياً داخل الحقل"
-                    status.color = ft.Colors.ORANGE
-                    page.update()
+                run_async_task(page, _await_clip)
                 return
             qr_field.value = str(value or "")
             status.value = "تم لصق نص الربط من الحافظة"
