@@ -84,6 +84,7 @@ def main() -> int:
         "tools/pairing_capabilities_strict_smoke_test.py",
         "tools/company_logo_print_smoke_test.py",
         "tools/apk_release_preflight.py",
+        "tools/share_export_fallback_smoke_test.py",
         "tools/backup_restore_smoke_test.py",
         "tools/network_diagnostics_smoke_test.py",
         "tools/sqlite_thread_safety_smoke_test.py",

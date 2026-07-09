@@ -5,7 +5,7 @@ import os
 import tempfile
 
 from reports.account_statement import export_account_statement_html
-from reports.share import build_statement_message, normalize_phone, whatsapp_url, file_uri, guess_mime, ShareResultInfo
+from reports.share import build_statement_message, normalize_phone, whatsapp_url, file_uri, guess_mime, ShareResultInfo, copy_to_public_downloads
 
 
 def main() -> int:
@@ -34,10 +34,12 @@ def main() -> int:
     assert "شركة اختبار" in msg
     url = whatsapp_url(msg, "+966 55 123 4567")
     assert url.startswith("https://wa.me/966551234567?text=")
-    info = ShareResultInfo(True, "test", "ok")
-    assert info.ok and info.method == "test"
+    info = ShareResultInfo(True, "test", "ok", path=path)
+    assert info.ok and info.method == "test" and info.path == path
     share_source = open(os.path.join(os.path.dirname(__file__), "..", "reports", "share.py"), encoding="utf-8").read()
-    assert "ft.Share" in share_source and "ShareFile" in share_source and "share_files" in share_source
+    assert "getattr(ft, \"Share\", None)" in share_source
+    assert "copy_to_public_downloads" in share_source
+    assert "manual_public_downloads" in share_source
     assert "org.kivy.android.PythonActivity" not in share_source
     print("✅ report_share_smoke_test passed")
     return 0

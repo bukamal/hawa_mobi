@@ -91,11 +91,13 @@ def main() -> int:
 
     share_module = (ROOT / "reports" / "share.py").read_text(encoding="utf-8")
     if "org.kivy.android.PythonActivity" in share_module or "from jnius import" in share_module:
-        return fail("مشاركة Android لا يجب أن تعتمد على Kivy/pyjnius داخل Flet APK؛ استخدم ft.Share")
-    if "ft.Share" not in share_module or "ShareFile" not in share_module or "share_files" not in share_module:
-        return fail("مشاركة الملفات يجب أن تستخدم Flet Share service و ShareFile")
-    if "page.launch_url(file_uri(path))" in share_module:
-        return fail("لا تعتبر فتح file:// مشاركة ناجحة على Android؛ استخدم share sheet")
+        return fail("مشاركة Android لا يجب أن تعتمد على Kivy/pyjnius داخل Flet APK؛ استخدم Flet APIs مع fallback آمن")
+    required_share_terms = ["getattr(ft, \"Share\", None)", "copy_to_public_downloads", "manual_public_downloads", "manual_internal_path"]
+    missing_share_terms = [term for term in required_share_terms if term not in share_module]
+    if missing_share_terms:
+        return fail("مشاركة الملفات يجب أن تفحص وجود ft.Share فعليًا وتوفر fallback إلى Downloads/Hawaa: " + ", ".join(missing_share_terms))
+    if "ft.Share()" in share_module:
+        return fail("لا تستدع ft.Share() مباشرة؛ بعض APK runtimes لا تحتوي الخدمة. استخدم getattr(ft, \"Share\", None)")
     file_export = (ROOT / "services" / "file_export_service.py").read_text(encoding="utf-8")
     if ".backup(" not in file_export or "sqlite_snapshot=backup_api" not in file_export:
         return fail("نسخ SQLite الاحتياطي يجب أن يستخدم SQLite backup API حتى لا يفقد بيانات WAL")
@@ -118,6 +120,8 @@ def main() -> int:
 
     if "android.permission.CAMERA" not in pyproject:
         return fail("pyproject.toml لا يعلن إذن CAMERA المطلوب لمسح QR بالكاميرا")
+    if "android.permission.WRITE_EXTERNAL_STORAGE" not in pyproject:
+        return fail("pyproject.toml لا يعلن إذن WRITE_EXTERNAL_STORAGE المطلوب لنسخ fallback إلى Downloads/Hawaa على Android 10")
     if "[tool.flet.android.permission]" not in pyproject or '"android.permission.CAMERA" = true' not in pyproject:
         return fail("إذن الكاميرا يجب أن يعلن بصيغة Flet الحديثة داخل [tool.flet.android.permission]")
     if 'permissions = ["camera"]' not in pyproject:
