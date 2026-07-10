@@ -161,6 +161,70 @@ class FileExportService:
             return os.path.basename(path or "")
 
     @staticmethod
+    def restore_log_path() -> str:
+        path = os.path.join(_app_storage_dir(), "logs")
+        os.makedirs(path, exist_ok=True)
+        return os.path.join(path, "backup_restore.log")
+
+    @staticmethod
+    def log_restore_event(message: str) -> None:
+        try:
+            with open(FileExportService.restore_log_path(), "a", encoding="utf-8") as f:
+                f.write(f"[{_dt.datetime.now().isoformat(timespec='seconds')}] {message}\n")
+        except Exception:
+            pass
+
+    @staticmethod
+    def find_external_backup_archives(limit: int = 12, *, validate: bool = True) -> list[str]:
+        """Find readable external backup candidates without FilePicker.
+
+        This is the hard Android fallback when the native chooser opens but does
+        not deliver an on_result event to Python.  It scans a small set of common
+        user folders only (Downloads, Documents, WhatsApp/Telegram documents)
+        and optionally validates that each ZIP/DB is a Hawaa backup.
+        """
+        candidates: list[str] = []
+        suffixes = (".zip", ".db", ".sqlite", ".sqlite3")
+        for root in FileExportService._public_import_roots():
+            try:
+                if not os.path.isdir(root):
+                    continue
+                stack = [(root, 0)]
+                while stack and len(candidates) < 80:
+                    current, depth = stack.pop()
+                    try:
+                        entries = list(os.scandir(current))
+                    except Exception:
+                        continue
+                    for entry in entries:
+                        try:
+                            if entry.is_file():
+                                name = entry.name.lower()
+                                if name.endswith(suffixes) and FileExportService._is_readable_file(entry.path):
+                                    candidates.append(entry.path)
+                            elif entry.is_dir() and depth < 2:
+                                # Keep the scan bounded; large phone storage
+                                # walks are slow and unreliable on Android.
+                                stack.append((entry.path, depth + 1))
+                        except Exception:
+                            continue
+            except Exception:
+                continue
+        candidates = sorted(set(candidates), key=lambda x: os.path.getmtime(x) if os.path.exists(x) else 0, reverse=True)
+        if not validate:
+            return candidates[: max(1, int(limit or 12))]
+        valid: list[str] = []
+        for path in candidates:
+            try:
+                FileExportService.inspect_backup_archive(path)
+                valid.append(path)
+                if len(valid) >= max(1, int(limit or 12)):
+                    break
+            except Exception as ex:
+                FileExportService.log_restore_event(f"skip invalid external candidate: {path} :: {ex}")
+        return valid
+
+    @staticmethod
     def create_csv_archive(tables: Sequence[str] | None = None) -> str:
         """Export selected SQLite tables to a ZIP of CSV files in app cache."""
         from database.connection import DatabaseConnection
@@ -229,13 +293,21 @@ class FileExportService:
         Download/Hawaa or Download.
         """
         roots: list[str] = []
+        package = os.environ.get("ANDROID_PACKAGE") or "com.hawaa"
         for candidate in (
             os.environ.get("PUBLIC_DOWNLOADS"),
             os.path.join(os.environ.get("EXTERNAL_STORAGE", ""), "Download") if os.environ.get("EXTERNAL_STORAGE") else "",
             "/storage/emulated/0/Download/Hawaa",
             "/storage/emulated/0/Download",
+            "/storage/emulated/0/Documents/Hawaa",
+            "/storage/emulated/0/Documents",
+            "/storage/emulated/0/Android/media/com.whatsapp/WhatsApp/Media/WhatsApp Documents",
+            "/storage/emulated/0/Android/media/org.telegram.messenger/Telegram/Telegram Documents",
+            f"/storage/emulated/0/Android/data/{package}/files",
             "/sdcard/Download/Hawaa",
             "/sdcard/Download",
+            "/sdcard/Documents/Hawaa",
+            "/sdcard/Documents",
             os.path.join(_app_storage_dir(), "backups"),
             os.path.join(_app_storage_dir(), "exports", "backups"),
             os.path.join(_cache_root(), "backups"),
@@ -464,7 +536,12 @@ class FileExportService:
         fallback importer instead of pretending that restore succeeded.
         """
         if file_obj is None:
+            FileExportService.log_restore_event("picker result: None")
             return None
+        try:
+            FileExportService.log_restore_event("picker result: " + FileExportService.describe_picker_file(file_obj))
+        except Exception:
+            pass
 
         candidates = []
         # First: if pick_files(with_data=True) is supported, Android can return
@@ -480,6 +557,7 @@ class FileExportService:
                 suggested_name=str(getattr(file_obj, "name", None) or "hawaa_import.zip"),
             )
             if materialized:
+                FileExportService.log_restore_event(f"picker bytes materialized: {materialized}")
                 return materialized
 
         for attr in ("path", "src", "uri", "url", "name"):
@@ -515,22 +593,27 @@ class FileExportService:
             if value.startswith("content://"):
                 copied = FileExportService._copy_android_content_uri_to_cache(value, suggested_name=str(display_name or "hawaa_import.zip"))
                 if copied and FileExportService._is_readable_file(copied):
+                    FileExportService.log_restore_event(f"content uri copied: {copied}")
                     return copied
                 continue
             if FileExportService._is_readable_file(value):
+                FileExportService.log_restore_event(f"direct readable picker path: {value}")
                 return value
 
         # 3: common Android/Flet case: only a display name was returned.
         if display_name:
             found = FileExportService._find_readable_backup_by_name(str(display_name), size=display_size)
             if found:
+                FileExportService.log_restore_event(f"found backup by display name: {found}")
                 return found
         for _attr, raw in candidates:
             base = os.path.basename(str(raw or ""))
             if base:
                 found = FileExportService._find_readable_backup_by_name(base, size=display_size)
                 if found:
+                    FileExportService.log_restore_event(f"found backup by basename: {found}")
                     return found
+        FileExportService.log_restore_event("picker result could not be resolved")
         return None
 
     @staticmethod
@@ -610,6 +693,7 @@ class FileExportService:
     def inspect_backup_archive(backup_path: str) -> dict:
         """Inspect a backup ZIP or direct .db file without modifying current data."""
         if not backup_path or not os.path.exists(backup_path):
+            FileExportService.log_restore_event(f"restore failed: missing path {backup_path}")
             raise FileNotFoundError("ملف النسخة الاحتياطية غير موجود")
         ext = os.path.splitext(str(backup_path))[1].lower()
         if ext in {".db", ".sqlite", ".sqlite3"}:
@@ -650,6 +734,7 @@ class FileExportService:
         if db.is_remote():
             raise RuntimeError("أنت في وضع العميل. الاستعادة تتم من نسخة Windows فقط. غيّر الوضع إلى محلي لاستعادة نسخة داخل الهاتف.")
         if not backup_path or not os.path.exists(backup_path):
+            FileExportService.log_restore_event(f"restore failed: missing path {backup_path}")
             raise FileNotFoundError("ملف النسخة الاحتياطية غير موجود")
 
         inspected = FileExportService.inspect_backup_archive(backup_path)
@@ -741,6 +826,7 @@ class FileExportService:
             except Exception:
                 raise
             verified_counts = FileExportService._count_current_rows()
+            FileExportService.log_restore_event(f"restore success: {backup_path} -> {target_db} counts={verified_counts}")
             return {"ok": True, "safety_backup": safety_backup, "restored_db": target_db, "inspected": inspected, "verified_counts": verified_counts}
         finally:
             shutil.rmtree(tmp_dir, ignore_errors=True)

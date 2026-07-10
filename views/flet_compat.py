@@ -569,9 +569,9 @@ def make_expansion_tile(**kwargs):
 def make_file_picker(on_result=None):
     """Create FilePicker across Flet versions.
 
-    Some mobile/runtime builds reject ``FilePicker(on_result=...)`` with
-    ``unexpected keyword argument 'on_result'``.  The compatible path is to
-    instantiate first and then assign ``picker.on_result`` when available.
+    Android APK builds around Flet 0.28.x are sensitive to how FilePicker is
+    registered.  We both try the constructor callback and assign ``on_result``
+    afterwards so the callback is not lost when one path is a no-op.
     """
     picker = None
     if on_result is not None:
@@ -583,11 +583,14 @@ def make_file_picker(on_result=None):
             picker = None
     if picker is None:
         picker = ft.FilePicker()
-        if on_result is not None:
-            try:
-                picker.on_result = on_result
-            except Exception:
-                pass
+    if on_result is not None:
+        # Always assign explicitly.  Some Android builds accept the constructor
+        # keyword but do not wire the native result back unless the property is
+        # also set on the live service object.
+        try:
+            picker.on_result = on_result
+        except Exception:
+            pass
     return picker
 
 
@@ -606,6 +609,31 @@ def _is_mobile_page(page) -> bool:
     return "android" in name or "ios" in name
 
 
+def _is_file_picker_control(control) -> bool:
+    try:
+        return isinstance(control, ft.FilePicker)
+    except Exception:
+        return control.__class__.__name__.lower() == "filepicker" if control is not None else False
+
+
+def _remember_service_control(page, control) -> None:
+    """Keep a strong reference to native service controls.
+
+    On Android a FilePicker created as a local variable can survive visually but
+    lose its Python callback after the native picker returns.  Storing it on the
+    page prevents garbage collection and makes repeated imports deterministic.
+    """
+    try:
+        controls = getattr(page, "_hawaa_service_controls", None)
+        if controls is None:
+            controls = []
+            setattr(page, "_hawaa_service_controls", controls)
+        if control not in controls:
+            controls.append(control)
+    except Exception:
+        pass
+
+
 def attach_service_control(page: ft.Page, control):
     """Attach service controls such as FilePicker/PermissionHandler safely.
 
@@ -619,32 +647,45 @@ def attach_service_control(page: ft.Page, control):
         return control
 
     attached = False
+    legacy_filepicker = _is_file_picker_control(control) and _allow_legacy_filepicker_overlay()
 
-    # Newer Flet service API.
-    for attr in ("services", "_services"):
+    # Flet 0.28.x FilePicker is an overlay service.  Prefer overlay first for
+    # that pinned runtime; using a half-supported ``page.services`` path can open
+    # the native chooser but lose the result callback after the user selects a
+    # ZIP/DB file.
+    if legacy_filepicker:
         try:
-            services = getattr(page, attr, None)
-            if services is not None and control not in services:
-                services.append(control)
+            ov = _overlay(page)
+            if ov is not None and control not in ov:
+                ov.append(control)
                 attached = True
-                break
         except Exception:
             pass
+
+    # Newer Flet service API.
+    if not legacy_filepicker:
+        for attr in ("services", "_services"):
+            try:
+                services = getattr(page, attr, None)
+                if services is not None and control not in services:
+                    services.append(control)
+                    attached = True
+                    break
+            except Exception:
+                pass
 
     # Android builds on Flet 0.80+ may expose FilePicker in Python while the
     # Flutter client rejects it as an overlay control (red screen:
     # ``Unknown control: FilePicker``).  However Flet 0.28.x is the stable
     # line for this app and requires the legacy overlay path.
-    if not attached and _is_mobile_page(page) and not _allow_legacy_filepicker_overlay():
+    if not attached and _is_mobile_page(page) and _is_file_picker_control(control) and not _allow_legacy_filepicker_overlay():
         try:
             setattr(control, "_hawaa_service_attached", False)
         except Exception:
             pass
         return control
 
-    # Legacy desktop/web/mobile fallback.  This is required for the pinned
-    # Flet 0.28.x APK so Android opens the native file picker instead of using
-    # the internal fallback-only import path.
+    # Legacy desktop/web/mobile fallback.
     if not attached:
         try:
             ov = _overlay(page)
@@ -659,6 +700,7 @@ def attach_service_control(page: ft.Page, control):
     except Exception:
         pass
     if attached:
+        _remember_service_control(page, control)
         try:
             page.update()
         except Exception:

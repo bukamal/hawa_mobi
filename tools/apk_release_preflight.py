@@ -124,8 +124,8 @@ def main() -> int:
         return fail("pyproject.toml لا يعلن إذن WRITE_EXTERNAL_STORAGE المطلوب لنسخ fallback إلى Downloads/Hawaa على Android 10")
     if "[tool.flet.android.permission]" not in pyproject or '"android.permission.CAMERA" = true' not in pyproject:
         return fail("إذن الكاميرا يجب أن يعلن بصيغة Flet الحديثة داخل [tool.flet.android.permission]")
-    if 'permissions = ["camera"]' not in pyproject:
-        return fail('أضف permissions = ["camera"] كحزمة Flet cross-platform للكاميرا')
+    if 'permissions = ["camera", "storage"]' not in pyproject:
+        return fail('أضف permissions = ["camera", "storage"] كحزمة Flet cross-platform للكاميرا')
     if '"server*"' in pyproject or "Flask" in pyproject or "waitress" in pyproject:
         return fail("pyproject.toml لا يجب أن يحزم server/ أو Flask داخل APK client")
     if "resources/sounds" in pyproject:

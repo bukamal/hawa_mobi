@@ -19,7 +19,7 @@ def main() -> int:
     assert "make_file_picker(self._on_logo_picked)" in settings, "logo picker must use compat helper"
     assert "[tool.flet.android.permission]" in pyproject, "modern Android permission table missing"
     assert '"android.permission.CAMERA" = true' in pyproject, "CAMERA permission not declared in modern table"
-    assert 'permissions = ["camera"]' in pyproject, "cross-platform camera permission bundle missing"
+    assert 'permissions = ["camera", "storage"]' in pyproject, "cross-platform camera/storage permission bundle missing"
     assert "CameraPermissionService.request" in qr_dialog, "QR scanner must request/check camera permission"
     assert "PermissionHandler" in camera_service and "request_permission" in camera_service, "permission handler bridge missing"
     assert "page.overlay" not in camera_service and "overlay" not in camera_service, "camera permission service must not append service controls to overlay directly"

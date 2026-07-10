@@ -1,6 +1,6 @@
 [project]
 name = "hawaa-accounting"
-version = "1.0.10"
+version = "1.0.11"
 description = "نظام حسابات هوى الشام الداخلي"
 requires-python = ">=3.10"
 dependencies = [
@@ -20,7 +20,7 @@ py-modules = ["main", "config", "currency"]
 include = ["auth*", "database*", "i18n*", "views*", "services*", "reports*"]
 
 [tool.flet]
-permissions = ["camera"]
+permissions = ["camera", "storage"]
 org = "com.hawaa"
 product = "هوى الشام"
 company = "Hawaa"
@@ -29,7 +29,11 @@ android_permissions = [
     "android.permission.INTERNET",
     "android.permission.CAMERA",
     "android.permission.READ_EXTERNAL_STORAGE",
-    "android.permission.WRITE_EXTERNAL_STORAGE"
+    "android.permission.WRITE_EXTERNAL_STORAGE",
+    "android.permission.READ_MEDIA_IMAGES",
+    "android.permission.READ_MEDIA_VIDEO",
+    "android.permission.READ_MEDIA_AUDIO",
+    "android.permission.MANAGE_EXTERNAL_STORAGE"
 ]
 
 [tool.flet.app]
@@ -54,3 +58,11 @@ adaptive_icon_background = "#0B5F57"
 "android.permission.CAMERA" = true
 "android.permission.READ_EXTERNAL_STORAGE" = true
 "android.permission.WRITE_EXTERNAL_STORAGE" = true
+
+"android.permission.READ_MEDIA_IMAGES" = true
+
+"android.permission.READ_MEDIA_VIDEO" = true
+
+"android.permission.READ_MEDIA_AUDIO" = true
+
+"android.permission.MANAGE_EXTERNAL_STORAGE" = true

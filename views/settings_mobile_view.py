@@ -23,6 +23,8 @@ class SettingsMobileView(ft.Column):
         self.scroll = ft.ScrollMode.AUTO
         self.repo = SettingsRepository()
         self.rate_fields = {}
+        self._restore_file_picker = None
+        self._restore_picker_opened_at = None
 
         self.controls = [
             page_header(translate('settings'), ft.Icons.SETTINGS, subtitle="إعدادات النظام، الشبكة، النسخ الاحتياطي والعملات"),
@@ -621,6 +623,10 @@ class SettingsMobileView(ft.Column):
             content=ft.Row([ft.Icon(ft.Icons.RESTORE), ft.Text("استيراد آخر نسخة محفوظة داخليًا")]),
             on_click=self._restore_latest_internal_backup
         )
+        import_download_btn = ft.OutlinedButton(
+            content=ft.Row([ft.Icon(ft.Icons.FOLDER_OPEN), ft.Text("استيراد من Download/Hawaa")]),
+            on_click=self._restore_from_public_downloads
+        )
         vacuum_btn = ft.FilledButton(
             content=ft.Row([ft.Icon(ft.Icons.COMPRESS), ft.Text("ضغط قاعدة البيانات")]),
             on_click=self._vacuum_db
@@ -640,6 +646,7 @@ class SettingsMobileView(ft.Column):
             export_btn,
             import_btn,
             import_latest_btn,
+            import_download_btn,
             vacuum_btn,
             ft.Divider(),
             ft.Text("⚠️ إعادة التهيئة تحذف جميع البيانات نهائياً", color=ft.Colors.RED, size=12),
@@ -682,7 +689,27 @@ class SettingsMobileView(ft.Column):
             if DatabaseConnection().is_remote():
                 self._show_snackbar("أنت في وضع العميل. الاستعادة تتم من نسخة Windows فقط. غيّر الوضع إلى محلي لاستعادة نسخة داخل الهاتف.", True)
                 return
-            picker = make_file_picker(self._on_restore_backup_picked)
+
+            # This is not strictly required for Android SAF/FilePicker, but it
+            # is required for our hard fallback that scans Download/Hawaa when
+            # the native picker opens and never delivers on_result to Python.
+            try:
+                from services.storage_permission_service import StoragePermissionService
+                _ok, perm_msg = StoragePermissionService.request(self._page)
+                try:
+                    from services.file_export_service import FileExportService
+                    FileExportService.log_restore_event("storage permission: " + str(perm_msg))
+                except Exception:
+                    pass
+            except Exception as perm_ex:
+                try:
+                    from services.file_export_service import FileExportService
+                    FileExportService.log_restore_event("storage permission request failed: " + str(perm_ex))
+                except Exception:
+                    pass
+
+            self._restore_file_picker = make_file_picker(self._on_restore_backup_picked)
+            picker = self._restore_file_picker
             attach_service_control(self._page, picker)
             if not service_control_attached(picker):
                 self._open_restore_fallback_dialog(filepicker_unavailable_message())
@@ -696,18 +723,85 @@ class SettingsMobileView(ft.Column):
                 pick_kwargs["file_type"] = ft.FilePickerFileType.CUSTOM
             except Exception:
                 pass
+            try:
+                import datetime as _dt
+                self._restore_picker_opened_at = _dt.datetime.now().isoformat(timespec="seconds")
+            except Exception:
+                self._restore_picker_opened_at = "started"
+            try:
+                from services.file_export_service import FileExportService
+                FileExportService.log_restore_event("opening native picker with_data=True")
+            except Exception:
+                pass
+
             # Critical for Android scoped storage: a picker may not expose a
             # filesystem path.  with_data=True asks Flet to include the selected
             # file bytes so we can stage the external backup inside app cache and
-            # restore it reliably.  Older Flet builds may not support the keyword,
-            # so fall back without it instead of breaking the dialog.
+            # restore it reliably.
             try:
                 picker.pick_files(with_data=True, **pick_kwargs)
             except TypeError:
+                try:
+                    from services.file_export_service import FileExportService
+                    FileExportService.log_restore_event("with_data unsupported; opening picker without bytes")
+                except Exception:
+                    pass
                 picker.pick_files(**pick_kwargs)
         except Exception as ex:
             self._show_snackbar(f"تعذر فتح اختيار النسخة: {ex}", True)
 
+    def _restore_from_public_downloads(self, e=None):
+        """Import a readable external backup without relying on FilePicker result.
+
+        Use when Android opens the chooser but returns no callback.  The user can
+        place the ZIP/DB in Download/Hawaa, Download, Documents, WhatsApp
+        Documents or Telegram Documents, and this scans only those bounded roots.
+        """
+        try:
+            from database.connection import DatabaseConnection
+            if DatabaseConnection().is_remote():
+                self._show_snackbar("أنت في وضع العميل. الاستعادة تتم من نسخة Windows فقط. غيّر الوضع إلى محلي أولاً.", True)
+                return
+            try:
+                from services.storage_permission_service import StoragePermissionService
+                StoragePermissionService.request(self._page)
+            except Exception:
+                pass
+            from services.file_export_service import FileExportService
+            FileExportService.log_restore_event("scan external downloads requested")
+            found = FileExportService.find_external_backup_archives(limit=8, validate=True)
+            if not found:
+                log_path = FileExportService.restore_log_path()
+                self._show_snackbar("لم أجد نسخة صالحة في Download/Hawaa أو Download. ضع ملف ZIP هناك ثم أعد المحاولة.", True)
+                self._open_restore_fallback_dialog(
+                    "لم يتم العثور على ZIP/DB صالح في المجلدات العامة. "
+                    "انقل النسخة إلى Download/Hawaa ثم اضغط زر: استيراد من Download/Hawaa.\n\n"
+                    f"سجل التشخيص: {log_path}"
+                )
+                return
+            controls = [
+                info_banner("اختر النسخة الخارجية التي تريد استعادتها. سيتم عرض تأكيد قبل الاستيراد.", icon=ft.Icons.FOLDER_OPEN)
+            ]
+            dlg = ft.AlertDialog(
+                modal=True,
+                title=ft.Text("نسخ خارجية تم العثور عليها", weight=ft.FontWeight.BOLD),
+                content=ft.Container(width=460, content=ft.Column(controls, tight=True, spacing=8)),
+                actions=[ft.TextButton("إغلاق", on_click=lambda ev: self._close_dialog(dlg))],
+            )
+            for path in found:
+                try:
+                    label = FileExportService.describe_backup_file(path)
+                except Exception:
+                    label = os.path.basename(path)
+                controls.append(
+                    ft.OutlinedButton(
+                        content=ft.Row([ft.Icon(ft.Icons.ARCHIVE_OUTLINED), ft.Text(label, overflow=ft.TextOverflow.ELLIPSIS)], alignment=ft.MainAxisAlignment.START),
+                        on_click=lambda ev, p=path, d=dlg: self._restore_from_fallback_path(p, d),
+                    )
+                )
+            open_control(self._page, dlg)
+        except Exception as ex:
+            self._show_snackbar(f"فشل فحص النسخ الخارجية: {ex}", True)
 
     def _restore_latest_internal_backup(self, e=None):
         try:
@@ -876,22 +970,39 @@ class SettingsMobileView(ft.Column):
 
     def _on_restore_backup_picked(self, e):
         try:
+            from services.file_export_service import FileExportService
+            try:
+                FileExportService.log_restore_event("on_result received: " + str(e))
+            except Exception:
+                pass
             files = getattr(e, 'files', None) or []
             if not files:
+                FileExportService.log_restore_event("on_result without files")
                 self._show_snackbar("لم يتم اختيار ملف", False)
                 return
             selected = files[0]
-            from services.file_export_service import FileExportService
             path = FileExportService.resolve_picker_file_path(selected)
             if not path:
                 details = FileExportService.describe_picker_file(selected)
-                self._open_restore_fallback_dialog(
-                    "فتح Android منتقي الملفات، لكن Runtime لم يعطِ التطبيق مسارًا ولا bytes قابلة للاستيراد. "
-                    "ابنِ APK من هذه المرحلة لأن زر الاستيراد يطلب with_data=True لقراءة الملف الخارجي كبيانات. "
-                    "كحل بديل: ضع الملف في Download/Hawaa ثم أعد المحاولة، أو استورد نسخة أنشأها التطبيق داخليًا.\n\n"
-                    f"تشخيص الملف المختار: {details}"
-                )
-                return
+                # Last automatic fallback: maybe the picker returned only a
+                # display name and the file is readable in Download/Hawaa after
+                # storage permission.
+                try:
+                    external = FileExportService.find_external_backup_archives(limit=1, validate=True)
+                except Exception:
+                    external = []
+                if external:
+                    path = external[0]
+                    FileExportService.log_restore_event("using external scan fallback: " + path)
+                else:
+                    self._open_restore_fallback_dialog(
+                        "فتح Android منتقي الملفات، لكن Runtime لم يعطِ التطبيق مسارًا ولا bytes قابلة للاستيراد. "
+                        "هذا يحدث غالبًا بسبب صلاحيات/Scoped Storage أو بسبب أن FilePicker في Flet فتح النافذة ولم يسلّم الملف إلى Python. "
+                        "كحل ثابت: ضع الملف في Download/Hawaa ثم اضغط زر: استيراد من Download/Hawaa.\n\n"
+                        f"تشخيص الملف المختار: {details}\n"
+                        f"سجل التشخيص: {FileExportService.restore_log_path()}"
+                    )
+                    return
             info = FileExportService.inspect_backup_archive(path)
             counts = info.get('counts', {})
             msg = (
