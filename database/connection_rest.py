@@ -217,6 +217,20 @@ class RestClient:
     def count_waiting_payment(self) -> int:
         return int(self._request('GET', '/api/payment_reminders/count_waiting').get('count', 0))
 
+
+    def search_company_ledger(self, query: str, limit: int = 100) -> List[Dict]:
+        from urllib.parse import quote
+        q = quote(str(query or '').strip())
+        try:
+            return self._request('GET', f'/api/search/company-ledger?q={q}&limit={int(limit or 100)}')
+        except Exception as exc:
+            if 'API error 404' in str(exc):
+                # Older Windows servers do not expose the deep-search endpoint.
+                # Fallback keeps Android usable, but without username/full-name matching.
+                from services.company_search_service import search_expense_rows
+                return search_expense_rows(self.get_expenses(), query, limit=limit)
+            raise
+
     def get_users(self) -> List[Dict]:
         return self._request('GET', '/api/users')
 

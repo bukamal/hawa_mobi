@@ -70,6 +70,13 @@ def load_translations():
             'preview': 'معاينة الأثر',
             'will_decrease_paid_to': 'سيتم تخفيض رصيد الشركة المسدَّد لها',
             'will_increase_payer': 'وسيتم زيادة الرصيد المستحق للشركة التي سدّدت عنك',
+            'company_deep_search_hint': 'بحث باسم شركة، ملاحظة، مرجع، مبلغ أو اسم داخل القيد',
+            'accounts_search_subtitle': 'الشركات والقيود المالية مع بحث داخل الملاحظات',
+            'deep_search_results': 'نتائج البحث الداخلي',
+            'deep_search_scope': 'يشمل أسماء الشركات وملاحظات القيود والمراجع والمبالغ',
+            'matches_inside_company': 'مطابقات داخل الشركة',
+            'more_matches': 'مطابقات إضافية',
+            'match': 'مطابقة',
         },
         'en': {
             'app_title': 'Hawaa Al-Sham - Accounting System',
@@ -136,6 +143,13 @@ def load_translations():
             'preview': 'Preview',
             'will_decrease_paid_to': 'The paid company balance will decrease',
             'will_increase_payer': 'The company that paid for you will become payable',
+            'company_deep_search_hint': 'Search company, note, reference, amount, or name inside entries',
+            'accounts_search_subtitle': 'Companies and ledger entries with note-level search',
+            'deep_search_results': 'Deep-search results',
+            'deep_search_scope': 'Includes company names, entry notes, references, and amounts',
+            'matches_inside_company': 'Matches inside company',
+            'more_matches': 'more matches',
+            'match': 'Match',
         },
         'fr': {
             'app_title': 'Hawaa Al-Sham - Système comptable',
@@ -202,6 +216,13 @@ def load_translations():
             'preview': 'Aperçu',
             'will_decrease_paid_to': 'Le solde de la société payée diminuera',
             'will_increase_payer': 'La société qui a payé deviendra créancière',
+            'company_deep_search_hint': 'Rechercher société, remarque, référence, montant ou nom dans les écritures',
+            'accounts_search_subtitle': 'Sociétés et écritures avec recherche dans les remarques',
+            'deep_search_results': 'Résultats de recherche',
+            'deep_search_scope': 'Inclut sociétés, remarques, références et montants',
+            'matches_inside_company': 'Correspondances dans la société',
+            'more_matches': 'correspondances supplémentaires',
+            'match': 'Correspondance',
         }
     }
 

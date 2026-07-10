@@ -45,6 +45,7 @@ REQUIRED_MOBILE_ENDPOINTS = [
     "/api/expenses",
     "/api/expenses/{id}",
     "/api/expenses/summary",
+    "/api/search/company-ledger",
     "/api/third_party_payments",
     "/api/third_party_payments/{reference}/reverse",
     "/api/payment_reminders",
@@ -79,6 +80,7 @@ def _capabilities_payload() -> Dict[str, Any]:
         "supports_third_party_payments": True,
         "supports_audit_post": True,
         "supports_expense_summary": True,
+        "supports_company_deep_search": True,
         "auth_required": True,
         "token_type": "Bearer",
         "endpoints": REQUIRED_MOBILE_ENDPOINTS,
@@ -603,6 +605,35 @@ def expense_summary():
         conn.close()
 
 
+
+
+
+
+@app.get("/api/search/company-ledger")
+@require_auth
+def search_company_ledger():
+    query = (request.args.get("q") or "").strip()
+    try:
+        limit = min(max(int(request.args.get("limit") or 100), 1), 300)
+    except Exception:
+        limit = 100
+    if not query:
+        return jsonify([])
+    conn = _connect()
+    try:
+        rows = conn.execute("""
+            SELECT
+                e.*,
+                u.username AS created_username,
+                u.full_name AS created_full_name
+            FROM expenses e
+            LEFT JOIN users u ON u.id = e.created_by
+            ORDER BY e.date DESC, e.id DESC
+        """).fetchall()
+        from services.company_search_service import search_expense_rows
+        return jsonify(search_expense_rows([dict(r) for r in rows], query, limit=limit))
+    finally:
+        conn.close()
 
 
 @app.post("/api/third_party_payments")

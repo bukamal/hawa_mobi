@@ -97,6 +97,7 @@ def main() -> int:
         "tools/network_diagnostics_smoke_test.py",
         "tools/sqlite_thread_safety_smoke_test.py",
         "tools/third_party_payment_smoke_test.py",
+        "tools/company_deep_search_smoke_test.py",
         "tools/flet_filepicker_runtime_pin_smoke_test.py",
         "tools/flet_build_command_smoke_test.py",
         "tools/flet_entrypoint_compat_smoke_test.py",

@@ -27,6 +27,16 @@ class ExpenseRepository(BaseRepository):
                 e['amount_display'] = e.get('amount_original', e['amount'])
                 e['currency_display'] = e.get('currency_original', e.get('currency', 'SAR'))
         return filtered
+
+    def search_company_ledger(self, query: str, limit: int = 100) -> List[Dict]:
+        query = (query or '').strip()
+        if not query:
+            return []
+        if hasattr(self.data, 'search_company_ledger'):
+            return self.data.search_company_ledger(query, limit=limit)
+        from services.company_search_service import search_expense_rows
+        return search_expense_rows(self.get_all(convert_to_display=False), query, limit=limit)
+
     def add(self, company_name: str, amount: float, type_val: str, date: str, notes: str, currency_code: str, user_id: int, payment_due_date: Optional[str] = None, payment_note: Optional[str] = None) -> int:
         amount = float(amount or 0)
         if amount < 0:

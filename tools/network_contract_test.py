@@ -52,10 +52,14 @@ def extract_server_routes() -> set[str]:
 
 
 def route_matches(endpoint: str, routes: set[str]) -> bool:
-    if endpoint in routes:
+    # Client endpoints may include a query string in f-strings, while Flask
+    # routes only declare the path. Compare the route path and ignore the
+    # query part for static contract purposes.
+    endpoint_path = endpoint.split("?", 1)[0]
+    if endpoint_path in routes:
         return True
-    pattern = re.escape(endpoint).replace(re.escape("{var}"), r"[^/]+") + r"$"
-    return any(re.fullmatch(pattern, r) or re.fullmatch(re.escape(r).replace(re.escape("{var}"), r"[^/]+") + r"$", endpoint) for r in routes)
+    pattern = re.escape(endpoint_path).replace(re.escape("{var}"), r"[^/]+") + r"$"
+    return any(re.fullmatch(pattern, r) or re.fullmatch(re.escape(r).replace(re.escape("{var}"), r"[^/]+") + r"$", endpoint_path) for r in routes)
 
 
 def assert_apk_safe() -> None:

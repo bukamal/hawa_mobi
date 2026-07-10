@@ -91,6 +91,21 @@ class LocalDataSource:
         conn.execute("DELETE FROM payment_reminders WHERE expense_id=?", (int(expense_id),))
         conn.commit()
 
+
+    def search_company_ledger(self, query: str, limit: int = 100) -> List[Dict[str, Any]]:
+        from services.company_search_service import search_expense_rows
+        conn = self.get_connection()
+        rows = conn.execute("""
+            SELECT
+                e.*,
+                u.username AS created_username,
+                u.full_name AS created_full_name
+            FROM expenses e
+            LEFT JOIN users u ON u.id = e.created_by
+            ORDER BY e.date DESC, e.id DESC
+        """).fetchall()
+        return search_expense_rows([dict(row) for row in rows], query, limit=limit)
+
     def get_users(self) -> List[Dict[str, Any]]:
         rows = self.get_connection().execute(
             "SELECT id, username, full_name, role, created_at, last_login, force_password_change FROM users ORDER BY id"

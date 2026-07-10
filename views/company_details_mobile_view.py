@@ -5,19 +5,27 @@ from database import ExpenseRepository
 from auth.session import UserSession
 from i18n.translator import translate
 from currency import currency
-from views.ui_kit import show_snackbar, empty_state, data_card, action_text_button, amount_pill, key_value_tile, pill, summary_bar, metric_tile
+from views.ui_kit import show_snackbar, empty_state, data_card, action_text_button, amount_pill, key_value_tile, pill, summary_bar, metric_tile, info_banner
+from services.company_search_service import enrich_expense_match, normalize_search_text
 
 class CompanyDetailsMobileView(ft.Column):
-    def __init__(self, page, company_name, records=None, on_changed=None):
+    def __init__(self, page, company_name, records=None, on_changed=None, search_query=None):
         super().__init__()
         self._page = page
         self.company_name = company_name
         self.on_changed = on_changed
+        self.search_query = (search_query or "").strip()
         # لا تستخدم القائمة الممرّرة كحقيقة بعد فتح النافذة؛ قد تكون snapshot قديمة
         # من شاشة الحسابات. اجلب دائماً من قاعدة البيانات عند بناء التفاصيل.
         repo = ExpenseRepository()
         self.records = repo.get_by_company(company_name, convert_to_display=False)
         self.records = sorted(self.records, key=lambda x: x['date'])
+        if normalize_search_text(self.search_query):
+            filtered = [r for r in self.records if enrich_expense_match(r, self.search_query)]
+            # If the query matched only the company name, every row may be valid;
+            # keep all rows in that case so the user can still inspect the account.
+            if filtered:
+                self.records = filtered
         self.spacing = 10
         self.expand = True
         self.scroll = ft.ScrollMode.AUTO
@@ -57,11 +65,34 @@ class CompanyDetailsMobileView(ft.Column):
                 on_click=self._export_csv_statement,
             ),
         ], spacing=8, wrap=True)
-        self.controls = [self.summary_panel, self.report_actions, ft.Divider(height=1), self.records_list]
+        search_banner = info_banner(
+            f"نتائج داخل {company_name} عن: {self.search_query}",
+            icon=ft.Icons.MANAGE_SEARCH,
+            color=ft.Colors.INDIGO,
+            bgcolor=ft.Colors.INDIGO_50,
+        ) if normalize_search_text(self.search_query) else ft.Container(width=0, height=0)
+        self.controls = [self.summary_panel, search_banner, self.report_actions, ft.Divider(height=1), self.records_list]
         self._load_data()
 
     def _show_snackbar(self, message, is_error=False):
         show_snackbar(self._page, message, is_error)
+
+
+    def _match_chip(self, record):
+        match = enrich_expense_match(record, self.search_query)
+        if not match:
+            return ft.Container(width=0, height=0)
+        label = match.get('matched_label') or 'مطابقة'
+        snippet = match.get('snippet') or ''
+        return ft.Container(
+            content=ft.Row([
+                ft.Icon(ft.Icons.SEARCH, color=ft.Colors.INDIGO, size=14),
+                ft.Text(f"{label}: {snippet}", size=11, color=ft.Colors.INDIGO, expand=True, max_lines=2, overflow=ft.TextOverflow.ELLIPSIS),
+            ], spacing=5),
+            bgcolor=ft.Colors.INDIGO_50,
+            border_radius=10,
+            padding=ft.Padding(left=8, right=8, top=5, bottom=5),
+        )
 
     def _load_data(self):
         display_curr = currency.get_display_currency()
@@ -126,6 +157,7 @@ class CompanyDetailsMobileView(ft.Column):
                         bgcolor=ft.Colors.ORANGE_50,
                     ) if is_waiting else ft.Container(width=0, height=0),
                     ft.Text(r['notes'] or '', size=12, color=ft.Colors.GREY_600, max_lines=2, overflow=ft.TextOverflow.ELLIPSIS),
+                    self._match_chip(r) if normalize_search_text(self.search_query) else ft.Container(width=0, height=0),
                     pill(
                         "🔁 سداد بالنيابة" if r.get('source_type') == 'third_party_payment' else "↩️ عكس سداد بالنيابة",
                         color=ft.Colors.INDIGO if r.get('source_type') == 'third_party_payment' else ft.Colors.ORANGE_900,
@@ -247,6 +279,10 @@ class CompanyDetailsMobileView(ft.Column):
             repo = ExpenseRepository()
             self.records = repo.get_by_company(self.company_name, convert_to_display=False)
             self.records = sorted(self.records, key=lambda x: x['date'])
+            if normalize_search_text(self.search_query):
+                filtered = [r for r in self.records if enrich_expense_match(r, self.search_query)]
+                if filtered:
+                    self.records = filtered
             self._load_data()
             if self.on_changed:
                 self.on_changed()
