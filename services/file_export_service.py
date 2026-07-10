@@ -18,6 +18,7 @@ import tempfile
 import zipfile
 from pathlib import Path
 from typing import Iterable, Sequence
+from urllib.parse import unquote, urlparse
 
 
 def _app_storage_dir() -> str:
@@ -217,15 +218,179 @@ class FileExportService:
             conn.close()
 
     @staticmethod
-    def resolve_picker_file_path(file_obj) -> str | None:
-        """Best-effort readable path resolver for Flet FilePicker results.
+    def _public_import_roots() -> list[str]:
+        """Candidate roots where Android may expose user-selected backups.
 
-        On Android, some providers return only a display name or a content URI.
-        Python cannot read content:// streams directly in the current Flet line,
-        so this function accepts only real readable filesystem paths and common
-        file:// variants.  The caller can then show the fallback importer with a
-        precise reason instead of silently doing nothing.
+        This is intentionally best-effort.  Android 10/11+ scoped storage can
+        hide files from plain Python paths even when the native picker can show
+        them.  Searching these roots still fixes the common Flet case where
+        FilePicker returns only the display name while the backup is in
+        Download/Hawaa or Download.
         """
+        roots: list[str] = []
+        for candidate in (
+            os.environ.get("PUBLIC_DOWNLOADS"),
+            os.path.join(os.environ.get("EXTERNAL_STORAGE", ""), "Download") if os.environ.get("EXTERNAL_STORAGE") else "",
+            "/storage/emulated/0/Download/Hawaa",
+            "/storage/emulated/0/Download",
+            "/sdcard/Download/Hawaa",
+            "/sdcard/Download",
+            os.path.join(_app_storage_dir(), "backups"),
+            os.path.join(_app_storage_dir(), "exports", "backups"),
+            os.path.join(_cache_root(), "backups"),
+        ):
+            if candidate and candidate not in roots:
+                roots.append(candidate)
+        return roots
+
+    @staticmethod
+    def _is_readable_file(path: str) -> bool:
+        try:
+            return bool(path and os.path.isfile(path) and os.access(path, os.R_OK))
+        except Exception:
+            return False
+
+    @staticmethod
+    def _copy_android_content_uri_to_cache(content_uri: str, *, suggested_name: str = "hawaa_import.zip") -> str | None:
+        """Best-effort copy for Android SAF ``content://`` results.
+
+        Some Flet Android builds return a content URI instead of a real path.
+        Python cannot normally open that URI.  When a Java bridge is available
+        in the APK, this function streams it through Android's ContentResolver
+        into app-owned cache.  If the bridge is not present, it returns None
+        and the UI falls back to the internal-backup/import-by-name path.
+        """
+        if not content_uri or not str(content_uri).startswith("content://"):
+            return None
+        try:
+            jnius = __import__("jnius")
+            autoclass = getattr(jnius, "autoclass")
+            jarray = getattr(jnius, "jarray")
+        except Exception:
+            return None
+
+        context = None
+        try:
+            ActivityThread = autoclass("android.app.ActivityThread")
+            app = ActivityThread.currentApplication()
+            if app is not None:
+                context = app.getApplicationContext()
+        except Exception:
+            context = None
+        if context is None:
+            return None
+
+        try:
+            Uri = autoclass("android.net.Uri")
+            uri_obj = Uri.parse(content_uri)
+            resolver = context.getContentResolver()
+            stream = resolver.openInputStream(uri_obj)
+            if stream is None:
+                return None
+            safe_name = _safe_filename(os.path.basename(suggested_name or "hawaa_import.zip"))
+            lower = safe_name.lower()
+            if not lower.endswith((".zip", ".db", ".sqlite", ".sqlite3")):
+                safe_name += ".zip"
+            target = FileExportService.build_path(f"picked_{_dt.datetime.now().strftime('%Y%m%d_%H%M%S_%f')}_{safe_name}", "picked_imports", temporary=True)
+            buf = jarray("b")(64 * 1024)
+            with open(target, "wb") as out:
+                while True:
+                    n = stream.read(buf)
+                    n = int(n)
+                    if n == -1:
+                        break
+                    if n == 0:
+                        break
+                    # pyjnius returns a signed Java byte[]; bytearray handles it
+                    # after masking to unsigned byte values.
+                    out.write(bytes((int(buf[i]) & 0xFF for i in range(n))))
+            try:
+                stream.close()
+            except Exception:
+                pass
+            return target if FileExportService._is_readable_file(target) else None
+        except Exception:
+            try:
+                stream.close()  # type: ignore[name-defined]
+            except Exception:
+                pass
+            return None
+
+    @staticmethod
+    def _find_readable_backup_by_name(name: str, *, size: int | None = None) -> str | None:
+        """Find a picked file by display name in app/Public backup folders."""
+        name = os.path.basename(str(name or "").strip())
+        if not name:
+            return None
+        candidates: list[str] = []
+        for root in FileExportService._public_import_roots():
+            try:
+                if not os.path.isdir(root):
+                    continue
+                # Exact path in root first.
+                direct = os.path.join(root, name)
+                if FileExportService._is_readable_file(direct):
+                    candidates.append(direct)
+                # Then scan one level deep.  Avoid walking the whole phone.
+                for item in os.listdir(root):
+                    p = os.path.join(root, item)
+                    if os.path.isfile(p) and item == name and FileExportService._is_readable_file(p):
+                        candidates.append(p)
+                    elif os.path.isdir(p):
+                        try:
+                            nested = os.path.join(p, name)
+                            if FileExportService._is_readable_file(nested):
+                                candidates.append(nested)
+                        except Exception:
+                            pass
+            except Exception:
+                continue
+        if not candidates:
+            return None
+        if size:
+            sized = []
+            for path in candidates:
+                try:
+                    if int(os.path.getsize(path)) == int(size):
+                        sized.append(path)
+                except Exception:
+                    pass
+            if sized:
+                candidates = sized
+        candidates = sorted(set(candidates), key=lambda x: os.path.getmtime(x) if os.path.exists(x) else 0, reverse=True)
+        return candidates[0] if candidates else None
+
+    @staticmethod
+    def describe_picker_file(file_obj) -> str:
+        """Diagnostic summary for Android FilePicker results."""
+        parts = []
+        for attr in ("name", "path", "src", "uri", "url", "size"):
+            try:
+                value = getattr(file_obj, attr, None)
+            except Exception:
+                value = None
+            if value not in (None, ""):
+                parts.append(f"{attr}={value}")
+        return " | ".join(parts) or str(file_obj or "")
+
+    @staticmethod
+    def resolve_picker_file_path(file_obj) -> str | None:
+        """Resolve a Flet FilePicker result into a readable local file.
+
+        Resolution order:
+        1. Direct readable path / file:// path returned by Flet.
+        2. Android content:// URI copied through ContentResolver when a Java
+           bridge is available.
+        3. Display-name lookup in Download/Hawaa, Download, and app-owned backup
+           folders.
+
+        Returning ``None`` means the native picker showed the file, but this
+        Python runtime still cannot read it.  The Settings UI then opens the
+        fallback importer instead of pretending that restore succeeded.
+        """
+        if file_obj is None:
+            return None
+
         candidates = []
         for attr in ("path", "src", "uri", "url", "name"):
             try:
@@ -233,24 +398,49 @@ class FileExportService:
             except Exception:
                 value = None
             if value:
-                candidates.append(str(value))
-        for raw in candidates:
+                candidates.append((attr, str(value)))
+
+        display_name = None
+        display_size = None
+        try:
+            display_name = getattr(file_obj, "name", None)
+        except Exception:
+            display_name = None
+        try:
+            raw_size = getattr(file_obj, "size", None)
+            display_size = int(raw_size) if raw_size not in (None, "") else None
+        except Exception:
+            display_size = None
+
+        # 1/2: direct path and content URI variants.
+        for attr, raw in candidates:
             value = (raw or "").strip().strip('"').strip("'")
             if not value:
                 continue
             if value.startswith("file://"):
                 try:
-                    from urllib.parse import unquote, urlparse
                     value = unquote(urlparse(value).path or value[7:])
                 except Exception:
                     value = value[7:]
             if value.startswith("content://"):
+                copied = FileExportService._copy_android_content_uri_to_cache(value, suggested_name=str(display_name or "hawaa_import.zip"))
+                if copied and FileExportService._is_readable_file(copied):
+                    return copied
                 continue
-            try:
-                if os.path.exists(value) and os.path.isfile(value):
-                    return value
-            except Exception:
-                continue
+            if FileExportService._is_readable_file(value):
+                return value
+
+        # 3: common Android/Flet case: only a display name was returned.
+        if display_name:
+            found = FileExportService._find_readable_backup_by_name(str(display_name), size=display_size)
+            if found:
+                return found
+        for _attr, raw in candidates:
+            base = os.path.basename(str(raw or ""))
+            if base:
+                found = FileExportService._find_readable_backup_by_name(base, size=display_size)
+                if found:
+                    return found
         return None
 
     @staticmethod

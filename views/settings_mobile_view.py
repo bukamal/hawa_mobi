@@ -617,6 +617,10 @@ class SettingsMobileView(ft.Column):
             content=ft.Row([ft.Icon(ft.Icons.RESTORE), ft.Text("استيراد نسخة احتياطية")]),
             on_click=self._pick_backup_to_restore
         )
+        import_latest_btn = ft.OutlinedButton(
+            content=ft.Row([ft.Icon(ft.Icons.RESTORE), ft.Text("استيراد آخر نسخة محفوظة داخليًا")]),
+            on_click=self._restore_latest_internal_backup
+        )
         vacuum_btn = ft.FilledButton(
             content=ft.Row([ft.Icon(ft.Icons.COMPRESS), ft.Text("ضغط قاعدة البيانات")]),
             on_click=self._vacuum_db
@@ -635,6 +639,7 @@ class SettingsMobileView(ft.Column):
             backup_btn,
             export_btn,
             import_btn,
+            import_latest_btn,
             vacuum_btn,
             ft.Divider(),
             ft.Text("⚠️ إعادة التهيئة تحذف جميع البيانات نهائياً", color=ft.Colors.RED, size=12),
@@ -689,6 +694,39 @@ class SettingsMobileView(ft.Column):
             )
         except Exception as ex:
             self._show_snackbar(f"تعذر فتح اختيار النسخة: {ex}", True)
+
+
+    def _restore_latest_internal_backup(self, e=None):
+        try:
+            from database.connection import DatabaseConnection
+            if DatabaseConnection().is_remote():
+                self._show_snackbar("أنت في وضع العميل. الاستعادة تتم من نسخة Windows فقط. غيّر الوضع إلى محلي لاستعادة نسخة داخل الهاتف.", True)
+                return
+            from services.file_export_service import FileExportService
+            recent = FileExportService.find_recent_backup_archives(limit=1)
+            if not recent:
+                self._show_snackbar("لا توجد نسخة محفوظة داخليًا. أنشئ نسخة احتياطية أولًا أو اختر ملف ZIP/DB من منتقي الملفات.", True)
+                return
+            path = recent[0]
+            info = FileExportService.inspect_backup_archive(path)
+            counts = info.get('counts', {})
+            msg = (
+                "سيتم استيراد آخر نسخة محفوظة داخل التطبيق واستبدال البيانات الحالية. سيتم إنشاء نسخة أمان قبل الاستعادة.\n\n"
+                f"المصدر: {os.path.basename(path)}\n"
+                f"المستخدمون: {counts.get('users', 0)} | القيود: {counts.get('expenses', 0)} | سجل التدقيق: {counts.get('audit_log', 0)}"
+            )
+            dlg = ft.AlertDialog(
+                modal=True,
+                title=ft.Text("استيراد آخر نسخة محفوظة", weight=ft.FontWeight.BOLD),
+                content=ft.Text(msg, selectable=True),
+                actions=[
+                    ft.TextButton("إلغاء", on_click=lambda ev: self._close_dialog(dlg)),
+                    ft.FilledButton("استيراد الآن", bgcolor=ft.Colors.RED, color=ft.Colors.WHITE, on_click=lambda ev, p=path, d=dlg: self._confirm_restore_backup(p, d)),
+                ],
+            )
+            open_control(self._page, dlg)
+        except Exception as ex:
+            self._show_snackbar(f"تعذر استيراد آخر نسخة محفوظة: {ex}", True)
 
 
     def _open_restore_fallback_dialog(self, reason: str = ""):
@@ -831,7 +869,13 @@ class SettingsMobileView(ft.Column):
             from services.file_export_service import FileExportService
             path = FileExportService.resolve_picker_file_path(selected)
             if not path:
-                self._open_restore_fallback_dialog("اختيار Android أعاد اسم ملف أو content URI غير قابل للقراءة من Python. استخدم إحدى النسخ التي أنشأها التطبيق مؤخرًا أو الصق مسار ZIP/DB قابل للقراءة.")
+                details = FileExportService.describe_picker_file(selected)
+                self._open_restore_fallback_dialog(
+                    "فتح Android منتقي الملفات، لكن نتيجة الاختيار لم تكن مسارًا قابلًا للقراءة داخل Python. "
+                    "إذا كانت النسخة أُنشئت من نفس التطبيق، استخدم زر: استيراد آخر نسخة محفوظة داخليًا. "
+                    "وإذا كانت في التنزيلات، انسخها إلى Download/Hawaa ثم أعد المحاولة.\n\n"
+                    f"تشخيص الملف المختار: {details}"
+                )
                 return
             info = FileExportService.inspect_backup_archive(path)
             counts = info.get('counts', {})
