@@ -1,25 +1,35 @@
 # -*- coding: utf-8 -*-
-"""Static guard for Android dialog-route cleanup.
+"""Static guard against Android blank-white dialog routes.
 
-Flet Android can keep a native dialog route above the rebuilt app shell when
-``page.show_dialog`` is used but the source control's ``open`` flag is stale.
-The runtime symptom is a blank white surface that only disappears after Android
-Back.  This guard ensures close_control trusts the app-managed dialog stack and
-not the unreliable ``open`` flag.
+The APK pins Flet 0.28.x. On this runtime, opening AlertDialog/DatePicker via
+native ``page.show_dialog`` can leave a blank white route above the app after
+login/save/edit/delete. The route disappears only when the user presses Android
+Back. The app must therefore use the legacy overlay/open path for dialogs.
 """
 from __future__ import annotations
 
 from pathlib import Path
+import re
 
 ROOT = Path(__file__).resolve().parents[1]
-compat = (ROOT / "views" / "flet_compat.py").read_text(encoding="utf-8")
+compat_path = ROOT / "views" / "flet_compat.py"
+compat = compat_path.read_text(encoding="utf-8")
 main = (ROOT / "main.py").read_text(encoding="utf-8")
 app_layout = (ROOT / "views" / "app_layout.py").read_text(encoding="utf-8")
 
+# Strip comments/docstrings roughly enough for a static guard, then check calls.
+code_only = re.sub(r'""".*?"""', '', compat, flags=re.S)
+code_only = re.sub(r"'''.*?'''", '', code_only, flags=re.S)
+code_only = "\n".join(line.split("#", 1)[0] for line in code_only.splitlines())
+
 required = [
-    ("open_control marks dialogs open after show_dialog", "control.open = True" in compat and "page.show_dialog(control)" in compat),
-    ("close_control pops stacked dialog without was_open gate", "_is_dialog_like(control) and is_top and hasattr(page, \"pop_dialog\")" in compat),
-    ("old was_open-gated pop path removed", "_is_dialog_like(control) and was_open and is_top" not in compat),
+    ("open_control helper exists", "def open_control" in compat),
+    ("close_control helper exists", "def close_control" in compat),
+    ("open path uses overlay helper", "_ensure_overlay_contains(page, control)" in compat),
+    ("open path sets control.open true", "control.open = True" in compat),
+    ("close path sets control.open false", "control.open = False" in compat),
+    ("native show_dialog is not called", ".show_dialog(" not in code_only),
+    ("native pop_dialog is not called", ".pop_dialog(" not in code_only),
     ("clear_transient_ui helper exists", "def clear_transient_ui" in compat),
     ("main cleans transient ui before rebuilding main shell", "clear_transient_ui(page, clear_fab=True)" in main),
     ("app layout cleans transient ui before page switch", "clear_transient_ui(self._page, clear_fab=True)" in app_layout),

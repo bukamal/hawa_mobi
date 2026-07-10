@@ -7,7 +7,7 @@ It is safe for APK builds and keeps visual behavior consistent across screens.
 from __future__ import annotations
 
 import flet as ft
-from views.flet_compat import ALIGN_CENTER, ALIGN_TOP_LEFT, ALIGN_BOTTOM_RIGHT
+from views.flet_compat import ALIGN_CENTER, ALIGN_TOP_LEFT, ALIGN_BOTTOM_RIGHT, show_snackbar as compat_show_snackbar
 
 # Windows-compatible Hawaa brand tokens.  Keep these centralized so Android
 # does not drift visually from the desktop product.
@@ -133,16 +133,7 @@ def status_chip(text, icon=None, color=PRIMARY, bgcolor=PRIMARY_SOFT):
 
 
 def show_snackbar(page, message, is_error=False, duration=3000):
-    snack = ft.SnackBar(
-        content=ft.Text(str(message), size=13),
-        bgcolor=ft.Colors.RED if is_error else ft.Colors.GREEN,
-        duration=duration,
-    )
-    page.overlay.append(snack)
-    snack.open = True
-    page.update()
-    return snack
-
+    return compat_show_snackbar(page, message, is_error=is_error, duration=duration)
 
 def page_header(title, icon=None, trailing=None, subtitle=None):
     title_row = ft.Row(

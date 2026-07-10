@@ -160,23 +160,52 @@ def _remove_from_overlay(page, control) -> None:
         pass
 
 
-def open_control(page: ft.Page, control):
-    """Open a dialog/transient control using the native Flet dialog stack first.
+def _is_snackbar(control) -> bool:
+    try:
+        return isinstance(control, ft.SnackBar)
+    except Exception:
+        return False
 
-    Fallback is the classic overlay/open path.  The local stack lets close_control
-    know whether ``page.pop_dialog()`` is safe to call for the exact top dialog.
+
+def _ensure_overlay_contains(page, control) -> None:
+    try:
+        ov = _overlay(page)
+        if ov is not None and control not in ov:
+            ov.append(control)
+    except Exception:
+        pass
+
+
+def _set_page_dialog_pointer(page, control) -> None:
+    """Best-effort legacy dialog pointer for Flet 0.28.x.
+
+    Native ``page.show_dialog``/``page.pop_dialog`` routes are intentionally not
+    used on Android in this project.  That route path is what produced the
+    persistent blank white surface that disappeared only after Android Back.
+    """
+    try:
+        if isinstance(control, ft.AlertDialog):
+            page.dialog = control
+    except Exception:
+        pass
+
+
+def open_control(page: ft.Page, control):
+    """Open a dialog/transient control without native dialog routes.
+
+    Flet 0.28.x on Android can leave a blank native modal route when
+    ``page.show_dialog`` is used during login, save, edit or delete flows.  The
+    stable APK path is the legacy overlay/open mechanism: attach the control to
+    ``page.overlay`` when needed, set ``open=True``, and update the page.  This
+    keeps Android Back from being required to dismiss a hidden modal surface.
     """
     if page is None or control is None:
         return None
 
-    if _is_dialog_like(control) and hasattr(page, "show_dialog"):
-        try:
-            if not getattr(control, "open", False):
-                page.show_dialog(control)
-            # Some Android/Flet builds push a native dialog route but do not
-            # reflect that state back into ``control.open``.  Mark it ourselves
-            # so close_control can close the exact modal route instead of
-            # leaving a blank white modal surface that only Android Back removes.
+    try:
+        if _is_dialog_like(control):
+            _ensure_overlay_contains(page, control)
+            _set_page_dialog_pointer(page, control)
             try:
                 control.open = True
             except Exception:
@@ -189,75 +218,73 @@ def open_control(page: ft.Page, control):
                 page.update()
             except Exception:
                 pass
-            return None
+            return control
+
+        # SnackBar and other transient controls use overlay/open as well.  Do
+        # not route them through native dialog APIs.
+        _ensure_overlay_contains(page, control)
+        try:
+            control.open = True
         except Exception:
             pass
+        try:
+            page.update()
+        except Exception:
+            pass
+    except Exception:
+        # Last-resort Flet 0.28-compatible path.
+        try:
+            control.open = True
+        except Exception:
+            pass
+        try:
+            page.update()
+        except Exception:
+            pass
+    return control
 
+
+def _restore_page_dialog_pointer(page, closed_control=None) -> None:
+    """Point ``page.dialog`` to the last still-open AlertDialog, or clear it."""
     try:
-        ov = _overlay(page)
-        if ov is not None and control not in ov:
-            ov.append(control)
+        if getattr(page, "dialog", None) is closed_control:
+            page.dialog = None
     except Exception:
         pass
     try:
-        control.open = True
+        stack = _get_stack(page)
+        for item in reversed(stack):
+            try:
+                if item is closed_control:
+                    continue
+                if isinstance(item, ft.AlertDialog) and bool(getattr(item, "open", False)):
+                    page.dialog = item
+                    return
+            except Exception:
+                continue
     except Exception:
         pass
-    try:
-        if isinstance(control, ft.AlertDialog):
-            page.dialog = control
-    except Exception:
-        pass
-    try:
-        page.update()
-    except Exception:
-        pass
-    return None
 
 
 def close_control(page: ft.Page, control):
-    """Close one exact control reliably.
+    """Close one exact control reliably on Android/Flet 0.28.x.
 
-    For dialogs opened with ``show_dialog`` the correct close operation
-    is ``page.pop_dialog()``.  We call it only when the requested control is the
-    top item in our stack; otherwise we do a specific fallback close to avoid
-    accidentally popping the visible parent dialog while trying to close an
-    already-closed DatePicker.
+    The function deliberately does not call ``page.pop_dialog``.  Closing happens
+    by clearing the control's ``open`` flag and removing it from the app-managed
+    stack/overlay.  This avoids creating or popping native routes that can leave
+    a white screen above the real app UI.
     """
     if page is None or control is None:
         return None
 
-    was_open = bool(getattr(control, "open", False))
-    stack = _get_stack(page)
-    is_top = bool(stack and stack[-1] is control)
-
-    # Flet on Android may leave ``control.open`` false even though
-    # page.show_dialog() has pushed a modal route.  Trust our own stack: if this
-    # exact control is the top managed dialog, pop it regardless of ``open``.
-    # This fixes the blank white modal page that used to remain after login/save
-    # until the user pressed Android Back.
-    if _is_dialog_like(control) and is_top and hasattr(page, "pop_dialog"):
-        try:
-            page.pop_dialog()
-            _remove_from_stack(page, control)
-            try:
-                control.open = False
-            except Exception:
-                pass
-            try:
-                page.update()
-            except Exception:
-                pass
-            return None
-        except Exception:
-            pass
-
-    # Specific fallback: never pop an unrelated/top parent dialog here.
-    # Some Flet versions implement page.close(control) as the preferred close
-    # path and do not require the stale ``open`` flag to be true.
     try:
         if hasattr(page, "close") and callable(getattr(page, "close")):
-            page.close(control)
+            # Newer Flet has page.close(control).  It is safe as a best-effort
+            # close because it targets the concrete control, not a route stack.
+            try:
+                page.close(control)
+            except Exception:
+                pass
     except Exception:
         pass
     try:
@@ -266,11 +293,7 @@ def close_control(page: ft.Page, control):
         pass
     _remove_from_stack(page, control)
     _remove_from_overlay(page, control)
-    try:
-        if getattr(page, "dialog", None) is control:
-            page.dialog = None
-    except Exception:
-        pass
+    _restore_page_dialog_pointer(page, closed_control=control)
     try:
         page.update()
     except Exception:
@@ -279,34 +302,29 @@ def close_control(page: ft.Page, control):
 
 
 def close_all_dialogs(page: ft.Page):
-    """Emergency cleanup of all dialog-like controls.
+    """Emergency cleanup of all app-managed modal/transient controls.
 
-    On Android, dialogs shown through ``page.show_dialog`` are real navigation
-    routes.  If the source control is rebuilt before the route is popped, Flet
-    can leave a blank white modal surface above the app.  We therefore pop every
-    managed dialog from our stack without trusting the runtime ``open`` flag.
+    This closes overlay/dialog controls without using native route pop calls.
+    Any FilePicker/PermissionHandler service controls stay attached.
     """
     if page is None:
         return None
     try:
         stack = _get_stack(page)
-        while stack and hasattr(page, "pop_dialog"):
-            ctrl = stack.pop()
-            try:
-                page.pop_dialog()
-            except Exception:
-                break
+        for ctrl in list(reversed(stack)):
             try:
                 ctrl.open = False
             except Exception:
                 pass
+            _remove_from_overlay(page, ctrl)
+        stack.clear()
     except Exception:
         pass
     try:
         ov = _overlay(page) or []
         for item in list(ov):
             # Do not remove service controls such as FilePicker/PermissionHandler.
-            if _is_dialog_like(item) or isinstance(item, ft.SnackBar):
+            if _is_dialog_like(item) or _is_snackbar(item):
                 try:
                     item.open = False
                 except Exception:
@@ -319,6 +337,12 @@ def close_all_dialogs(page: ft.Page):
             page.dialog = None
         except Exception:
             pass
+        try:
+            sb = getattr(page, "snack_bar", None)
+            if sb is not None and hasattr(sb, "open"):
+                sb.open = False
+        except Exception:
+            pass
         page.update()
     except Exception:
         pass
@@ -326,13 +350,7 @@ def close_all_dialogs(page: ft.Page):
 
 
 def clear_transient_ui(page: ft.Page, *, clear_fab: bool = False):
-    """Clear modal/drawer/transient UI before rebuilding or after save.
-
-    This is intentionally conservative: FilePicker and other service controls
-    remain attached, while dialogs, bottom sheets, drawers, snackbars and stale
-    route-like surfaces are closed.  Use it before switching from login to the
-    main shell and after saving a dialog-driven entry.
-    """
+    """Clear modal/drawer/transient UI before rebuilding or after save."""
     if page is None:
         return None
     try:
@@ -662,12 +680,33 @@ def filepicker_unavailable_message() -> str:
     )
 
 def show_snackbar(page: ft.Page, message: str, is_error: bool = False, duration: int = 3000):
+    """Show a SnackBar without adding it as a modal overlay route.
+
+    On the pinned Android runtime, repeatedly appending SnackBar to
+    ``page.overlay`` can behave like a blank transient surface after login/save.
+    The legacy-safe Flet 0.28 path is ``page.snack_bar = snack`` + ``open=True``.
+    """
     snack = ft.SnackBar(
-        content=ft.Text(message, size=13),
+        content=ft.Text(str(message), size=13),
         bgcolor=ft.Colors.RED if is_error else ft.Colors.GREEN,
         duration=duration,
     )
-    open_control(page, snack)
+    if page is None:
+        return snack
+    try:
+        page.snack_bar = snack
+        snack.open = True
+        page.update()
+        return snack
+    except Exception:
+        pass
+    # Last-resort fallback for runtimes without page.snack_bar.
+    try:
+        _ensure_overlay_contains(page, snack)
+        snack.open = True
+        page.update()
+    except Exception:
+        pass
     return snack
 
 

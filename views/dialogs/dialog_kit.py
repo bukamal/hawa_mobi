@@ -66,19 +66,8 @@ def set_button_busy(button, busy: bool, label: str | None = None, busy_label: st
 
 
 def show_snackbar(page, message, is_error=False, duration=3000):
-    snack = ft.SnackBar(
-        content=ft.Text(str(message), size=13),
-        bgcolor=ERROR if is_error else SUCCESS,
-        duration=duration,
-    )
-    try:
-        page.overlay.append(snack)
-        snack.open = True
-        page.update()
-    except Exception:
-        pass
-    return snack
-
+    from views.flet_compat import show_snackbar as compat_show_snackbar
+    return compat_show_snackbar(page, message, is_error=is_error, duration=duration)
 
 def normalize_text(value) -> str:
     return str(value or "").strip()

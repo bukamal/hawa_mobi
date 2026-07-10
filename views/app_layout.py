@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 import flet as ft
-from views.flet_compat import open_control, close_control, close_all_dialogs, clear_transient_ui
+from views.flet_compat import open_control, close_control, close_all_dialogs, clear_transient_ui, show_snackbar
 from views.ui_runtime import make_status_bar, loading_view, error_view, safe_update
 from views.ui_kit import app_brand, PRIMARY, PRIMARY_SOFT, PAGE_BG, CARD_BG
 from auth.session import UserSession
@@ -56,14 +56,7 @@ class AppLayout(ft.Column):
             message = f"⏳ يوجد {waiting} عملية بانتظار الدفع"
             if overdue:
                 message += f" | ⚠️ متأخرة: {overdue}"
-            snack = ft.SnackBar(
-                content=ft.Text(message, size=13),
-                bgcolor=ft.Colors.ORANGE,
-                duration=5000,
-            )
-            self._page.overlay.append(snack)
-            snack.open = True
-            self._page.update()
+            show_snackbar(self._page, message, is_error=False, duration=5000)
         except Exception as ex:
             print(f"[WARN] تعذر عرض تنبيهات الدفع: {ex}")
 
