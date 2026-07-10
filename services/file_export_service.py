@@ -9,6 +9,7 @@ Design rules:
 """
 from __future__ import annotations
 
+import base64
 import csv
 import datetime as _dt
 import os
@@ -251,6 +252,58 @@ class FileExportService:
             return False
 
     @staticmethod
+    def _write_picker_bytes_to_cache(raw_value, *, suggested_name: str = "hawaa_import.zip") -> str | None:
+        """Materialize FilePickerFile.bytes into an app-readable cache file.
+
+        This is the most reliable Android restore path.  Flet's native picker can
+        expose no absolute path on Android, but ``pick_files(with_data=True)`` can
+        return the file contents in ``FilePickerFile.bytes``.  Store those bytes
+        in app-owned cache, then validate/import from that normal file path.
+        """
+        if raw_value in (None, ""):
+            return None
+        data = None
+        try:
+            if isinstance(raw_value, (bytes, bytearray, memoryview)):
+                data = bytes(raw_value)
+            elif isinstance(raw_value, str):
+                text = raw_value.strip()
+                if not text:
+                    return None
+                if text.startswith("data:") and "," in text:
+                    text = text.split(",", 1)[1]
+                # Flet normally returns bytes, but some bridges serialise bytes
+                # as base64 strings.  Validate so paths/URIs are not decoded by
+                # accident.
+                try:
+                    data = base64.b64decode(text, validate=True)
+                except Exception:
+                    return None
+            elif isinstance(raw_value, (list, tuple)):
+                data = bytes(int(x) & 0xFF for x in raw_value)
+            else:
+                return None
+        except Exception:
+            return None
+        if not data:
+            return None
+        safe_name = _safe_filename(os.path.basename(suggested_name or "hawaa_import.zip"))
+        lower = safe_name.lower()
+        if not lower.endswith((".zip", ".db", ".sqlite", ".sqlite3")):
+            safe_name += ".zip"
+        target = FileExportService.build_path(
+            f"picked_bytes_{_dt.datetime.now().strftime('%Y%m%d_%H%M%S_%f')}_{safe_name}",
+            "picked_imports",
+            temporary=True,
+        )
+        try:
+            with open(target, "wb") as out:
+                out.write(data)
+            return target if FileExportService._is_readable_file(target) else None
+        except Exception:
+            return None
+
+    @staticmethod
     def _copy_android_content_uri_to_cache(content_uri: str, *, suggested_name: str = "hawaa_import.zip") -> str | None:
         """Best-effort copy for Android SAF ``content://`` results.
 
@@ -270,6 +323,10 @@ class FileExportService:
             return None
 
         context = None
+        # Flet Android runtimes are not all built on the same Android bridge.
+        # Try the plain Android ActivityThread first, then the python-for-android
+        # activity name used by some embedded Python builds.  If neither exists
+        # we rely on FilePickerFile.bytes / readable paths instead.
         try:
             ActivityThread = autoclass("android.app.ActivityThread")
             app = ActivityThread.currentApplication()
@@ -277,6 +334,14 @@ class FileExportService:
                 context = app.getApplicationContext()
         except Exception:
             context = None
+        if context is None:
+            try:
+                PythonActivity = autoclass("org.kivy.android.PythonActivity")
+                activity = getattr(PythonActivity, "mActivity", None)
+                if activity is not None:
+                    context = activity.getApplicationContext()
+            except Exception:
+                context = None
         if context is None:
             return None
 
@@ -371,6 +436,16 @@ class FileExportService:
                 value = None
             if value not in (None, ""):
                 parts.append(f"{attr}={value}")
+        for attr in ("bytes", "content", "data"):
+            try:
+                value = getattr(file_obj, attr, None)
+            except Exception:
+                value = None
+            if value not in (None, ""):
+                try:
+                    parts.append(f"{attr}_len={len(value)}")
+                except Exception:
+                    parts.append(f"{attr}=present")
         return " | ".join(parts) or str(file_obj or "")
 
     @staticmethod
@@ -392,6 +467,21 @@ class FileExportService:
             return None
 
         candidates = []
+        # First: if pick_files(with_data=True) is supported, Android can return
+        # bytes even when it cannot return an absolute path.  This is the only
+        # fully reliable external-import path under scoped storage.
+        for attr in ("bytes", "content", "data"):
+            try:
+                raw_bytes = getattr(file_obj, attr, None)
+            except Exception:
+                raw_bytes = None
+            materialized = FileExportService._write_picker_bytes_to_cache(
+                raw_bytes,
+                suggested_name=str(getattr(file_obj, "name", None) or "hawaa_import.zip"),
+            )
+            if materialized:
+                return materialized
+
         for attr in ("path", "src", "uri", "url", "name"):
             try:
                 value = getattr(file_obj, attr, None)
@@ -460,6 +550,63 @@ class FileExportService:
             conn.close()
 
     @staticmethod
+    def _extract_valid_sqlite_from_zip(zf: zipfile.ZipFile, tmp_dir: str) -> tuple[str, str]:
+        """Extract the first valid Hawaa SQLite DB from a backup ZIP.
+
+        Older/exported/shared backups are not guaranteed to keep ``hawaa_data.db``
+        at the ZIP root.  Accept a valid SQLite DB anywhere in the archive and
+        prefer the canonical name.  This fixes external backups saved by Files,
+        Drive, WhatsApp, or manually re-zipped folders.
+        """
+        names = [n for n in zf.namelist() if not n.endswith("/")]
+        preferred = [n for n in names if os.path.basename(n).lower() == "hawaa_data.db"]
+        db_candidates = preferred + [
+            n for n in names
+            if n not in preferred and os.path.basename(n).lower().endswith((".db", ".sqlite", ".sqlite3"))
+        ]
+        errors: list[str] = []
+        for member in db_candidates:
+            safe_member = _safe_filename(os.path.basename(member))
+            candidate = os.path.join(tmp_dir, f"candidate_{len(errors)}_{safe_member}")
+            try:
+                with zf.open(member) as src, open(candidate, "wb") as dst:
+                    shutil.copyfileobj(src, dst)
+                FileExportService._validate_sqlite_backup_db(candidate)
+                return candidate, member
+            except Exception as ex:
+                errors.append(f"{member}: {ex}")
+                try:
+                    os.remove(candidate)
+                except Exception:
+                    pass
+        # One extra tolerant case: a ZIP that contains exactly one nested ZIP.
+        nested_zips = [n for n in names if os.path.basename(n).lower().endswith(".zip")]
+        for member in nested_zips[:3]:
+            nested_path = os.path.join(tmp_dir, f"nested_{_safe_filename(os.path.basename(member))}")
+            try:
+                with zf.open(member) as src, open(nested_path, "wb") as dst:
+                    shutil.copyfileobj(src, dst)
+                with zipfile.ZipFile(nested_path, "r") as nested:
+                    nested_tmp = tempfile.mkdtemp(prefix="hawaa_nested_restore_")
+                    try:
+                        nested_candidate, nested_member = FileExportService._extract_valid_sqlite_from_zip(nested, nested_tmp)
+                        final_candidate = os.path.join(tmp_dir, f"nested_candidate_{_safe_filename(os.path.basename(nested_candidate))}")
+                        shutil.copy2(nested_candidate, final_candidate)
+                        return final_candidate, f"{member}!/{nested_member}"
+                    except Exception as ex:
+                        errors.append(f"{member}: {ex}")
+                    finally:
+                        shutil.rmtree(nested_tmp, ignore_errors=True)
+            except Exception as ex:
+                errors.append(f"{member}: {ex}")
+        listed = ", ".join(names[:12])
+        extra = " | ".join(errors[:5])
+        raise ValueError(
+            "ملف ZIP لا يحتوي قاعدة بيانات هوى الشام صالحة. "
+            f"محتوى ZIP: {listed}" + (f". أخطاء الفحص: {extra}" if extra else "")
+        )
+
+    @staticmethod
     def inspect_backup_archive(backup_path: str) -> dict:
         """Inspect a backup ZIP or direct .db file without modifying current data."""
         if not backup_path or not os.path.exists(backup_path):
@@ -473,13 +620,16 @@ class FileExportService:
             raise ValueError("صيغة النسخة غير مدعومة. اختر ملف ZIP أو DB")
         with zipfile.ZipFile(backup_path, "r") as zf:
             names = set(zf.namelist())
-            if "hawaa_data.db" not in names:
-                raise ValueError("ملف النسخة الاحتياطية غير صالح: لا يحتوي hawaa_data.db")
             tmp_dir = tempfile.mkdtemp(prefix="hawaa_inspect_")
             try:
-                zf.extract("hawaa_data.db", tmp_dir)
-                info = FileExportService._validate_sqlite_backup_db(os.path.join(tmp_dir, "hawaa_data.db"))
-                info.update({"format": "hawaa-backup-zip", "source": backup_path, "has_config": "config.json" in names})
+                candidate_db, member_name = FileExportService._extract_valid_sqlite_from_zip(zf, tmp_dir)
+                info = FileExportService._validate_sqlite_backup_db(candidate_db)
+                info.update({
+                    "format": "hawaa-backup-zip",
+                    "source": backup_path,
+                    "db_member": member_name,
+                    "has_config": "config.json" in names,
+                })
                 return info
             finally:
                 shutil.rmtree(tmp_dir, ignore_errors=True)
@@ -521,7 +671,8 @@ class FileExportService:
                 shutil.copy2(backup_path, candidate_db)
             else:
                 with zipfile.ZipFile(backup_path, "r") as zf:
-                    zf.extract("hawaa_data.db", tmp_dir)
+                    extracted_db, _member_name = FileExportService._extract_valid_sqlite_from_zip(zf, tmp_dir)
+                    shutil.copy2(extracted_db, candidate_db)
                     if "config.json" in set(zf.namelist()):
                         zf.extract("config.json", tmp_dir)
                         config_candidate = os.path.join(tmp_dir, "config.json")

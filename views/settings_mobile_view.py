@@ -687,11 +687,24 @@ class SettingsMobileView(ft.Column):
             if not service_control_attached(picker):
                 self._open_restore_fallback_dialog(filepicker_unavailable_message())
                 return
-            picker.pick_files(
+            pick_kwargs = dict(
                 allow_multiple=False,
                 allowed_extensions=["zip", "db", "sqlite", "sqlite3"],
                 dialog_title="اختيار نسخة هوى الشام الاحتياطية",
             )
+            try:
+                pick_kwargs["file_type"] = ft.FilePickerFileType.CUSTOM
+            except Exception:
+                pass
+            # Critical for Android scoped storage: a picker may not expose a
+            # filesystem path.  with_data=True asks Flet to include the selected
+            # file bytes so we can stage the external backup inside app cache and
+            # restore it reliably.  Older Flet builds may not support the keyword,
+            # so fall back without it instead of breaking the dialog.
+            try:
+                picker.pick_files(with_data=True, **pick_kwargs)
+            except TypeError:
+                picker.pick_files(**pick_kwargs)
         except Exception as ex:
             self._show_snackbar(f"تعذر فتح اختيار النسخة: {ex}", True)
 
@@ -797,7 +810,9 @@ class SettingsMobileView(ft.Column):
             msg = (
                 "سيتم استبدال قاعدة البيانات الحالية. سيتم إنشاء نسخة أمان قبل الاستعادة.\n\n"
                 f"المصدر: {os.path.basename(path)}\n"
+                f"المصدر: {os.path.basename(path)}\n"
                 f"النوع: {info.get('format')}\n"
+                f"ملف قاعدة البيانات داخل النسخة: {info.get('db_member') or 'مباشر'}\n"
                 f"إصدار المخطط: {info.get('schema_version') or 'غير محدد'}\n"
                 f"المستخدمون: {counts.get('users', 0)} | القيود: {counts.get('expenses', 0)}"
             )
@@ -871,9 +886,9 @@ class SettingsMobileView(ft.Column):
             if not path:
                 details = FileExportService.describe_picker_file(selected)
                 self._open_restore_fallback_dialog(
-                    "فتح Android منتقي الملفات، لكن نتيجة الاختيار لم تكن مسارًا قابلًا للقراءة داخل Python. "
-                    "إذا كانت النسخة أُنشئت من نفس التطبيق، استخدم زر: استيراد آخر نسخة محفوظة داخليًا. "
-                    "وإذا كانت في التنزيلات، انسخها إلى Download/Hawaa ثم أعد المحاولة.\n\n"
+                    "فتح Android منتقي الملفات، لكن Runtime لم يعطِ التطبيق مسارًا ولا bytes قابلة للاستيراد. "
+                    "ابنِ APK من هذه المرحلة لأن زر الاستيراد يطلب with_data=True لقراءة الملف الخارجي كبيانات. "
+                    "كحل بديل: ضع الملف في Download/Hawaa ثم أعد المحاولة، أو استورد نسخة أنشأها التطبيق داخليًا.\n\n"
                     f"تشخيص الملف المختار: {details}"
                 )
                 return
@@ -881,7 +896,9 @@ class SettingsMobileView(ft.Column):
             counts = info.get('counts', {})
             msg = (
                 "سيتم استبدال قاعدة البيانات الحالية. سيتم إنشاء نسخة أمان قبل الاستعادة.\n\n"
+                f"المصدر: {os.path.basename(path)}\n"
                 f"النوع: {info.get('format')}\n"
+                f"ملف قاعدة البيانات داخل النسخة: {info.get('db_member') or 'مباشر'}\n"
                 f"إصدار المخطط: {info.get('schema_version') or 'غير محدد'}\n"
                 f"المستخدمون: {counts.get('users', 0)} | القيود: {counts.get('expenses', 0)}"
             )
