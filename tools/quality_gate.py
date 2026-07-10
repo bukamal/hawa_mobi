@@ -96,6 +96,7 @@ def main() -> int:
         "tools/flet_alignment_compat_smoke_test.py",
         "tools/flet_fab_compat_smoke_test.py",
         "tools/flet_expansion_tile_compat_smoke_test.py",
+        "tools/flet_dialog_route_cleanup_smoke_test.py",
         "tools/flet_async_task_compat_smoke_test.py",
         "tools/filepicker_permission_compat_smoke_test.py",
         # Server import is useful when Flask dependencies are installed; run it manually when validating server packaging:

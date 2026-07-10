@@ -16,7 +16,7 @@ from views.splash_view import SplashView
 from views.app_layout import AppLayout
 from database import SettingsRepository
 from database.connection import get_local_db_path
-from views.flet_compat import open_control, close_control, apply_arabic_ui_defaults, ALIGN_CENTER, run_async_task
+from views.flet_compat import open_control, close_control, close_all_dialogs, clear_transient_ui, apply_arabic_ui_defaults, ALIGN_CENTER, run_async_task
 
 print("[INFO] بدء تشغيل تطبيق هوى الشام")
 
@@ -102,6 +102,7 @@ def main(page: ft.Page):
     page.theme_mode = ft.ThemeMode.LIGHT if theme == 'light' else ft.ThemeMode.DARK
 
     def show_splash():
+        clear_transient_ui(page, clear_fab=True)
         page.controls.clear()
         splash = SplashView(page=page, on_complete=after_splash, on_error=lambda msg: show_error(msg, retry=show_splash))
         page.add(splash)
@@ -123,12 +124,14 @@ def main(page: ft.Page):
             handle_exception(page, e, "خطأ في التحقق من بدء التشغيل")
 
     def show_activation():
+        clear_transient_ui(page, clear_fab=True)
         page.controls.clear()
         from views.activation_view import ActivationView
         activation = ActivationView(page=page, on_success=show_login, on_cancel=close_app)
         page.add(activation)
 
     def show_login():
+        clear_transient_ui(page, clear_fab=True)
         page.controls.clear()
         login = LoginView(page=page, on_login_success=on_login_success, on_exit=close_app)
         page.add(login)
@@ -149,6 +152,7 @@ def main(page: ft.Page):
         # The language hook rebuilds the current shell immediately after a
         # language change instead of requiring an Android process restart.
         def rebuild_main_app():
+            clear_transient_ui(page, clear_fab=True)
             page.rtl = is_rtl()
             page.title = translate('app_title')
             page.controls.clear()

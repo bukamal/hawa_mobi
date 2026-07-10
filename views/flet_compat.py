@@ -173,6 +173,14 @@ def open_control(page: ft.Page, control):
         try:
             if not getattr(control, "open", False):
                 page.show_dialog(control)
+            # Some Android/Flet builds push a native dialog route but do not
+            # reflect that state back into ``control.open``.  Mark it ourselves
+            # so close_control can close the exact modal route instead of
+            # leaving a blank white modal surface that only Android Back removes.
+            try:
+                control.open = True
+            except Exception:
+                pass
             stack = _get_stack(page)
             if control in stack:
                 stack.remove(control)
@@ -223,7 +231,12 @@ def close_control(page: ft.Page, control):
     stack = _get_stack(page)
     is_top = bool(stack and stack[-1] is control)
 
-    if _is_dialog_like(control) and was_open and is_top and hasattr(page, "pop_dialog"):
+    # Flet on Android may leave ``control.open`` false even though
+    # page.show_dialog() has pushed a modal route.  Trust our own stack: if this
+    # exact control is the top managed dialog, pop it regardless of ``open``.
+    # This fixes the blank white modal page that used to remain after login/save
+    # until the user pressed Android Back.
+    if _is_dialog_like(control) and is_top and hasattr(page, "pop_dialog"):
         try:
             page.pop_dialog()
             _remove_from_stack(page, control)
@@ -240,8 +253,10 @@ def close_control(page: ft.Page, control):
             pass
 
     # Specific fallback: never pop an unrelated/top parent dialog here.
+    # Some Flet versions implement page.close(control) as the preferred close
+    # path and do not require the stale ``open`` flag to be true.
     try:
-        if hasattr(page, "close") and callable(getattr(page, "close")) and was_open:
+        if hasattr(page, "close") and callable(getattr(page, "close")):
             page.close(control)
     except Exception:
         pass
@@ -264,7 +279,13 @@ def close_control(page: ft.Page, control):
 
 
 def close_all_dialogs(page: ft.Page):
-    """Emergency cleanup of all dialog-like controls."""
+    """Emergency cleanup of all dialog-like controls.
+
+    On Android, dialogs shown through ``page.show_dialog`` are real navigation
+    routes.  If the source control is rebuilt before the route is popped, Flet
+    can leave a blank white modal surface above the app.  We therefore pop every
+    managed dialog from our stack without trusting the runtime ``open`` flag.
+    """
     if page is None:
         return None
     try:
@@ -272,16 +293,20 @@ def close_all_dialogs(page: ft.Page):
         while stack and hasattr(page, "pop_dialog"):
             ctrl = stack.pop()
             try:
-                if getattr(ctrl, "open", False):
-                    page.pop_dialog()
+                page.pop_dialog()
             except Exception:
                 break
+            try:
+                ctrl.open = False
+            except Exception:
+                pass
     except Exception:
         pass
     try:
         ov = _overlay(page) or []
         for item in list(ov):
-            if _is_dialog_like(item):
+            # Do not remove service controls such as FilePicker/PermissionHandler.
+            if _is_dialog_like(item) or isinstance(item, ft.SnackBar):
                 try:
                     item.open = False
                 except Exception:
@@ -290,12 +315,47 @@ def close_all_dialogs(page: ft.Page):
                     ov.remove(item)
                 except Exception:
                     pass
-        page.dialog = None
+        try:
+            page.dialog = None
+        except Exception:
+            pass
         page.update()
     except Exception:
         pass
     return None
 
+
+def clear_transient_ui(page: ft.Page, *, clear_fab: bool = False):
+    """Clear modal/drawer/transient UI before rebuilding or after save.
+
+    This is intentionally conservative: FilePicker and other service controls
+    remain attached, while dialogs, bottom sheets, drawers, snackbars and stale
+    route-like surfaces are closed.  Use it before switching from login to the
+    main shell and after saving a dialog-driven entry.
+    """
+    if page is None:
+        return None
+    try:
+        close_all_dialogs(page)
+    except Exception:
+        pass
+    for attr in ("bottom_sheet", "banner", "drawer", "end_drawer"):
+        try:
+            ctrl = getattr(page, attr, None)
+            if ctrl is not None and hasattr(ctrl, "open"):
+                ctrl.open = False
+        except Exception:
+            pass
+    if clear_fab:
+        try:
+            page.floating_action_button = None
+        except Exception:
+            pass
+    try:
+        page.update()
+    except Exception:
+        pass
+    return None
 
 
 def run_async_task(page, async_callable, *args, **kwargs):

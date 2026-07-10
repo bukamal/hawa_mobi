@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 import flet as ft
-from views.flet_compat import open_control, close_control, close_all_dialogs
+from views.flet_compat import open_control, close_control, close_all_dialogs, clear_transient_ui
 from views.ui_runtime import make_status_bar, loading_view, error_view, safe_update
 from views.ui_kit import app_brand, PRIMARY, PRIMARY_SOFT, PAGE_BG, CARD_BG
 from auth.session import UserSession
@@ -127,6 +127,10 @@ class AppLayout(ft.Column):
         self.switch_page(getattr(self, 'current_page_id', 'accounts'))
 
     def switch_page(self, page_id):
+        # A page switch must start from a clean transient state.  Without this,
+        # Android/Flet can keep a blank modal route from a previous dialog above
+        # the newly rendered screen until the user presses Back.
+        clear_transient_ui(self._page, clear_fab=True)
         self.current_page_id = page_id
         # Do not let a FAB from the previous page leak into settings/audit/dashboard.
         # Individual pages that need a FAB (accounts/users) set their own button.
