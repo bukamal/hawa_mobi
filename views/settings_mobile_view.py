@@ -5,7 +5,7 @@ from views.ui_kit import page_header, data_card, show_snackbar, empty_state, inf
 from database import SettingsRepository
 from currency import currency
 from i18n.translator import translate, set_language, language_code_from_label, language_label, is_rtl
-from config import get_company_info, save_company_info
+from config import get_company_info, save_company_info, default_company_info
 from database.connection import DatabaseConnection
 from views.ui_runtime import network_status_chip
 import datetime
@@ -275,7 +275,8 @@ class SettingsMobileView(ft.Column):
         self.company_logo = ft.TextField(label="مسار الشعار داخل التطبيق", value=info.get('logo_path',''), width=350, read_only=True)
         self.logo_preview = ft.Container(content=self._logo_preview_control(info.get('logo_path','')), padding=8, border_radius=14, bgcolor=ft.Colors.GREY_100)
         logo_btn = ft.FilledButton(content=ft.Row([ft.Icon(ft.Icons.IMAGE), ft.Text("اختيار شعار")]), on_click=self._browse_logo)
-        remove_logo_btn = ft.OutlinedButton(content=ft.Row([ft.Icon(ft.Icons.DELETE_OUTLINE), ft.Text("إزالة الشعار")]), on_click=self._remove_company_logo)
+        remove_logo_btn = ft.OutlinedButton(content=ft.Row([ft.Icon(ft.Icons.RESTART_ALT), ft.Text("إعادة الشعار الافتراضي")]), on_click=self._remove_company_logo)
+        reset_defaults_btn = ft.OutlinedButton(content=ft.Row([ft.Icon(ft.Icons.SETTINGS_BACKUP_RESTORE), ft.Text("إعادة القيم الافتراضية")]), on_click=self._reset_company_defaults)
         save_btn = ft.FilledButton(content=ft.Text("حفظ"), bgcolor=ft.Colors.INDIGO, color=ft.Colors.WHITE, on_click=self._save_company)
         return ft.Column([
             self.company_name,
@@ -285,7 +286,7 @@ class SettingsMobileView(ft.Column):
             info_banner("يتم نسخ الشعار إلى تخزين التطبيق وإدخاله داخل تقارير HTML كصورة Base64 حتى يظهر عند الطباعة والمشاركة.", icon=ft.Icons.IMAGE),
             self.logo_preview,
             self.company_logo,
-            responsive_wrap([logo_btn, remove_logo_btn, save_btn], spacing=10),
+            responsive_wrap([logo_btn, remove_logo_btn, reset_defaults_btn, save_btn], spacing=10),
         ], spacing=15)
 
     def _logo_preview_control(self, path: str):
@@ -304,7 +305,7 @@ class SettingsMobileView(ft.Column):
             pass
         return ft.Row([
             ft.Icon(ft.Icons.IMAGE_NOT_SUPPORTED, size=38, color=ft.Colors.GREY_500),
-            ft.Text("لم يتم اختيار شعار بعد", size=12, color=ft.Colors.GREY_600),
+            ft.Text("تعذر عرض الشعار الافتراضي", size=12, color=ft.Colors.GREY_600),
         ], alignment=ft.MainAxisAlignment.START)
 
     def _save_company(self, e):
@@ -317,6 +318,17 @@ class SettingsMobileView(ft.Column):
         }
         save_company_info(info)
         self._show_snackbar("تم حفظ معلومات الشركة", is_error=False)
+
+    def _reset_company_defaults(self, e):
+        defaults = default_company_info()
+        self.company_name.value = defaults.get('name', '')
+        self.company_address.value = defaults.get('address', '')
+        self.company_phone.value = defaults.get('phone', '')
+        self.company_email.value = defaults.get('email', '')
+        self.company_logo.value = defaults.get('logo_path', '')
+        self.logo_preview.content = self._logo_preview_control(self.company_logo.value)
+        self._page.update()
+        self._show_snackbar("تمت إعادة بيانات الشركة والشعار الافتراضي", False)
 
     def _browse_logo(self, e):
         picker = make_file_picker(self._on_logo_picked)
@@ -359,9 +371,10 @@ class SettingsMobileView(ft.Column):
             remove_logo(self.company_logo.value)
         except Exception:
             pass
-        self.company_logo.value = ""
-        self.logo_preview.content = self._logo_preview_control("")
-        self._show_snackbar("تم إزالة الشعار", False)
+        defaults = default_company_info()
+        self.company_logo.value = defaults.get('logo_path', '')
+        self.logo_preview.content = self._logo_preview_control(self.company_logo.value)
+        self._show_snackbar("تمت إعادة الشعار الافتراضي", False)
         self._page.update()
 
 
