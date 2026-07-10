@@ -946,30 +946,102 @@ class SettingsMobileView(ft.Column):
         try:
             if dialog is not None:
                 self._close_dialog(dialog)
+        except Exception:
+            pass
+        # Android/Flet dialog routing proved unreliable for restore confirmation:
+        # the native picker can return a readable cache path, then the confirm
+        # dialog may not appear to the user.  Because the user already pressed
+        # an explicit restore action and selected/provided a backup, restore
+        # directly with an automatic safety backup and full diagnostic logging.
+        self._restore_selected_backup_path(path, origin="fallback-path")
+
+    def _restore_selected_backup_path(self, path: str, *, origin: str = "unknown"):
+        """Restore a selected backup directly and non-blockingly.
+
+        Phase 61 intentionally removes the extra confirmation dialog from the
+        Android path.  Diagnostics showed that FilePicker returned a readable
+        cache file, but execution stopped before any import reached
+        restore_backup_archive().  Direct restore gives deterministic behaviour:
+        pick file -> validate/restore -> success/error dialog.  A safety backup
+        of the current DB is created inside restore_backup_archive().
+        """
+        path = (path or "").strip().strip('"').strip("'")
+        if not path:
+            self._show_snackbar("لم يتم تحديد مسار نسخة احتياطية", True)
+            return
+        if self._restore_operation_busy:
+            self._show_snackbar("توجد عملية استيراد قيد التنفيذ. انتظر حتى تنتهي.", True)
+            return
+        self._restore_operation_busy = True
+        try:
             from services.file_export_service import FileExportService
-            info = FileExportService.inspect_backup_archive(path)
-            counts = info.get('counts', {})
-            msg = (
-                "سيتم استبدال قاعدة البيانات الحالية. سيتم إنشاء نسخة أمان قبل الاستعادة.\n\n"
-                f"المصدر: {os.path.basename(path)}\n"
-                f"المصدر: {os.path.basename(path)}\n"
-                f"النوع: {info.get('format')}\n"
-                f"ملف قاعدة البيانات داخل النسخة: {info.get('db_member') or 'مباشر'}\n"
-                f"إصدار المخطط: {info.get('schema_version') or 'غير محدد'}\n"
-                f"المستخدمون: {counts.get('users', 0)} | القيود: {counts.get('expenses', 0)}"
-            )
-            confirm = ft.AlertDialog(
-                modal=True,
-                title=ft.Text("تأكيد استيراد النسخة الاحتياطية", weight=ft.FontWeight.BOLD),
-                content=ft.Text(msg),
-                actions=[
-                    ft.TextButton("إلغاء", on_click=lambda ev: self._close_dialog(confirm)),
-                    ft.FilledButton("استيراد الآن", bgcolor=ft.Colors.RED, color=ft.Colors.WHITE, on_click=lambda ev, p=path, d=confirm: self._confirm_restore_backup(p, d)),
-                ],
-            )
-            open_control(self._page, confirm)
+            FileExportService.log_restore_event(f"direct restore requested from {origin}: {path}")
+        except Exception:
+            pass
+        self._show_snackbar("تم اختيار النسخة. جاري التحقق والاستيراد الآن...", False, duration=2500)
+        run_async_task(self._page, self._restore_selected_backup_path_async, path, origin)
+
+    async def _restore_selected_backup_path_async(self, path: str, origin: str = "unknown"):
+        try:
+            from services.file_export_service import FileExportService
+            from database.connection import DatabaseConnection
+            try:
+                FileExportService.log_restore_event(f"restore async start origin={origin} path={path}")
+                inspected = await asyncio.to_thread(FileExportService.inspect_backup_archive, path)
+                FileExportService.log_restore_event(f"restore inspect ok origin={origin} info={inspected}")
+                result = await asyncio.to_thread(FileExportService.restore_backup_archive, path)
+            except AttributeError:
+                FileExportService.log_restore_event(f"restore async fallback sync origin={origin} path={path}")
+                inspected = FileExportService.inspect_backup_archive(path)
+                FileExportService.log_restore_event(f"restore inspect ok origin={origin} info={inspected}")
+                result = FileExportService.restore_backup_archive(path)
+            safety = result.get('safety_backup')
+            counts = result.get('verified_counts') or (result.get('inspected') or {}).get('counts', {})
+            try:
+                DatabaseConnection.reset_after_restore()
+            except Exception:
+                pass
+            try:
+                FileExportService.log_restore_event(f"restore ui refresh start counts={counts}")
+            except Exception:
+                pass
+            self._refresh_after_restore()
+            self._show_restore_success_dialog(counts, safety)
         except Exception as ex:
-            self._show_snackbar(f"تعذر استخدام المسار: {ex}", True)
+            try:
+                from services.file_export_service import FileExportService
+                FileExportService.log_restore_event(f"direct restore failed origin={origin} path={path}: {ex}")
+            except Exception:
+                pass
+            self._open_restore_error_dialog(path, ex)
+        finally:
+            self._restore_operation_busy = False
+
+    def _open_restore_error_dialog(self, path: str, error: Exception):
+        try:
+            from services.file_export_service import FileExportService
+            log_tail = "\n".join(FileExportService.read_restore_log_tail(30))
+            log_path = FileExportService.restore_log_path()
+        except Exception:
+            log_tail = ""
+            log_path = ""
+        msg = (
+            "فشل استيراد النسخة الاحتياطية. لم يتم استبدال قاعدة البيانات الحالية.\n\n"
+            f"المسار: {path}\n"
+            f"الخطأ: {error}\n\n"
+            f"سجل التشخيص: {log_path}\n\n"
+            f"آخر السجل:\n{log_tail}"
+        )
+        dlg = ft.AlertDialog(
+            modal=True,
+            title=ft.Text("فشل استيراد النسخة", weight=ft.FontWeight.BOLD),
+            content=ft.Container(width=430, content=ft.Text(msg, selectable=True, size=11)),
+            actions=[ft.TextButton("إغلاق", on_click=lambda ev: self._close_dialog(dlg))],
+        )
+        try:
+            open_control(self._page, dlg)
+        except Exception:
+            self._show_snackbar(f"فشل استيراد النسخة: {error}", True)
 
     def _open_logo_path_fallback_dialog(self, reason: str = ""):
         path_field = ft.TextField(
@@ -1053,27 +1125,15 @@ class SettingsMobileView(ft.Column):
                         f"سجل التشخيص: {FileExportService.restore_log_path()}"
                     )
                     return
-            info = FileExportService.inspect_backup_archive(path)
-            counts = info.get('counts', {})
-            msg = (
-                "سيتم استبدال قاعدة البيانات الحالية. سيتم إنشاء نسخة أمان قبل الاستعادة.\n\n"
-                f"المصدر: {os.path.basename(path)}\n"
-                f"النوع: {info.get('format')}\n"
-                f"ملف قاعدة البيانات داخل النسخة: {info.get('db_member') or 'مباشر'}\n"
-                f"إصدار المخطط: {info.get('schema_version') or 'غير محدد'}\n"
-                f"المستخدمون: {counts.get('users', 0)} | القيود: {counts.get('expenses', 0)}"
-            )
-            dlg = ft.AlertDialog(
-                title=ft.Text("تأكيد استيراد النسخة الاحتياطية", weight=ft.FontWeight.BOLD),
-                content=ft.Text(msg),
-                actions=[
-                    ft.TextButton("إلغاء", on_click=lambda ev: self._close_dialog(dlg)),
-                    ft.FilledButton("استيراد الآن", bgcolor=ft.Colors.RED, color=ft.Colors.WHITE, on_click=lambda ev, p=path, d=dlg: self._confirm_restore_backup(p, d)),
-                ],
-            )
-            open_control(self._page, dlg)
+            FileExportService.log_restore_event(f"resolved picker backup path: {path}")
+            self._restore_selected_backup_path(path, origin="filepicker")
         except Exception as ex:
-            self._show_snackbar(f"النسخة غير صالحة: {ex}", True)
+            try:
+                from services.file_export_service import FileExportService
+                FileExportService.log_restore_event(f"restore picker handler failed: {ex}")
+            except Exception:
+                pass
+            self._open_restore_error_dialog("FilePicker", ex)
 
     def _confirm_restore_backup(self, path: str, dialog):
         try:

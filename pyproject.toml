@@ -1,6 +1,6 @@
 [project]
 name = "hawaa-accounting"
-version = "1.0.13"
+version = "1.0.14"
 description = "نظام حسابات هوى الشام الداخلي"
 requires-python = ">=3.10"
 dependencies = [

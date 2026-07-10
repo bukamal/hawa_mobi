@@ -175,6 +175,18 @@ class FileExportService:
             pass
 
     @staticmethod
+    def read_restore_log_tail(lines: int = 40) -> list[str]:
+        try:
+            path = FileExportService.restore_log_path()
+            if not os.path.exists(path):
+                return []
+            with open(path, "r", encoding="utf-8", errors="replace") as f:
+                data = f.readlines()
+            return [line.rstrip("\n") for line in data[-max(1, int(lines or 40)):]]
+        except Exception:
+            return []
+
+    @staticmethod
     def find_external_backup_archives(limit: int = 12, *, validate: bool = True) -> list[str]:
         """Find readable external backup candidates without FilePicker.
 
@@ -692,31 +704,46 @@ class FileExportService:
     @staticmethod
     def inspect_backup_archive(backup_path: str) -> dict:
         """Inspect a backup ZIP or direct .db file without modifying current data."""
-        if not backup_path or not os.path.exists(backup_path):
-            FileExportService.log_restore_event(f"restore failed: missing path {backup_path}")
-            raise FileNotFoundError("ملف النسخة الاحتياطية غير موجود")
-        ext = os.path.splitext(str(backup_path))[1].lower()
-        if ext in {".db", ".sqlite", ".sqlite3"}:
-            info = FileExportService._validate_sqlite_backup_db(backup_path)
-            info.update({"format": "sqlite-db", "source": backup_path})
-            return info
-        if ext != ".zip":
-            raise ValueError("صيغة النسخة غير مدعومة. اختر ملف ZIP أو DB")
-        with zipfile.ZipFile(backup_path, "r") as zf:
-            names = set(zf.namelist())
-            tmp_dir = tempfile.mkdtemp(prefix="hawaa_inspect_")
+        FileExportService.log_restore_event(f"inspect backup start: {backup_path}")
+        try:
+            if not backup_path or not os.path.exists(backup_path):
+                FileExportService.log_restore_event(f"restore failed: missing path {backup_path}")
+                raise FileNotFoundError("ملف النسخة الاحتياطية غير موجود")
             try:
-                candidate_db, member_name = FileExportService._extract_valid_sqlite_from_zip(zf, tmp_dir)
-                info = FileExportService._validate_sqlite_backup_db(candidate_db)
-                info.update({
-                    "format": "hawaa-backup-zip",
-                    "source": backup_path,
-                    "db_member": member_name,
-                    "has_config": "config.json" in names,
-                })
+                FileExportService.log_restore_event(f"inspect backup size={os.path.getsize(backup_path)}")
+            except Exception:
+                pass
+            ext = os.path.splitext(str(backup_path))[1].lower()
+            if ext in {".db", ".sqlite", ".sqlite3"}:
+                info = FileExportService._validate_sqlite_backup_db(backup_path)
+                info.update({"format": "sqlite-db", "source": backup_path})
+                FileExportService.log_restore_event(f"inspect backup ok db: {info}")
                 return info
-            finally:
-                shutil.rmtree(tmp_dir, ignore_errors=True)
+            if ext != ".zip":
+                raise ValueError("صيغة النسخة غير مدعومة. اختر ملف ZIP أو DB")
+            with zipfile.ZipFile(backup_path, "r") as zf:
+                try:
+                    FileExportService.log_restore_event("inspect zip members: " + ", ".join(zf.namelist()[:20]))
+                except Exception:
+                    pass
+                names = set(zf.namelist())
+                tmp_dir = tempfile.mkdtemp(prefix="hawaa_inspect_")
+                try:
+                    candidate_db, member_name = FileExportService._extract_valid_sqlite_from_zip(zf, tmp_dir)
+                    info = FileExportService._validate_sqlite_backup_db(candidate_db)
+                    info.update({
+                        "format": "hawaa-backup-zip",
+                        "source": backup_path,
+                        "db_member": member_name,
+                        "has_config": "config.json" in names,
+                    })
+                    FileExportService.log_restore_event(f"inspect backup ok zip: {info}")
+                    return info
+                finally:
+                    shutil.rmtree(tmp_dir, ignore_errors=True)
+        except Exception as ex:
+            FileExportService.log_restore_event(f"inspect backup failed: {backup_path} :: {ex}")
+            raise
 
     @staticmethod
     def restore_backup_archive(backup_path: str) -> dict:
@@ -737,6 +764,7 @@ class FileExportService:
             FileExportService.log_restore_event(f"restore failed: missing path {backup_path}")
             raise FileNotFoundError("ملف النسخة الاحتياطية غير موجود")
 
+        FileExportService.log_restore_event(f"restore backup start: {backup_path}")
         inspected = FileExportService.inspect_backup_archive(backup_path)
         safety_backup = None
         try:

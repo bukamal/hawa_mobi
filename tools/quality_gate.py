@@ -89,6 +89,7 @@ def main() -> int:
         "tools/backup_restore_smoke_test.py",
         "tools/backup_restore_button_nonblocking_smoke_test.py",
         "tools/backup_restore_snackbar_duration_smoke_test.py",
+        "tools/backup_restore_direct_picker_import_smoke_test.py",
         "tools/backup_import_runtime_refresh_smoke_test.py",
         "tools/backup_picker_resolution_smoke_test.py",
         "tools/backup_external_filepicker_bytes_smoke_test.py",
