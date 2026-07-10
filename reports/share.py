@@ -64,12 +64,14 @@ def guess_mime(path: str) -> str:
 
 
 def build_statement_message(company_name: str, path: str, *, report_type: str = "كشف حساب") -> str:
+    """Build a short caption for file shares.
+
+    Keep this text short.  If native Android sharing fails and the runtime falls
+    back to text-only WhatsApp, the user must not receive a misleading message
+    that looks like a successful file attachment.
+    """
     filename = os.path.basename(path)
-    return (
-        f"{report_type} - {company_name}\n"
-        f"تم إنشاء الملف: {filename}\n\n"
-        "اختر التطبيق المناسب من نافذة المشاركة لفتح الملف أو حفظه أو إرساله."
-    )
+    return f"{report_type} - {company_name}\n{filename}"
 
 
 def whatsapp_url(text: str, phone: Optional[str] = None) -> str:
@@ -150,6 +152,225 @@ def _call_maybe_async(value):
     if asyncio.iscoroutine(value):
         return value
     return None
+
+
+
+def _load_jnius_runtime():
+    """Return pyjnius helpers only on Android runtimes that expose them."""
+    try:
+        jnius = __import__("jnius")
+        return getattr(jnius, "autoclass"), getattr(jnius, "cast", None)
+    except Exception:
+        return None, None
+
+
+def _android_context():
+    autoclass, _cast = _load_jnius_runtime()
+    if autoclass is None:
+        return None
+    # Flet Android generally exposes the current Application via ActivityThread.
+    # Use application context + FLAG_ACTIVITY_NEW_TASK to avoid relying on Kivy
+    # classes or a specific Flet Activity class name.
+    for class_name, method_name in (
+        ("android.app.ActivityThread", "currentApplication"),
+    ):
+        try:
+            cls = autoclass(class_name)
+            method = getattr(cls, method_name)
+            app = method()
+            if app is not None:
+                try:
+                    return app.getApplicationContext()
+                except Exception:
+                    return app
+        except Exception:
+            continue
+    return None
+
+
+def _android_sdk_int() -> int:
+    autoclass, _cast = _load_jnius_runtime()
+    if autoclass is None:
+        return 0
+    try:
+        BuildVersion = autoclass("android.os.Build$VERSION")
+        return int(getattr(BuildVersion, "SDK_INT", 0) or 0)
+    except Exception:
+        return 0
+
+
+def _content_values_put(values, key: str, value):
+    """Best-effort ContentValues.put wrapper for pyjnius overloads."""
+    try:
+        values.put(key, value)
+        return
+    except Exception:
+        pass
+    try:
+        values.put(str(key), str(value))
+        return
+    except Exception:
+        pass
+
+
+def _android_insert_file_into_downloads(path: str, *, display_name: str | None = None, mime: str | None = None):
+    """Copy a private/internal file into MediaStore and return a content:// Uri.
+
+    This is the key Android fix for WhatsApp/share/print.  WhatsApp cannot read
+    the app's private ``/data/user/0/...`` path and a text-only ``wa.me`` URL
+    never attaches the generated report.  MediaStore gives Android and other
+    apps a readable ``content://`` URI without requiring a manifest FileProvider.
+    """
+    if not path or not os.path.exists(path):
+        return None, "missing file"
+    autoclass, _cast = _load_jnius_runtime()
+    context = _android_context()
+    if autoclass is None or context is None:
+        return None, "android runtime unavailable"
+    name = display_name or os.path.basename(path) or "hawaa_export"
+    mime = mime or guess_mime(path)
+    try:
+        ContentValues = autoclass("android.content.ContentValues")
+        MediaStore = autoclass("android.provider.MediaStore")
+        values = ContentValues()
+        _content_values_put(values, MediaStore.MediaColumns.DISPLAY_NAME, name)
+        _content_values_put(values, MediaStore.MediaColumns.MIME_TYPE, mime)
+        sdk = _android_sdk_int()
+        if sdk >= 29:
+            _content_values_put(values, MediaStore.MediaColumns.RELATIVE_PATH, "Download/Hawaa")
+            _content_values_put(values, MediaStore.MediaColumns.IS_PENDING, 1)
+            collection = MediaStore.Downloads.EXTERNAL_CONTENT_URI
+        else:
+            # Older Android: use MediaStore.Files when possible, otherwise fall
+            # back to a public copy + file URI in the caller.
+            try:
+                collection = MediaStore.Files.getContentUri("external")
+            except Exception:
+                collection = MediaStore.Downloads.EXTERNAL_CONTENT_URI
+        resolver = context.getContentResolver()
+        uri = resolver.insert(collection, values)
+        if uri is None:
+            return None, "MediaStore insert returned null"
+        stream = resolver.openOutputStream(uri)
+        if stream is None:
+            return None, "MediaStore output stream unavailable"
+        try:
+            with open(path, "rb") as src:
+                while True:
+                    chunk = src.read(1024 * 64)
+                    if not chunk:
+                        break
+                    stream.write(chunk)
+            try:
+                stream.flush()
+            except Exception:
+                pass
+        finally:
+            try:
+                stream.close()
+            except Exception:
+                pass
+        if sdk >= 29:
+            try:
+                done = ContentValues()
+                _content_values_put(done, MediaStore.MediaColumns.IS_PENDING, 0)
+                resolver.update(uri, done, None, None)
+            except Exception:
+                pass
+        return uri, "ok"
+    except Exception as exc:
+        return None, str(exc)
+
+
+def _android_file_uri(path: str):
+    autoclass, _cast = _load_jnius_runtime()
+    if autoclass is None:
+        return None
+    try:
+        Uri = autoclass("android.net.Uri")
+        File = autoclass("java.io.File")
+        return Uri.fromFile(File(path))
+    except Exception:
+        return None
+
+
+def _android_start_send_intent(uri, *, mime: str, text: str, title: str, open_whatsapp: bool = False) -> tuple[bool, str]:
+    autoclass, _cast = _load_jnius_runtime()
+    context = _android_context()
+    if autoclass is None or context is None or uri is None:
+        return False, "android intent runtime unavailable"
+    try:
+        Intent = autoclass("android.content.Intent")
+        ActivityNotFoundException = autoclass("android.content.ActivityNotFoundException")
+    except Exception as exc:
+        return False, str(exc)
+
+    def build_intent(package_name: str | None = None):
+        intent = Intent(Intent.ACTION_SEND)
+        # Some apps, including WhatsApp on a few builds, behave more reliably
+        # with */* for document attachment.  Keep the file extension/name in
+        # MediaStore so the document still appears as HTML/CSV/ZIP to the user.
+        intent.setType("*/*" if open_whatsapp else (mime or "application/octet-stream"))
+        if text:
+            intent.putExtra(Intent.EXTRA_TEXT, text)
+        if title:
+            intent.putExtra(Intent.EXTRA_SUBJECT, title)
+        intent.putExtra(Intent.EXTRA_STREAM, uri)
+        intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        if package_name:
+            intent.setPackage(package_name)
+        return intent
+
+    if open_whatsapp:
+        for package_name in ("com.whatsapp", "com.whatsapp.w4b"):
+            try:
+                context.startActivity(build_intent(package_name))
+                return True, package_name
+            except Exception as exc:
+                # Try business/chooser next.  Do not fail the whole operation.
+                last = str(exc)
+        try:
+            chooser = Intent.createChooser(build_intent(None), title or "مشاركة ملف")
+            chooser.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            context.startActivity(chooser)
+            return True, "chooser_after_whatsapp"
+        except Exception as exc:
+            return False, str(exc)
+
+    try:
+        chooser = Intent.createChooser(build_intent(None), title or "مشاركة ملف")
+        chooser.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        context.startActivity(chooser)
+        return True, "chooser"
+    except Exception as exc:
+        return False, str(exc)
+
+
+async def _try_android_native_share(path: str, text: str, title: str, *, open_whatsapp: bool = False) -> ShareResultInfo:
+    """Android-native ACTION_SEND fallback with a real file attachment.
+
+    This runs before Flet's ``ft.Share``/page APIs because the user's APK line
+    does not expose ft.Share, and URL-based WhatsApp fallback sends text only.
+    """
+    if not path or not os.path.exists(path):
+        return ShareResultInfo(False, "android_native_missing", "الملف غير موجود", path=path or "")
+    if _android_context() is None:
+        return ShareResultInfo(False, "android_native_unavailable", "Android runtime غير متاح", path=path)
+    mime = guess_mime(path)
+    uri, status = _android_insert_file_into_downloads(path, display_name=os.path.basename(path), mime=mime)
+    if uri is None:
+        public_path = copy_to_public_downloads(path) or path
+        uri = _android_file_uri(public_path)
+        if uri is None:
+            return ShareResultInfo(False, "android_native_uri_failed", status, path=public_path)
+        final_path = public_path
+    else:
+        final_path = path
+    ok, raw = _android_start_send_intent(uri, mime=mime, text=text, title=title, open_whatsapp=open_whatsapp)
+    if ok:
+        return ShareResultInfo(True, "android_native_whatsapp" if open_whatsapp else "android_native_share", "تم فتح نافذة المشاركة مع الملف المرفق", raw, path=final_path)
+    return ShareResultInfo(False, "android_native_intent_failed", raw, path=final_path)
 
 
 async def _try_page_share_api(page, path: str, text: str, title: str) -> ShareResultInfo:
@@ -284,7 +505,15 @@ async def share_file_async(
 
     errors: list[str] = []
 
-    # 1) Modern Flet service, only when available in the actual runtime.
+    # 1) Android-native ACTION_SEND with a real content:// file attachment.
+    # This is the most reliable path for the APK runtime when ft.Share is absent.
+    android_share = await _try_android_native_share(path, text, title, open_whatsapp=open_whatsapp)
+    if android_share.ok:
+        return android_share
+    if android_share.message:
+        errors.append(f"{android_share.method}: {android_share.message}")
+
+    # 2) Modern Flet service, only when available in the actual runtime.
     try:
         import flet as ft  # type: ignore
         share_cls = getattr(ft, "Share", None)
@@ -297,28 +526,25 @@ async def share_file_async(
     except Exception as exc:
         errors.append(str(exc))
 
-    # 2) Older/dynamic page-level share APIs, if this runtime provides them.
+    # 3) Older/dynamic page-level share APIs, if this runtime provides them.
     page_share = await _try_page_share_api(page, path, text, title)
     if page_share.ok:
         return page_share
     if page_share.message:
         errors.append(page_share.message)
 
-    # 3) Copy to a public Downloads/Hawaa fallback when Android permissions allow it.
+    # 4) Copy to a public Downloads/Hawaa fallback when Android permissions allow it.
     public_path = copy_to_public_downloads(path)
     final_path = public_path or path
 
-    # 4) Text-only WhatsApp fallback. It cannot attach the file reliably.
+    # 5) Do not auto-open wa.me text-only fallback for file actions.
+    # The user expects the report file to be attached.  If Android native file
+    # sharing failed, show the manual dialog and let the user explicitly choose
+    # "واتساب نص فقط" if they still want a text message.
     if open_whatsapp:
-        try:
-            if hasattr(page, "launch_url"):
-                page.launch_url(whatsapp_url((text or "") + "\n" + os.path.basename(final_path), phone))
-                _show_manual_export_dialog(page, final_path, title=title, text=text, open_whatsapp=False, phone=phone)
-                return ShareResultInfo(True, "whatsapp_text_manual_file", "تم فتح واتساب للنص فقط، والملف جاهز من نافذة التفاصيل", path=final_path)
-        except Exception as exc:
-            errors.append(str(exc))
+        errors.append("تم تعطيل fallback واتساب النصي التلقائي حتى لا تُرسل رسالة بلا ملف")
 
-    # 5) Manual non-crashing export dialog.
+    # 6) Manual non-crashing export dialog.
     if _show_manual_export_dialog(page, final_path, title=title, text=text, open_whatsapp=open_whatsapp, phone=phone):
         if public_path:
             return ShareResultInfo(True, "manual_public_downloads", "تم إنشاء الملف ونسخه إلى Downloads/Hawaa", "; ".join(errors), path=final_path)

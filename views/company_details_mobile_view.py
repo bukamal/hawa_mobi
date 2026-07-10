@@ -206,9 +206,9 @@ class CompanyDetailsMobileView(ft.Column):
     async def _share_statement_whatsapp(self, e):
         try:
             from reports.account_statement import export_account_statement_html
-            from reports.share import build_statement_message, share_file_async
+            from reports.share import share_file_async
             path = export_account_statement_html(self.company_name, self.records)
-            message = build_statement_message(self.company_name, path) + "\nاختر واتساب من نافذة المشاركة لإرسال الملف."
+            message = f"كشف حساب - {self.company_name}"
             result = await share_file_async(self._page, path, message, open_whatsapp=True, title="مشاركة كشف الحساب عبر واتساب")
             self._show_snackbar(result.message if result.ok else result.message or f"تم إنشاء الكشف: {path}", not result.ok)
         except Exception as ex:
