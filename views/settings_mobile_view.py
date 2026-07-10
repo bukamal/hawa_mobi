@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 import flet as ft
-from views.flet_compat import open_control, close_control, make_file_picker, attach_service_control, service_control_attached, filepicker_unavailable_message, run_async_task, make_expansion_tile
+from views.flet_compat import open_control, close_control, make_file_picker, attach_service_control, service_control_attached, filepicker_unavailable_message, run_async_task, make_expansion_tile, clear_transient_ui
 from views.ui_kit import page_header, data_card, show_snackbar, empty_state, info_banner, responsive_wrap
 from database import SettingsRepository
 from currency import currency
@@ -828,11 +828,11 @@ class SettingsMobileView(ft.Column):
                 self._show_snackbar("لم يتم اختيار ملف", False)
                 return
             selected = files[0]
-            path = getattr(selected, 'path', None) or getattr(selected, 'name', None)
-            if not path or not os.path.exists(path):
-                self._show_snackbar("لم يستطع Android إعطاء مسار قابل للقراءة. احفظ النسخة في Files ثم أعد المحاولة.", True)
-                return
             from services.file_export_service import FileExportService
+            path = FileExportService.resolve_picker_file_path(selected)
+            if not path:
+                self._open_restore_fallback_dialog("اختيار Android أعاد اسم ملف أو content URI غير قابل للقراءة من Python. استخدم إحدى النسخ التي أنشأها التطبيق مؤخرًا أو الصق مسار ZIP/DB قابل للقراءة.")
+                return
             info = FileExportService.inspect_backup_archive(path)
             counts = info.get('counts', {})
             msg = (
@@ -856,17 +856,78 @@ class SettingsMobileView(ft.Column):
     def _confirm_restore_backup(self, path: str, dialog):
         try:
             self._close_dialog(dialog)
+            self._show_snackbar("جاري استيراد النسخة الاحتياطية...", False, duration=2000)
             from services.file_export_service import FileExportService
+            from database.connection import DatabaseConnection
             result = FileExportService.restore_backup_archive(path)
             safety = result.get('safety_backup')
-            suffix = f" نسخة الأمان: {os.path.basename(safety)}" if safety else ""
-            self._show_snackbar("تم استيراد النسخة الاحتياطية. أعد تشغيل التطبيق لتحديث كل الشاشات." + suffix, False)
-            # Rebuild current page as much as possible; a full restart remains safest.
+            counts = result.get('verified_counts') or (result.get('inspected') or {}).get('counts', {})
+            try:
+                DatabaseConnection.reset_after_restore()
+            except Exception:
+                pass
+            # Rebuild the application shell first so the imported data is visible
+            # immediately, then show the success dialog on top of the rebuilt UI.
+            self._refresh_after_restore()
+            self._show_restore_success_dialog(counts, safety)
+        except Exception as ex:
+            self._show_snackbar(f"فشل استيراد النسخة: {ex}", True)
+
+    def _show_restore_success_dialog(self, counts: dict, safety_backup: str | None = None):
+        try:
+            msg = (
+                "تم استيراد النسخة الاحتياطية والتحقق من قاعدة البيانات.\n\n"
+                f"المستخدمون: {int((counts or {}).get('users', 0))}\n"
+                f"القيود: {int((counts or {}).get('expenses', 0))}\n"
+                f"سجل التدقيق: {int((counts or {}).get('audit_log', 0))}\n"
+                f"سداد بالنيابة: {int((counts or {}).get('third_party_payments', 0))}"
+            )
+            if safety_backup:
+                msg += f"\n\nتم حفظ نسخة أمان من البيانات السابقة: {os.path.basename(safety_backup)}"
+            dlg = ft.AlertDialog(
+                title=ft.Text("تم الاستيراد بنجاح", weight=ft.FontWeight.BOLD, color=ft.Colors.GREEN),
+                content=ft.Text(msg, selectable=True),
+                actions=[
+                    ft.FilledButton("فتح حسابات هوى الشام", on_click=lambda ev: self._after_restore_open_accounts(dlg)),
+                    ft.TextButton("إغلاق", on_click=lambda ev: self._close_dialog(dlg)),
+                ],
+            )
+            open_control(self._page, dlg)
+        except Exception:
+            self._show_snackbar("تم استيراد النسخة الاحتياطية بنجاح", False)
+
+    def _refresh_after_restore(self):
+        try:
+            clear_transient_ui(self._page, clear_fab=True)
+        except Exception:
+            pass
+        try:
+            rebuild = getattr(self._page, '_hawaa_rebuild_main', None)
+            if callable(rebuild):
+                rebuild()
+                return
+        except Exception:
+            pass
+        try:
             refresh = getattr(self._page, '_hawaa_refresh_current_page', None)
             if callable(refresh):
                 refresh()
-        except Exception as ex:
-            self._show_snackbar(f"فشل استيراد النسخة: {ex}", True)
+        except Exception:
+            pass
+
+    def _after_restore_open_accounts(self, dialog):
+        try:
+            self._close_dialog(dialog)
+        except Exception:
+            pass
+        try:
+            open_page = getattr(self._page, '_hawaa_open_page', None)
+            if callable(open_page):
+                open_page('accounts')
+                return
+        except Exception:
+            pass
+        self._refresh_after_restore()
 
     def _vacuum_db(self, e):
         try:

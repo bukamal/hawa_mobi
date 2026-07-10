@@ -208,6 +208,30 @@ class DatabaseConnection:
             pass
         self._local_conn = None
 
+    @classmethod
+    def reset_after_restore(cls):
+        """Force every future repository call to open the restored SQLite DB.
+
+        Android/Flet callbacks can keep the DatabaseConnection singleton alive
+        while a backup is restored.  Closing handles is not enough if the
+        singleton still carries old mode/server state.  This hard reset is used
+        immediately after replacing hawaa_data.db so refreshed views read the
+        imported data, not the old connection/mode.
+        """
+        try:
+            inst = cls._instance
+            if inst is not None:
+                inst.close()
+        except Exception:
+            pass
+        with cls._lock:
+            cls._instance = None
+        try:
+            cls._thread_local.conn = None
+        except Exception:
+            pass
+        cls._local_conn = None
+
     # ========== CRUD helpers (تدعم local و client) ==========
     def get_expenses(self) -> List[Dict]:
         if self.mode == "client":

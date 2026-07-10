@@ -84,6 +84,10 @@ class FileExportService:
         src = sqlite3.connect(db_path)
         dst = sqlite3.connect(snapshot_path)
         try:
+            try:
+                src.execute("PRAGMA wal_checkpoint(FULL)")
+            except Exception:
+                pass
             src.backup(dst)
         finally:
             dst.close()
@@ -213,6 +217,59 @@ class FileExportService:
             conn.close()
 
     @staticmethod
+    def resolve_picker_file_path(file_obj) -> str | None:
+        """Best-effort readable path resolver for Flet FilePicker results.
+
+        On Android, some providers return only a display name or a content URI.
+        Python cannot read content:// streams directly in the current Flet line,
+        so this function accepts only real readable filesystem paths and common
+        file:// variants.  The caller can then show the fallback importer with a
+        precise reason instead of silently doing nothing.
+        """
+        candidates = []
+        for attr in ("path", "src", "uri", "url", "name"):
+            try:
+                value = getattr(file_obj, attr, None)
+            except Exception:
+                value = None
+            if value:
+                candidates.append(str(value))
+        for raw in candidates:
+            value = (raw or "").strip().strip('"').strip("'")
+            if not value:
+                continue
+            if value.startswith("file://"):
+                try:
+                    from urllib.parse import unquote, urlparse
+                    value = unquote(urlparse(value).path or value[7:])
+                except Exception:
+                    value = value[7:]
+            if value.startswith("content://"):
+                continue
+            try:
+                if os.path.exists(value) and os.path.isfile(value):
+                    return value
+            except Exception:
+                continue
+        return None
+
+    @staticmethod
+    def _count_current_rows() -> dict:
+        from database.connection import get_local_db_path
+        db_path = get_local_db_path()
+        counts = {}
+        conn = sqlite3.connect(db_path)
+        try:
+            for table in ("users", "expenses", "settings", "exchange_rates", "audit_log", "third_party_payments"):
+                try:
+                    counts[table] = int(conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0])
+                except Exception:
+                    counts[table] = 0
+            return counts
+        finally:
+            conn.close()
+
+    @staticmethod
     def inspect_backup_archive(backup_path: str) -> dict:
         """Inspect a backup ZIP or direct .db file without modifying current data."""
         if not backup_path or not os.path.exists(backup_path):
@@ -280,26 +337,70 @@ class FileExportService:
                         config_candidate = os.path.join(tmp_dir, "config.json")
             FileExportService._validate_sqlite_backup_db(candidate_db)
 
-            # Close singleton connection before replacing.
+            # Preserve device-local bootstrap settings.  A backup copied from a
+            # Windows/client setup may contain network/mode=client; after import
+            # that would make the Android app look at the server and the restored
+            # local data would appear to be missing.
+            preserved_settings = {}
+            try:
+                local_conn = sqlite3.connect(target_db)
+                try:
+                    for key in ("network/mode", "network/server_url", "auth/network_token"):
+                        row = local_conn.execute("SELECT value FROM settings WHERE key=?", (key,)).fetchone()
+                        if row is not None:
+                            preserved_settings[key] = row[0]
+                finally:
+                    local_conn.close()
+            except Exception:
+                pass
+
+            # Close singleton connection before replacing and remove sidecars.
             db.close()
+            try:
+                DatabaseConnection.reset_after_restore()
+            except Exception:
+                pass
             for sidecar in (target_db + "-wal", target_db + "-shm"):
                 try:
                     if os.path.exists(sidecar):
                         os.remove(sidecar)
                 except Exception:
                     pass
-            shutil.copy2(candidate_db, target_db)
+
+            restore_tmp = os.path.join(target_dir, f".hawaa_restore_{_dt.datetime.now().strftime('%Y%m%d_%H%M%S_%f')}.db")
+            shutil.copy2(candidate_db, restore_tmp)
+            os.replace(restore_tmp, target_db)
             if config_candidate and os.path.exists(config_candidate):
                 shutil.copy2(config_candidate, os.path.join(target_dir, "config.json"))
 
-            # Run migrations/ensure schema on restored DB.
+            # Restore device-local network bootstrap after database replacement.
+            try:
+                local_conn = sqlite3.connect(target_db)
+                try:
+                    local_conn.execute("CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT)")
+                    for key, value in preserved_settings.items():
+                        if key == "network/mode":
+                            # Backup import in the APK is a local-data operation.
+                            value = "local"
+                        local_conn.execute("INSERT OR REPLACE INTO settings (key, value) VALUES (?,?)", (key, str(value)))
+                    if "network/mode" not in preserved_settings:
+                        local_conn.execute("INSERT OR REPLACE INTO settings (key, value) VALUES (?,?)", ("network/mode", "local"))
+                    local_conn.commit()
+                finally:
+                    local_conn.close()
+            except Exception:
+                pass
+
+            # Run migrations/ensure schema on restored DB, then reset all handles
+            # again so UI repositories reopen the migrated restored database.
             try:
                 from database.migrations import ensure_db
                 ensure_db()
+                DatabaseConnection.reset_after_restore()
             except Exception:
-                # Re-raise after preserving replacement; caller should display details.
                 raise
-            return {"ok": True, "safety_backup": safety_backup, "restored_db": target_db, "inspected": inspected}
+            verified_counts = FileExportService._count_current_rows()
+            return {"ok": True, "safety_backup": safety_backup, "restored_db": target_db, "inspected": inspected, "verified_counts": verified_counts}
         finally:
             shutil.rmtree(tmp_dir, ignore_errors=True)
 

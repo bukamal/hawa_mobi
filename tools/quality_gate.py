@@ -87,6 +87,7 @@ def main() -> int:
         "tools/share_export_fallback_smoke_test.py",
         "tools/report_action_share_print_whatsapp_smoke_test.py",
         "tools/backup_restore_smoke_test.py",
+        "tools/backup_import_runtime_refresh_smoke_test.py",
         "tools/network_diagnostics_smoke_test.py",
         "tools/sqlite_thread_safety_smoke_test.py",
         "tools/third_party_payment_smoke_test.py",
