@@ -721,18 +721,50 @@ def filepicker_unavailable_message() -> str:
         "استخدم نسخة APK مبنية بـ Flet يدعم FilePicker، أو استخدم مسار النسخة الاحتياطي داخل تخزين التطبيق كحل مؤقت."
     )
 
+def make_snackbar(message: str, is_error: bool = False, duration: int | None = 3000):
+    """Create a SnackBar across Flet Android/Desktop variants.
+
+    Some embedded Android Flet runtimes reject newer constructor kwargs such as
+    ``duration`` even when the desktop Python wheel accepts them.  Notification
+    creation must never block high-value actions such as backup restore, so we
+    construct through the keyword fallback helper and then set optional
+    properties best-effort.
+    """
+    kwargs = {
+        "content": ft.Text(str(message), size=13),
+        "bgcolor": ft.Colors.RED if is_error else ft.Colors.GREEN,
+    }
+    if duration is not None:
+        kwargs["duration"] = duration
+    try:
+        snack = _construct_with_keyword_fallback(ft.SnackBar, kwargs)
+    except Exception:
+        # Absolute minimum fallback: only content is required on old runtimes.
+        snack = ft.SnackBar(content=ft.Text(str(message)))
+        try:
+            snack.bgcolor = ft.Colors.RED if is_error else ft.Colors.GREEN
+        except Exception:
+            pass
+    # If the constructor rejected duration but the property exists, set it after
+    # creation.  If not, ignore it; restore/import must continue.
+    if duration is not None:
+        try:
+            snack.duration = duration
+        except Exception:
+            pass
+    return snack
+
+
 def show_snackbar(page: ft.Page, message: str, is_error: bool = False, duration: int = 3000):
     """Show a SnackBar without adding it as a modal overlay route.
 
     On the pinned Android runtime, repeatedly appending SnackBar to
     ``page.overlay`` can behave like a blank transient surface after login/save.
-    The legacy-safe Flet 0.28 path is ``page.snack_bar = snack`` + ``open=True``.
+    The legacy-safe path is ``page.snack_bar = snack`` + ``open=True``.
+    The helper is deliberately exception-tolerant: status notifications must not
+    prevent restore, save, edit, delete, share or print actions.
     """
-    snack = ft.SnackBar(
-        content=ft.Text(str(message), size=13),
-        bgcolor=ft.Colors.RED if is_error else ft.Colors.GREEN,
-        duration=duration,
-    )
+    snack = make_snackbar(message, is_error=is_error, duration=duration)
     if page is None:
         return snack
     try:

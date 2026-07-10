@@ -50,8 +50,22 @@ class SettingsMobileView(ft.Column):
             elevation=1,
         )
 
-    def _show_snackbar(self, message, is_error=False):
-        show_snackbar(self._page, message, is_error)
+    def _show_snackbar(self, message, is_error=False, duration=3000):
+        """Settings-local snackbar wrapper.
+
+        Backup restore actions use short status messages before opening the
+        Android file picker.  Earlier code accepted only (message, is_error),
+        so calls passing duration crashed before the FilePicker could open; the
+        button looked dead and diagnostics showed:
+        SettingsMobileView._show_snackbar() got an unexpected keyword argument
+        'duration'.
+        """
+        try:
+            return show_snackbar(self._page, message, is_error, duration=duration)
+        except TypeError:
+            # Compatibility with older local/ui_kit wrappers.  Do not let a
+            # transient notification block backup restore.
+            return show_snackbar(self._page, message, is_error)
 
     def _currency_tab(self):
         field_width = 280
