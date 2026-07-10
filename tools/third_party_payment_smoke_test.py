@@ -31,3 +31,6 @@ records = ExpenseRepository().get_all(convert_to_display=False)
 assert len(records) == 4, records
 assert len([r for r in records if r.get("source_type") == "third_party_payment_reversal"]) == 2
 print("third_party_payment_smoke_test passed")
+
+import sys
+sys.exit(0)

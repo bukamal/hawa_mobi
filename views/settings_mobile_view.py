@@ -25,6 +25,8 @@ class SettingsMobileView(ft.Column):
         self.rate_fields = {}
         self._restore_file_picker = None
         self._restore_picker_opened_at = None
+        self._restore_picker_result_seen = False
+        self._restore_operation_busy = False
 
         self.controls = [
             page_header(translate('settings'), ft.Icons.SETTINGS, subtitle="إعدادات النظام، الشبكة، النسخ الاحتياطي والعملات"),
@@ -616,7 +618,7 @@ class SettingsMobileView(ft.Column):
             on_click=self._export_csv
         )
         import_btn = ft.OutlinedButton(
-            content=ft.Row([ft.Icon(ft.Icons.RESTORE), ft.Text("استيراد نسخة احتياطية")]),
+            content=ft.Row([ft.Icon(ft.Icons.RESTORE), ft.Text("استيراد نسخة احتياطية خارجية")]),
             on_click=self._pick_backup_to_restore
         )
         import_latest_btn = ft.OutlinedButton(
@@ -626,6 +628,10 @@ class SettingsMobileView(ft.Column):
         import_download_btn = ft.OutlinedButton(
             content=ft.Row([ft.Icon(ft.Icons.FOLDER_OPEN), ft.Text("استيراد من Download/Hawaa")]),
             on_click=self._restore_from_public_downloads
+        )
+        restore_diag_btn = ft.TextButton(
+            content=ft.Row([ft.Icon(ft.Icons.BUG_REPORT_OUTLINED), ft.Text("تشخيص الاستيراد")]),
+            on_click=self._show_restore_diagnostics
         )
         vacuum_btn = ft.FilledButton(
             content=ft.Row([ft.Icon(ft.Icons.COMPRESS), ft.Text("ضغط قاعدة البيانات")]),
@@ -639,7 +645,7 @@ class SettingsMobileView(ft.Column):
         )
         return ft.Column([
             info_banner(
-                "على Android لا يتم الحفظ في مسار ثابت. يتم إنشاء الملف داخل تخزين التطبيق ثم تفتح نافذة المشاركة لاختيار Files / Drive / WhatsApp / Telegram.",
+                "استيراد النسخة الخارجية يستخدم منتقي ملفات Android أولًا. إذا لم يرجع المنتقي نتيجة، استخدم زر Download/Hawaa أو افتح التشخيص. لا يتم طلب صلاحيات التخزين داخل زر الاستيراد حتى لا يتجمد الحدث.",
                 icon=ft.Icons.FOLDER_SHARED,
             ),
             backup_btn,
@@ -647,6 +653,7 @@ class SettingsMobileView(ft.Column):
             import_btn,
             import_latest_btn,
             import_download_btn,
+            restore_diag_btn,
             vacuum_btn,
             ft.Divider(),
             ft.Text("⚠️ إعادة التهيئة تحذف جميع البيانات نهائياً", color=ft.Colors.RED, size=12),
@@ -684,36 +691,34 @@ class SettingsMobileView(ft.Column):
             self._show_snackbar(f"فشل التصدير: {str(ex)}", True)
 
     def _pick_backup_to_restore(self, e):
+        """Open Android FilePicker without blocking the click handler.
+
+        Earlier phases requested storage permission before opening the picker.
+        On some Android/Flet 0.28.x builds PermissionHandler blocks the UI event
+        thread; the button then looks completely dead.  SAF/FilePicker does not
+        need broad storage permission to hand the selected file to the app, so we
+        open the picker immediately and run a watchdog that shows diagnostics if
+        the native chooser never calls back into Python.
+        """
         try:
             from database.connection import DatabaseConnection
+            from services.file_export_service import FileExportService
             if DatabaseConnection().is_remote():
                 self._show_snackbar("أنت في وضع العميل. الاستعادة تتم من نسخة Windows فقط. غيّر الوضع إلى محلي لاستعادة نسخة داخل الهاتف.", True)
                 return
 
-            # This is not strictly required for Android SAF/FilePicker, but it
-            # is required for our hard fallback that scans Download/Hawaa when
-            # the native picker opens and never delivers on_result to Python.
-            try:
-                from services.storage_permission_service import StoragePermissionService
-                _ok, perm_msg = StoragePermissionService.request(self._page)
-                try:
-                    from services.file_export_service import FileExportService
-                    FileExportService.log_restore_event("storage permission: " + str(perm_msg))
-                except Exception:
-                    pass
-            except Exception as perm_ex:
-                try:
-                    from services.file_export_service import FileExportService
-                    FileExportService.log_restore_event("storage permission request failed: " + str(perm_ex))
-                except Exception:
-                    pass
+            self._restore_picker_result_seen = False
+            self._show_snackbar("جاري فتح اختيار النسخة الاحتياطية...", False, duration=1800)
+            FileExportService.log_restore_event("restore picker button tapped")
 
             self._restore_file_picker = make_file_picker(self._on_restore_backup_picked)
             picker = self._restore_file_picker
             attach_service_control(self._page, picker)
             if not service_control_attached(picker):
+                FileExportService.log_restore_event("restore picker not attached; opening fallback dialog")
                 self._open_restore_fallback_dialog(filepicker_unavailable_message())
                 return
+
             pick_kwargs = dict(
                 allow_multiple=False,
                 allowed_extensions=["zip", "db", "sqlite", "sqlite3"],
@@ -728,51 +733,75 @@ class SettingsMobileView(ft.Column):
                 self._restore_picker_opened_at = _dt.datetime.now().isoformat(timespec="seconds")
             except Exception:
                 self._restore_picker_opened_at = "started"
+
+            # Start watchdog after the native chooser is requested.  It does not
+            # restore anything by itself; it only proves that the click handler is
+            # alive and gives the user a deterministic fallback if on_result is
+            # lost by the Android runtime.
+            run_async_task(self._page, self._restore_picker_watchdog)
+
+            try:
+                FileExportService.log_restore_event("opening native picker with_data=True")
+                picker.pick_files(with_data=True, **pick_kwargs)
+            except TypeError:
+                FileExportService.log_restore_event("with_data unsupported; opening picker without bytes")
+                picker.pick_files(**pick_kwargs)
+        except Exception as ex:
             try:
                 from services.file_export_service import FileExportService
-                FileExportService.log_restore_event("opening native picker with_data=True")
+                FileExportService.log_restore_event(f"restore picker open failed: {ex}")
+            except Exception:
+                pass
+            self._show_snackbar(f"تعذر فتح اختيار النسخة: {ex}", True)
+
+    async def _restore_picker_watchdog(self):
+        try:
+            await asyncio.sleep(18)
+            if bool(getattr(self, "_restore_picker_result_seen", False)):
+                return
+            from services.file_export_service import FileExportService
+            FileExportService.log_restore_event("restore picker watchdog: no on_result after timeout")
+            self._open_restore_fallback_dialog(
+                "تم فتح منتقي الملفات، لكن لم يرجع أي نتيجة إلى التطبيق خلال المهلة. "
+                "هذا يعني أن المشكلة في callback الخاص بـ Flet/Android وليس في قاعدة البيانات. "
+                "ضع ملف النسخة في Download/Hawaa ثم اضغط زر: استيراد من Download/Hawaa.\n\n"
+                f"سجل التشخيص: {FileExportService.restore_log_path()}"
+            )
+        except Exception as ex:
+            try:
+                self._show_snackbar(f"تعذر تشغيل تشخيص المنتقي: {ex}", True)
             except Exception:
                 pass
 
-            # Critical for Android scoped storage: a picker may not expose a
-            # filesystem path.  with_data=True asks Flet to include the selected
-            # file bytes so we can stage the external backup inside app cache and
-            # restore it reliably.
-            try:
-                picker.pick_files(with_data=True, **pick_kwargs)
-            except TypeError:
-                try:
-                    from services.file_export_service import FileExportService
-                    FileExportService.log_restore_event("with_data unsupported; opening picker without bytes")
-                except Exception:
-                    pass
-                picker.pick_files(**pick_kwargs)
-        except Exception as ex:
-            self._show_snackbar(f"تعذر فتح اختيار النسخة: {ex}", True)
-
     def _restore_from_public_downloads(self, e=None):
-        """Import a readable external backup without relying on FilePicker result.
+        """Start public-folder import scan in the background.
 
-        Use when Android opens the chooser but returns no callback.  The user can
-        place the ZIP/DB in Download/Hawaa, Download, Documents, WhatsApp
-        Documents or Telegram Documents, and this scans only those bounded roots.
+        The old implementation scanned Downloads synchronously and also tried to
+        request runtime storage permission inside the click event.  On Android
+        this can make the button look unresponsive.  Now the button immediately
+        shows feedback, then scans in a task/thread.
         """
+        self._show_snackbar("جاري البحث عن نسخ في Download/Hawaa...", False, duration=2000)
+        run_async_task(self._page, self._restore_from_public_downloads_async)
+
+    async def _restore_from_public_downloads_async(self):
         try:
             from database.connection import DatabaseConnection
             if DatabaseConnection().is_remote():
                 self._show_snackbar("أنت في وضع العميل. الاستعادة تتم من نسخة Windows فقط. غيّر الوضع إلى محلي أولاً.", True)
                 return
-            try:
-                from services.storage_permission_service import StoragePermissionService
-                StoragePermissionService.request(self._page)
-            except Exception:
-                pass
             from services.file_export_service import FileExportService
             FileExportService.log_restore_event("scan external downloads requested")
-            found = FileExportService.find_external_backup_archives(limit=8, validate=True)
+
+            # Do the filesystem walk/ZIP validation away from the UI callback.
+            try:
+                found = await asyncio.to_thread(FileExportService.find_external_backup_archives, 8, validate=True)
+            except AttributeError:
+                found = FileExportService.find_external_backup_archives(limit=8, validate=True)
+
             if not found:
                 log_path = FileExportService.restore_log_path()
-                self._show_snackbar("لم أجد نسخة صالحة في Download/Hawaa أو Download. ضع ملف ZIP هناك ثم أعد المحاولة.", True)
+                self._show_snackbar("لم أجد نسخة صالحة في Download/Hawaa أو Download.", True)
                 self._open_restore_fallback_dialog(
                     "لم يتم العثور على ZIP/DB صالح في المجلدات العامة. "
                     "انقل النسخة إلى Download/Hawaa ثم اضغط زر: استيراد من Download/Hawaa.\n\n"
@@ -785,7 +814,7 @@ class SettingsMobileView(ft.Column):
             dlg = ft.AlertDialog(
                 modal=True,
                 title=ft.Text("نسخ خارجية تم العثور عليها", weight=ft.FontWeight.BOLD),
-                content=ft.Container(width=460, content=ft.Column(controls, tight=True, spacing=8)),
+                content=ft.Container(width=460, content=ft.Column(controls, tight=True, spacing=8, scroll=ft.ScrollMode.AUTO)),
                 actions=[ft.TextButton("إغلاق", on_click=lambda ev: self._close_dialog(dlg))],
             )
             for path in found:
@@ -801,6 +830,11 @@ class SettingsMobileView(ft.Column):
                 )
             open_control(self._page, dlg)
         except Exception as ex:
+            try:
+                from services.file_export_service import FileExportService
+                FileExportService.log_restore_event(f"scan external downloads failed: {ex}")
+            except Exception:
+                pass
             self._show_snackbar(f"فشل فحص النسخ الخارجية: {ex}", True)
 
     def _restore_latest_internal_backup(self, e=None):
@@ -970,6 +1004,8 @@ class SettingsMobileView(ft.Column):
 
     def _on_restore_backup_picked(self, e):
         try:
+            self._restore_picker_result_seen = True
+            self._show_snackbar("تم استلام الملف من Android، جاري فحص النسخة...", False, duration=1800)
             from services.file_export_service import FileExportService
             try:
                 FileExportService.log_restore_event("on_result received: " + str(e))
@@ -1028,21 +1064,33 @@ class SettingsMobileView(ft.Column):
     def _confirm_restore_backup(self, path: str, dialog):
         try:
             self._close_dialog(dialog)
-            self._show_snackbar("جاري استيراد النسخة الاحتياطية...", False, duration=2000)
+        except Exception:
+            pass
+        self._show_snackbar("جاري استيراد النسخة الاحتياطية...", False, duration=2500)
+        run_async_task(self._page, self._confirm_restore_backup_async, path)
+
+    async def _confirm_restore_backup_async(self, path: str):
+        try:
             from services.file_export_service import FileExportService
             from database.connection import DatabaseConnection
-            result = FileExportService.restore_backup_archive(path)
+            try:
+                result = await asyncio.to_thread(FileExportService.restore_backup_archive, path)
+            except AttributeError:
+                result = FileExportService.restore_backup_archive(path)
             safety = result.get('safety_backup')
             counts = result.get('verified_counts') or (result.get('inspected') or {}).get('counts', {})
             try:
                 DatabaseConnection.reset_after_restore()
             except Exception:
                 pass
-            # Rebuild the application shell first so the imported data is visible
-            # immediately, then show the success dialog on top of the rebuilt UI.
             self._refresh_after_restore()
             self._show_restore_success_dialog(counts, safety)
         except Exception as ex:
+            try:
+                from services.file_export_service import FileExportService
+                FileExportService.log_restore_event(f"restore failed in async confirm: {ex}")
+            except Exception:
+                pass
             self._show_snackbar(f"فشل استيراد النسخة: {ex}", True)
 
     def _show_restore_success_dialog(self, counts: dict, safety_backup: str | None = None):
@@ -1100,6 +1148,37 @@ class SettingsMobileView(ft.Column):
         except Exception:
             pass
         self._refresh_after_restore()
+
+    def _show_restore_diagnostics(self, e=None):
+        try:
+            from services.file_export_service import FileExportService
+            log_path = FileExportService.restore_log_path()
+            try:
+                with open(log_path, "r", encoding="utf-8") as f:
+                    lines = f.read().splitlines()[-25:]
+                log_text = "\n".join(lines) or "لا يوجد سجل بعد."
+            except Exception as ex:
+                log_text = f"تعذر قراءة السجل: {ex}"
+            roots = "\n".join(FileExportService._public_import_roots())
+            msg = (
+                "تشخيص استيراد النسخ الاحتياطية\n\n"
+                f"آخر فتح للمنتقي: {self._restore_picker_opened_at or 'لم يفتح بعد'}\n"
+                f"وصلت نتيجة من المنتقي: {'نعم' if self._restore_picker_result_seen else 'لا'}\n"
+                f"مسار السجل: {log_path}\n\n"
+                "مجلدات البحث:\n"
+                f"{roots}\n\n"
+                "آخر السجل:\n"
+                f"{log_text}"
+            )
+            dlg = ft.AlertDialog(
+                modal=True,
+                title=ft.Text("تشخيص الاستيراد", weight=ft.FontWeight.BOLD),
+                content=ft.Container(width=480, height=520, content=ft.Column([ft.Text(msg, selectable=True, size=11)], scroll=ft.ScrollMode.AUTO)),
+                actions=[ft.TextButton("إغلاق", on_click=lambda ev: self._close_dialog(dlg))],
+            )
+            open_control(self._page, dlg)
+        except Exception as ex:
+            self._show_snackbar(f"تعذر عرض التشخيص: {ex}", True)
 
     def _vacuum_db(self, e):
         try:

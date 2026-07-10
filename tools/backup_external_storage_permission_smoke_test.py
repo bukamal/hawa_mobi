@@ -13,7 +13,7 @@ assert 'permissions = ["camera", "storage"]' in pyproject, "Flet storage permiss
 assert 'android.permission.READ_EXTERNAL_STORAGE' in pyproject, "READ_EXTERNAL_STORAGE missing"
 assert 'android.permission.WRITE_EXTERNAL_STORAGE' in pyproject, "WRITE_EXTERNAL_STORAGE missing"
 assert 'android.permission.MANAGE_EXTERNAL_STORAGE' in pyproject, "MANAGE_EXTERNAL_STORAGE declaration missing for sideload fallback"
-assert 'StoragePermissionService.request' in settings, "Settings must request storage permission before external import fallback"
+assert 'StoragePermissionService.request' not in settings.split("def _pick_backup_to_restore", 1)[1].split("def _restore_latest_internal_backup", 1)[0], "Restore buttons must not request storage permission inside the click flow"
 assert 'self._restore_file_picker' in settings, "FilePicker must be retained on the view to keep callback alive"
 assert 'find_external_backup_archives' in export, "External Download/Hawaa fallback scanner missing"
 assert 'Download/Hawaa' in settings, "User-facing Download/Hawaa fallback missing"
