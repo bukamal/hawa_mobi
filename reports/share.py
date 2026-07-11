@@ -17,6 +17,7 @@ import mimetypes
 import os
 import re
 import shutil
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
@@ -294,6 +295,119 @@ def _android_file_uri(path: str):
         return None
 
 
+
+def _android_copy_to_cache_for_share(path: str) -> tuple[str | None, str]:
+    """Copy a report into Android app cache for WhatsApp-only sharing.
+
+    MediaStore copies are useful for public visibility, but some WhatsApp builds
+    ignore MediaStore document streams and send only EXTRA_TEXT.  For the
+    WhatsApp button we therefore first create a clean file inside the APK cache
+    and share that stream.  The cache file is temporary; external apps get read
+    access only through the outgoing intent flags.
+    """
+    if not path or not os.path.exists(path):
+        return None, "missing file"
+    context = _android_context()
+    cache_root = None
+    if context is not None:
+        try:
+            cache_root = str(context.getCacheDir().getAbsolutePath())
+        except Exception:
+            cache_root = None
+    if not cache_root:
+        cache_root = os.environ.get("FLET_APP_STORAGE_TEMP") or os.environ.get("TMPDIR") or os.path.dirname(path)
+    try:
+        target_dir = os.path.join(cache_root, "hawaa_whatsapp_share")
+        os.makedirs(target_dir, exist_ok=True)
+        # Clear stale exports so WhatsApp sees only the fresh document.
+        try:
+            for old in Path(target_dir).glob("*"):
+                if old.is_file():
+                    try:
+                        old.unlink()
+                    except Exception:
+                        pass
+        except Exception:
+            pass
+        target = os.path.join(target_dir, os.path.basename(path) or f"hawaa_export_{int(time.time())}.html")
+        shutil.copy2(path, target)
+        if os.path.exists(target) and os.path.getsize(target) > 0:
+            return target, "ok"
+        return None, "cache copy failed"
+    except Exception as exc:
+        return None, str(exc)
+
+
+def _disable_file_uri_exposure_guard() -> None:
+    """Allow last-resort file:// sharing on Android builds without FileProvider.
+
+    We still prefer content://.  This is only a fallback for the user's APK line
+    where configuring a manifest provider is not available through the current
+    Flet build pipeline.
+    """
+    autoclass, _cast = _load_jnius_runtime()
+    if autoclass is None:
+        return
+    try:
+        StrictMode = autoclass("android.os.StrictMode")
+        disable = getattr(StrictMode, "disableDeathOnFileUriExposure", None)
+        if callable(disable):
+            disable()
+    except Exception:
+        pass
+
+
+def _android_fileprovider_uri(path: str):
+    """Try AndroidX/support FileProvider authorities when the APK has one."""
+    autoclass, _cast = _load_jnius_runtime()
+    context = _android_context()
+    if autoclass is None or context is None or not path:
+        return None, "runtime unavailable"
+    try:
+        File = autoclass("java.io.File")
+        try:
+            package_name = str(context.getPackageName())
+        except Exception:
+            package_name = "com.hawaa.hawaa_accounting"
+        authorities = [
+            f"{package_name}.fileprovider",
+            f"{package_name}.provider",
+            f"{package_name}.flutter.share_provider",
+        ]
+        providers = []
+        for cls_name in ("androidx.core.content.FileProvider", "android.support.v4.content.FileProvider"):
+            try:
+                providers.append(autoclass(cls_name))
+            except Exception:
+                pass
+        last = "FileProvider class unavailable"
+        for provider in providers:
+            for authority in authorities:
+                try:
+                    uri = provider.getUriForFile(context, authority, File(path))
+                    if uri is not None:
+                        return uri, f"fileprovider:{authority}"
+                except Exception as exc:
+                    last = str(exc)
+        return None, last
+    except Exception as exc:
+        return None, str(exc)
+
+
+def _android_cache_uri_for_whatsapp(path: str):
+    """Return a URI for a cache-only WhatsApp share."""
+    cache_path, status = _android_copy_to_cache_for_share(path)
+    if not cache_path:
+        return None, None, status
+    uri, provider_status = _android_fileprovider_uri(cache_path)
+    if uri is not None:
+        return uri, cache_path, provider_status
+    _disable_file_uri_exposure_guard()
+    uri = _android_file_uri(cache_path)
+    if uri is not None:
+        return uri, cache_path, f"cache_file_uri:{provider_status}"
+    return None, cache_path, f"cache uri failed:{provider_status}"
+
 def _android_start_send_intent(uri, *, mime: str, text: str, title: str, open_whatsapp: bool = False) -> tuple[bool, str]:
     autoclass, _cast = _load_jnius_runtime()
     context = _android_context()
@@ -307,19 +421,32 @@ def _android_start_send_intent(uri, *, mime: str, text: str, title: str, open_wh
 
     def build_intent(package_name: str | None = None):
         intent = Intent(Intent.ACTION_SEND)
-        # Some apps, including WhatsApp on a few builds, behave more reliably
-        # with */* for document attachment.  Keep the file extension/name in
-        # MediaStore so the document still appears as HTML/CSV/ZIP to the user.
-        intent.setType("*/*" if open_whatsapp else (mime or "application/octet-stream"))
-        if text:
+        # WhatsApp must receive a pure document stream.  If EXTRA_TEXT is added,
+        # several WhatsApp builds send the text only and silently drop the file.
+        intent.setType("application/octet-stream" if open_whatsapp else (mime or "application/octet-stream"))
+        if text and not open_whatsapp:
             intent.putExtra(Intent.EXTRA_TEXT, text)
         if title:
             intent.putExtra(Intent.EXTRA_SUBJECT, title)
+            try:
+                intent.putExtra(Intent.EXTRA_TITLE, title)
+            except Exception:
+                pass
         intent.putExtra(Intent.EXTRA_STREAM, uri)
+        try:
+            ClipData = autoclass("android.content.ClipData")
+            resolver = context.getContentResolver()
+            intent.setClipData(ClipData.newUri(resolver, title or "Hawaa", uri))
+        except Exception:
+            pass
         intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
         intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         if package_name:
             intent.setPackage(package_name)
+            try:
+                context.grantUriPermission(package_name, uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            except Exception:
+                pass
         return intent
 
     if open_whatsapp:
@@ -358,16 +485,28 @@ async def _try_android_native_share(path: str, text: str, title: str, *, open_wh
     if _android_context() is None:
         return ShareResultInfo(False, "android_native_unavailable", "Android runtime غير متاح", path=path)
     mime = guess_mime(path)
+    if open_whatsapp:
+        uri, cache_path, status = _android_cache_uri_for_whatsapp(path)
+        if uri is not None:
+            ok, raw = _android_start_send_intent(uri, mime=mime, text="", title=title, open_whatsapp=True)
+            if ok:
+                return ShareResultInfo(True, "android_cache_whatsapp", "تم فتح واتساب مع ملف الكشف من الكاش", raw, path=cache_path or path)
+        # If cache-only fails, continue to MediaStore fallback but still without
+        # EXTRA_TEXT so WhatsApp cannot degrade to text-only.
+        cache_status = status
+    else:
+        cache_status = ""
+
     uri, status = _android_insert_file_into_downloads(path, display_name=os.path.basename(path), mime=mime)
     if uri is None:
         public_path = copy_to_public_downloads(path) or path
         uri = _android_file_uri(public_path)
         if uri is None:
-            return ShareResultInfo(False, "android_native_uri_failed", status, path=public_path)
+            return ShareResultInfo(False, "android_native_uri_failed", f"{cache_status}; {status}".strip('; '), path=public_path)
         final_path = public_path
     else:
         final_path = path
-    ok, raw = _android_start_send_intent(uri, mime=mime, text=text, title=title, open_whatsapp=open_whatsapp)
+    ok, raw = _android_start_send_intent(uri, mime=mime, text=("" if open_whatsapp else text), title=title, open_whatsapp=open_whatsapp)
     if ok:
         return ShareResultInfo(True, "android_native_whatsapp" if open_whatsapp else "android_native_share", "تم فتح نافذة المشاركة مع الملف المرفق", raw, path=final_path)
     return ShareResultInfo(False, "android_native_intent_failed", raw, path=final_path)
