@@ -33,9 +33,39 @@ def new_service_case_reference(prefix: str = "SVC") -> str:
     return f"{prefix}-{datetime.datetime.now().strftime('%Y%m%d-%H%M%S')}-{secrets.token_hex(3).upper()}"
 
 
+_ARABIC_DIGITS = str.maketrans({
+    "٠": "0", "١": "1", "٢": "2", "٣": "3", "٤": "4",
+    "٥": "5", "٦": "6", "٧": "7", "٨": "8", "٩": "9",
+    "۰": "0", "۱": "1", "۲": "2", "۳": "3", "۴": "4",
+    "۵": "5", "۶": "6", "۷": "7", "۸": "8", "۹": "9",
+})
+
+
+def normalize_amount_text(value: Any) -> str:
+    """Normalize user-entered mobile amounts.
+
+    Android Arabic keyboards often submit Eastern Arabic digits and Arabic
+    decimal separators.  A save button must not appear dead merely because the
+    user typed ١٥٠ or ١٥٠٫٥.  Keep this parser strict but locale-tolerant.
+    """
+    raw = str(value or "").strip().translate(_ARABIC_DIGITS)
+    raw = raw.replace(" ", "").replace(" ", "")
+    raw = raw.replace("٬", ",").replace("٫", ".")
+    if "," in raw and "." in raw:
+        # Treat commas as thousands separators when both symbols exist.
+        raw = raw.replace(",", "")
+    elif "," in raw:
+        # A single comma is usually a decimal separator in mobile Arabic input.
+        if raw.count(",") == 1 and len(raw.rsplit(",", 1)[1]) in (1, 2, 3):
+            raw = raw.replace(",", ".")
+        else:
+            raw = raw.replace(",", "")
+    return raw
+
+
 def parse_amount(value: Any, label: str) -> float:
     try:
-        amount = float(str(value or "0").replace(",", "").strip())
+        amount = float(normalize_amount_text(value))
     except Exception:
         raise ValueError(f"{label} غير صالح")
     if amount < 0:

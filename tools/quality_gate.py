@@ -78,6 +78,7 @@ def main() -> int:
         "tools/mobile_money_format_smoke_test.py",
         "tools/network_contract_test.py",
         "tools/api_capabilities_contract_smoke_test.py",
+        "tools/comprehensive_currency_language_api_test.py",
         "tools/mobile_pairing_contract_smoke_test.py",
         "tools/qr_pairing_ui_smoke_test.py",
         "tools/manual_pairing_code_smoke_test.py",

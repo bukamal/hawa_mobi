@@ -1,13 +1,25 @@
 # -*- coding: utf-8 -*-
+import asyncio
 import datetime
+import traceback
 import flet as ft
 
 from auth.session import UserSession
 from currency import currency
 from database import ServiceCaseRepository
 from services.ledger_operation_service import SERVICE_TYPES
-from views.flet_compat import close_control
-from views.dialogs.dialog_kit import dialog_title, dialog_body, cancel_button, save_button, show_snackbar, set_button_busy, normalize_text, parse_non_negative_amount
+from services.service_case_service import validate_service_case_payload
+from views.flet_compat import close_control, run_async_task
+from views.dialogs.dialog_kit import (
+    dialog_title,
+    dialog_body,
+    cancel_button,
+    save_button,
+    show_snackbar,
+    set_button_busy,
+    normalize_text,
+    parse_non_negative_amount,
+)
 
 
 class ServiceCaseDialog(ft.AlertDialog):
@@ -22,6 +34,7 @@ class ServiceCaseDialog(ft.AlertDialog):
         super().__init__()
         self._page = page
         self.on_save = on_save
+        self._saving = False
         page_width = page.width or 400
         page_height = page.height or 650
         dialog_width = min(390, page_width - 32)
@@ -39,9 +52,16 @@ class ServiceCaseDialog(ft.AlertDialog):
         self.notes_field = ft.TextField(label="ملاحظات داخلية", multiline=True, min_lines=2, max_lines=3, width=dialog_width - 20)
         self.profit_text = ft.Text("", size=13, weight=ft.FontWeight.BOLD, color=ft.Colors.INDIGO)
         self.info_text = ft.Text("سيتم إنشاء قيدين مقفلين: لنا على الشركة العميلة، وله للشركة المورّدة. الربح يظهر داخليًا فقط.", size=12, color=ft.Colors.GREY_700)
+        self.error_text = ft.Text("", size=12, color=ft.Colors.RED, selectable=True)
+        self.error_box = ft.Container(
+            content=ft.Row([ft.Icon(ft.Icons.ERROR_OUTLINE, color=ft.Colors.RED, size=18), self.error_text], spacing=8),
+            bgcolor=ft.Colors.RED_50,
+            border_radius=10,
+            padding=10,
+            visible=False,
+        )
 
         self.save_btn = save_button("إنشاء ملف الخدمة", self._save)
-        self._saving = False
         for fld in (self.sale_field, self.cost_field):
             fld.on_change = self._update_profit
         self.currency_dropdown.on_change = self._update_profit
@@ -50,6 +70,7 @@ class ServiceCaseDialog(ft.AlertDialog):
         self.title = dialog_title("خدمة لعميل عبر مورد", ft.Icons.TRAVEL_EXPLORE)
         self.content = dialog_body([
             self.info_text,
+            self.error_box,
             self.client_field,
             self.supplier_field,
             self.person_field,
@@ -71,6 +92,18 @@ class ServiceCaseDialog(ft.AlertDialog):
     def _close(self):
         close_control(self._page, self)
 
+    def _show_inline_error(self, message: str):
+        self.error_text.value = str(message or "حدث خطأ غير معروف")
+        self.error_box.visible = True
+        try:
+            self._page.update()
+        except Exception:
+            pass
+
+    def _clear_inline_error(self):
+        self.error_text.value = ""
+        self.error_box.visible = False
+
     def _update_profit(self, e):
         try:
             sale = parse_non_negative_amount(self.sale_field.value or 0)
@@ -85,12 +118,7 @@ class ServiceCaseDialog(ft.AlertDialog):
         except Exception:
             pass
 
-    def _save(self, e):
-        if self._saving:
-            return
-        if UserSession.get_current() and UserSession.get_current().get('role') == 'viewer':
-            self._show_snackbar("ليست لديك صلاحية إنشاء ملف خدمة", True)
-            return
+    def _build_payload(self):
         payload = {
             "client_company_name": normalize_text(self.client_field.value),
             "supplier_company_name": normalize_text(self.supplier_field.value),
@@ -102,21 +130,61 @@ class ServiceCaseDialog(ft.AlertDialog):
             "date": normalize_text(self.date_field.value) or datetime.datetime.now().strftime("%Y-%m-%d"),
             "notes": self.notes_field.value or "",
         }
-        self._saving = True
-        set_button_busy(self.save_btn, True, "إنشاء ملف الخدمة")
+        # Reuse the business validator before any network/database call so the
+        # button returns a visible field-level error instead of appearing dead.
+        return validate_service_case_payload(payload)
+
+    def _set_busy(self, busy: bool):
+        self._saving = bool(busy)
+        set_button_busy(self.save_btn, busy, "إنشاء ملف الخدمة", busy_label="جارٍ إنشاء الخدمة...")
         try:
-            repo = ServiceCaseRepository()
-            result = repo.add(payload)
-            self._close()
-            if self.on_save:
-                self.on_save(result)
-            self._show_snackbar(f"تم إنشاء ملف الخدمة: {result.get('reference')}", False)
+            self._page.update()
+        except Exception:
+            pass
+
+    def _save(self, e):
+        if self._saving:
+            return
+        if UserSession.get_current() and UserSession.get_current().get('role') == 'viewer':
+            self._show_inline_error("ليست لديك صلاحية إنشاء ملف خدمة")
+            self._show_snackbar("ليست لديك صلاحية إنشاء ملف خدمة", True)
+            return
+        self._clear_inline_error()
+        try:
+            payload = self._build_payload()
         except Exception as ex:
-            self._show_snackbar(f"فشل إنشاء ملف الخدمة: {ex}", True)
-        finally:
-            self._saving = False
-            set_button_busy(self.save_btn, False, "إنشاء ملف الخدمة")
+            self._show_inline_error(str(ex))
+            self._show_snackbar(str(ex), True)
+            return
+        self._set_busy(True)
+        run_async_task(self._page, self._save_async, payload)
+
+    async def _save_async(self, payload):
+        try:
+            # Local SQLite writes and remote REST requests must not block the Flet
+            # event callback.  On Android a synchronous request can make the
+            # dialog look unresponsive while remaining open.
+            result = await asyncio.to_thread(lambda: ServiceCaseRepository().add(payload))
+        except Exception as ex:
+            details = str(ex) or ex.__class__.__name__
             try:
-                self._page.update()
+                print(f"[service-case-save-error] {details}\n{traceback.format_exc()}", flush=True)
             except Exception:
                 pass
+            self._show_inline_error(f"فشل إنشاء ملف الخدمة: {details}")
+            self._show_snackbar(f"فشل إنشاء ملف الخدمة: {details}", True)
+            self._set_busy(False)
+            return
+
+        self._set_busy(False)
+        self._close()
+        refresh_error = None
+        if self.on_save:
+            try:
+                self.on_save(result)
+            except Exception as ex:
+                refresh_error = str(ex) or ex.__class__.__name__
+        if refresh_error:
+            self._show_snackbar(f"تم إنشاء ملف الخدمة، لكن تعذر تحديث الشاشة: {refresh_error}", True)
+        else:
+            self._show_snackbar(f"تم إنشاء ملف الخدمة: {result.get('reference')}", False)
