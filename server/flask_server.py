@@ -48,6 +48,8 @@ REQUIRED_MOBILE_ENDPOINTS = [
     "/api/search/company-ledger",
     "/api/third_party_payments",
     "/api/third_party_payments/{reference}/reverse",
+    "/api/service_cases",
+    "/api/service_cases/{reference}/reverse",
     "/api/payment_reminders",
     "/api/payment_reminders/count_waiting",
     "/api/users",
@@ -82,6 +84,8 @@ def _capabilities_payload() -> Dict[str, Any]:
         "supports_expense_summary": True,
         "supports_company_deep_search": True,
         "supports_ledger_operation_core": True,
+        "supports_service_cases": True,
+        "supports_reconciliation_statement": True,
         "auth_required": True,
         "token_type": "Bearer",
         "endpoints": REQUIRED_MOBILE_ENDPOINTS,
@@ -290,6 +294,10 @@ def _expense_payload(conn: sqlite3.Connection, data: Dict[str, Any], *, existing
             "is_locked": data.get("is_locked", (existing or {}).get("is_locked", 0) if existing else 0),
             "reversal_of": data.get("reversal_of") or ((existing or {}).get("reversal_of") if existing else None),
             "reversed_by": data.get("reversed_by") or ((existing or {}).get("reversed_by") if existing else None),
+            "print_description": data.get("print_description") or ((existing or {}).get("print_description") if existing else None),
+            "internal_note": data.get("internal_note") or ((existing or {}).get("internal_note") if existing else None),
+            "service_case_role": data.get("service_case_role") or ((existing or {}).get("service_case_role") if existing else None),
+            "linked_company_name": data.get("linked_company_name") or ((existing or {}).get("linked_company_name") if existing else None),
         },
         existing=existing,
     )
@@ -307,12 +315,12 @@ def _insert_expense_with_source(conn: sqlite3.Connection, p: Dict[str, Any]) -> 
         (company_name, amount, amount_base, type, date, notes, currency, created_by, created_at,
          updated_by, updated_at, amount_original, currency_original, exchange_rate_to_usd,
          status, payment_due_date, payment_reminder_note, source_type, source_ref, counterparty_company_name,
-         person_name, person_name_search, service_type, operation_type, is_locked, reversal_of, reversed_by)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+         person_name, person_name_search, service_type, operation_type, is_locked, reversal_of, reversed_by, print_description, internal_note, service_case_role, linked_company_name)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
         (p["company_name"], p["amount"], p["amount_base"], p["type"], p["date"], p.get("notes", ""), p["currency"], p.get("created_by"), p.get("created_at"),
          p.get("updated_by"), p.get("updated_at"), p["amount_original"], p["currency_original"], p["exchange_rate_to_usd"],
          p.get("status", "approved"), p.get("payment_due_date"), p.get("payment_reminder_note"), p.get("source_type"), p.get("source_ref"), p.get("counterparty_company_name"),
-         p.get("person_name"), p.get("person_name_search"), p.get("service_type"), p.get("operation_type"), p.get("is_locked", 0), p.get("reversal_of"), p.get("reversed_by")),
+         p.get("person_name"), p.get("person_name_search"), p.get("service_type"), p.get("operation_type"), p.get("is_locked", 0), p.get("reversal_of"), p.get("reversed_by"), p.get("print_description"), p.get("internal_note"), p.get("service_case_role"), p.get("linked_company_name")),
     )
     return int(cur.lastrowid)
 
@@ -531,11 +539,11 @@ def add_expense():
             """INSERT INTO expenses
             (company_name, amount, amount_base, type, date, notes, currency, created_by, created_at,
              updated_by, updated_at, amount_original, currency_original, exchange_rate_to_usd,
-             status, payment_due_date, payment_reminder_note, person_name, person_name_search, service_type, operation_type, is_locked, reversal_of, reversed_by)
-            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+             status, payment_due_date, payment_reminder_note, person_name, person_name_search, service_type, operation_type, is_locked, reversal_of, reversed_by, print_description, internal_note, service_case_role, linked_company_name)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
             (p["company_name"], p["amount"], p["amount_base"], p["type"], p["date"], p["notes"], p["currency"], p["created_by"], p["created_at"],
              p["updated_by"], p["updated_at"], p["amount_original"], p["currency_original"], p["exchange_rate_to_usd"],
-             p["status"], p["payment_due_date"], p["payment_reminder_note"], p.get("person_name"), p.get("person_name_search"), p.get("service_type"), p.get("operation_type"), p.get("is_locked", 0), p.get("reversal_of"), p.get("reversed_by")),
+             p["status"], p["payment_due_date"], p["payment_reminder_note"], p.get("person_name"), p.get("person_name_search"), p.get("service_type"), p.get("operation_type"), p.get("is_locked", 0), p.get("reversal_of"), p.get("reversed_by"), p.get("print_description"), p.get("internal_note"), p.get("service_case_role"), p.get("linked_company_name")),
         )
         eid = cur.lastrowid
         if p["status"] == "waiting_payment" and p["payment_due_date"]:
@@ -568,11 +576,11 @@ def update_expense(expense_id: int):
             """UPDATE expenses SET
             company_name=?, amount=?, amount_base=?, type=?, date=?, notes=?, currency=?, updated_by=?, updated_at=?,
             amount_original=?, currency_original=?, exchange_rate_to_usd=?, status=?, payment_due_date=?, payment_reminder_note=?,
-            person_name=?, person_name_search=?, service_type=?, operation_type=?, is_locked=?, reversal_of=?, reversed_by=?
+            person_name=?, person_name_search=?, service_type=?, operation_type=?, is_locked=?, reversal_of=?, reversed_by=?, print_description=?, internal_note=?, service_case_role=?, linked_company_name=?
             WHERE id=?""",
             (p["company_name"], p["amount"], p["amount_base"], p["type"], p["date"], p["notes"], p["currency"], p["updated_by"], p["updated_at"],
              p["amount_original"], p["currency_original"], p["exchange_rate_to_usd"], p["status"], p["payment_due_date"], p["payment_reminder_note"],
-             p.get("person_name"), p.get("person_name_search"), p.get("service_type"), p.get("operation_type"), p.get("is_locked", 0), p.get("reversal_of"), p.get("reversed_by"), expense_id),
+             p.get("person_name"), p.get("person_name_search"), p.get("service_type"), p.get("operation_type"), p.get("is_locked", 0), p.get("reversal_of"), p.get("reversed_by"), p.get("print_description"), p.get("internal_note"), p.get("service_case_role"), p.get("linked_company_name"), expense_id),
         )
         if cur.rowcount != 1:
             return _json_error(f"لم يتم العثور على القيد id={expense_id}", 404)
@@ -743,6 +751,152 @@ def reverse_third_party_payment(reference: str):
         reversal_ref = f"REV-{reference}"
         conn.execute("UPDATE third_party_payments SET status='reversed', reversed_at=?, reversal_ref=? WHERE reference=?", (_now(), reversal_ref, reference))
         _audit(conn, "عكس سداد بالنيابة", "third_party_payments", row.get("id"), reference)
+        conn.commit()
+        return jsonify({"ok": True, "reference": reference, "reversal_ref": reversal_ref})
+    except Exception as e:
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+        return _json_error(e, 400)
+    finally:
+        conn.close()
+
+
+@app.get("/api/service_cases")
+@require_auth
+def get_service_cases():
+    conn = _connect()
+    try:
+        rows = conn.execute("SELECT * FROM service_cases ORDER BY date DESC, id DESC").fetchall()
+        return jsonify([dict(r) for r in rows])
+    finally:
+        conn.close()
+
+
+@app.post("/api/service_cases")
+@require_roles(*_role_allows_write())
+def add_service_case():
+    data = request.get_json(silent=True) or {}
+    from services.service_case_service import (
+        SERVICE_CASE_SOURCE_CLIENT, SERVICE_CASE_SOURCE_SUPPLIER,
+        SERVICE_CASE_OPERATION_CLIENT, SERVICE_CASE_OPERATION_SUPPLIER,
+        validate_service_case_payload, new_service_case_reference,
+        build_client_note, build_supplier_note, client_print_description,
+        supplier_print_description, internal_note,
+    )
+    conn = _connect()
+    try:
+        try:
+            payload = validate_service_case_payload(data)
+        except ValueError as e:
+            return _json_error(e, 400)
+        reference = new_service_case_reference()
+        user = _current_user() or {}
+        uid = user.get("id") or data.get("created_by") or 1
+        now = _now()
+        client_payload = _expense_payload(conn, {
+            "company_name": payload["client_company_name"],
+            "amount": payload["sale_amount_original"],
+            "type": "incoming",
+            "date": payload["date"],
+            "notes": build_client_note(reference, payload),
+            "currency": payload["currency_original"],
+            "created_by": uid,
+            "created_at": now,
+            "updated_by": uid,
+            "updated_at": now,
+            "source_type": SERVICE_CASE_SOURCE_CLIENT,
+            "source_ref": reference,
+            "counterparty_company_name": payload["supplier_company_name"],
+            "person_name": payload["person_name"],
+            "service_type": payload["service_type"],
+            "operation_type": SERVICE_CASE_OPERATION_CLIENT,
+            "is_locked": 1,
+            "print_description": client_print_description(payload),
+            "service_case_role": "client",
+            "linked_company_name": payload["supplier_company_name"],
+        })
+        supplier_payload = _expense_payload(conn, {
+            "company_name": payload["supplier_company_name"],
+            "amount": payload["cost_amount_original"],
+            "type": "outgoing",
+            "date": payload["date"],
+            "notes": build_supplier_note(reference, payload),
+            "currency": payload["currency_original"],
+            "created_by": uid,
+            "created_at": now,
+            "updated_by": uid,
+            "updated_at": now,
+            "source_type": SERVICE_CASE_SOURCE_SUPPLIER,
+            "source_ref": reference,
+            "counterparty_company_name": payload["client_company_name"],
+            "person_name": payload["person_name"],
+            "service_type": payload["service_type"],
+            "operation_type": SERVICE_CASE_OPERATION_SUPPLIER,
+            "is_locked": 1,
+            "print_description": supplier_print_description(payload),
+            "service_case_role": "supplier",
+            "linked_company_name": payload["client_company_name"],
+        })
+        note = internal_note(reference, payload, client_payload.get("amount_base"), supplier_payload.get("amount_base"))
+        client_payload["internal_note"] = note
+        supplier_payload["internal_note"] = note
+        conn.execute("BEGIN IMMEDIATE")
+        client_expense_id = _insert_expense_with_source(conn, client_payload)
+        supplier_expense_id = _insert_expense_with_source(conn, supplier_payload)
+        conn.execute(
+            """INSERT INTO service_cases
+            (reference, client_company_name, supplier_company_name, person_name, service_type,
+             sale_amount_original, cost_amount_original, currency_original, exchange_rate_to_usd,
+             sale_amount_base, cost_amount_base, date, notes, status, client_expense_id, supplier_expense_id,
+             created_by, created_at, print_description_client, print_description_supplier, internal_note)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+            (
+                reference, payload["client_company_name"], payload["supplier_company_name"], payload["person_name"], payload["service_type"],
+                payload["sale_amount_original"], payload["cost_amount_original"], payload["currency_original"], client_payload.get("exchange_rate_to_usd", 1.0),
+                client_payload.get("amount_base", 0), supplier_payload.get("amount_base", 0), payload["date"], payload.get("notes", ""), "open",
+                client_expense_id, supplier_expense_id, uid, now, client_print_description(payload), supplier_print_description(payload), note,
+            ),
+        )
+        _audit(conn, "إضافة ملف خدمة", "service_cases", None, f"{reference}: {payload['client_company_name']} / {payload['supplier_company_name']}")
+        conn.commit()
+        return jsonify({"ok": True, "reference": reference, "client_expense_id": client_expense_id, "supplier_expense_id": supplier_expense_id, "profit_base": client_payload.get("amount_base", 0) - supplier_payload.get("amount_base", 0)})
+    except Exception as e:
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+        return _json_error(e, 400)
+    finally:
+        conn.close()
+
+
+@app.post("/api/service_cases/<path:reference>/reverse")
+@require_roles(*_role_allows_write())
+def reverse_service_case(reference: str):
+    from services.service_case_service import SERVICE_CASE_REVERSAL, SERVICE_CASE_OPERATION_REVERSAL, SERVICE_CASE_STATUS_REVERSED
+    reference = str(reference or "").strip()
+    conn = _connect()
+    try:
+        row = conn.execute("SELECT * FROM service_cases WHERE reference=?", (reference,)).fetchone()
+        if not row:
+            return _json_error("لم يتم العثور على ملف الخدمة", 404)
+        row = dict(row)
+        if row.get("status") == SERVICE_CASE_STATUS_REVERSED:
+            return _json_error("ملف الخدمة معكوس مسبقاً", 409)
+        user = _current_user() or {}
+        uid = user.get("id") or 1
+        date = _now()[:10]
+        now = _now()
+        client_rev = _expense_payload(conn, {"company_name": row["client_company_name"], "amount": row["sale_amount_original"], "type": "outgoing", "date": date, "notes": f"عكس ملف خدمة {reference}", "currency": row["currency_original"], "created_by": uid, "updated_by": uid, "source_type": SERVICE_CASE_REVERSAL, "source_ref": reference, "counterparty_company_name": row["supplier_company_name"], "person_name": row["person_name"], "service_type": row["service_type"], "operation_type": SERVICE_CASE_OPERATION_REVERSAL, "is_locked": 1, "print_description": f"عكس {row.get('print_description_client') or row.get('service_type')}", "service_case_role": "client_reversal", "linked_company_name": row["supplier_company_name"]})
+        supplier_rev = _expense_payload(conn, {"company_name": row["supplier_company_name"], "amount": row["cost_amount_original"], "type": "incoming", "date": date, "notes": f"عكس ملف خدمة {reference}", "currency": row["currency_original"], "created_by": uid, "updated_by": uid, "source_type": SERVICE_CASE_REVERSAL, "source_ref": reference, "counterparty_company_name": row["client_company_name"], "person_name": row["person_name"], "service_type": row["service_type"], "operation_type": SERVICE_CASE_OPERATION_REVERSAL, "is_locked": 1, "print_description": f"عكس {row.get('print_description_supplier') or row.get('service_type')}", "service_case_role": "supplier_reversal", "linked_company_name": row["client_company_name"]})
+        conn.execute("BEGIN IMMEDIATE")
+        _insert_expense_with_source(conn, client_rev)
+        _insert_expense_with_source(conn, supplier_rev)
+        reversal_ref = f"REV-{reference}"
+        conn.execute("UPDATE service_cases SET status=?, reversed_at=?, reversal_ref=? WHERE reference=?", (SERVICE_CASE_STATUS_REVERSED, now, reversal_ref, reference))
+        _audit(conn, "عكس ملف خدمة", "service_cases", row.get("id"), reference)
         conn.commit()
         return jsonify({"ok": True, "reference": reference, "reversal_ref": reversal_ref})
     except Exception as e:

@@ -56,12 +56,12 @@ class ExpenseRepository(BaseRepository):
             audit = {'user_id': user_id, 'username': user['username'] if user else '', 'action': "إضافة قيد", 'table_name': 'expenses', 'record_id': None,
                      'details': f"الشركة: {company_name}, المبلغ: {amount} {currency_code}"}
             conn = self.db.get_connection()
-            cur = conn.execute('''INSERT INTO expenses (company_name, amount, amount_base, type, date, notes, currency, created_by, created_at, updated_by, updated_at, amount_original, currency_original, exchange_rate_to_usd, status, payment_due_date, payment_reminder_note, person_name, person_name_search, service_type, operation_type, is_locked, reversal_of, reversed_by)
-                                 VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)''',
+            cur = conn.execute('''INSERT INTO expenses (company_name, amount, amount_base, type, date, notes, currency, created_by, created_at, updated_by, updated_at, amount_original, currency_original, exchange_rate_to_usd, status, payment_due_date, payment_reminder_note, person_name, person_name_search, service_type, operation_type, is_locked, reversal_of, reversed_by, print_description, internal_note, service_case_role, linked_company_name)
+                                 VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)''',
                               (data['company_name'], data['amount'], data['amount_base'], data['type'], data['date'], data['notes'], data['currency'],
                                data['created_by'], data['created_at'], data['updated_by'], data['updated_at'],
                                data['amount_original'], data['currency_original'], data['exchange_rate_to_usd'], data['status'], data['payment_due_date'], data['payment_reminder_note'],
-                               data.get('person_name'), data.get('person_name_search'), data.get('service_type'), data.get('operation_type'), data.get('is_locked', 0), data.get('reversal_of'), data.get('reversed_by')))
+                               data.get('person_name'), data.get('person_name_search'), data.get('service_type'), data.get('operation_type'), data.get('is_locked', 0), data.get('reversal_of'), data.get('reversed_by'), data.get('print_description'), data.get('internal_note'), data.get('service_case_role'), data.get('linked_company_name')))
             conn.commit()
             new_id = cur.lastrowid
             if status == 'waiting_payment' and payment_due_date:
@@ -93,7 +93,11 @@ class ExpenseRepository(BaseRepository):
                 'source_type': existing.get('source_type') if existing else None,
                 'source_ref': existing.get('source_ref') if existing else None,
                 'reversal_of': existing.get('reversal_of') if existing else None,
-                'reversed_by': existing.get('reversed_by') if existing else None}
+                'reversed_by': existing.get('reversed_by') if existing else None,
+                'print_description': existing.get('print_description') if existing else None,
+                'internal_note': existing.get('internal_note') if existing else None,
+                'service_case_role': existing.get('service_case_role') if existing else None,
+                'linked_company_name': existing.get('linked_company_name') if existing else None}
         data = normalize_expense_metadata(self.ledger.normalize_expense_payload(data, existing=existing))
         status = data['status']
         if self.data.is_remote():
@@ -103,10 +107,10 @@ class ExpenseRepository(BaseRepository):
             audit = {'user_id': user_id, 'username': user['username'] if user else '', 'action': "تعديل قيد", 'table_name': 'expenses', 'record_id': expense_id,
                      'details': f"الشركة: {company_name}, المبلغ: {amount} {currency_code}"}
             conn = self.db.get_connection()
-            cur = conn.execute('''UPDATE expenses SET company_name=?, amount=?, amount_base=?, type=?, date=?, notes=?, currency=?, updated_by=?, updated_at=?, amount_original=?, currency_original=?, exchange_rate_to_usd=?, status=?, payment_due_date=?, payment_reminder_note=?, person_name=?, person_name_search=?, service_type=?, operation_type=?, is_locked=?, reversal_of=?, reversed_by=? WHERE id=?''',
+            cur = conn.execute('''UPDATE expenses SET company_name=?, amount=?, amount_base=?, type=?, date=?, notes=?, currency=?, updated_by=?, updated_at=?, amount_original=?, currency_original=?, exchange_rate_to_usd=?, status=?, payment_due_date=?, payment_reminder_note=?, person_name=?, person_name_search=?, service_type=?, operation_type=?, is_locked=?, reversal_of=?, reversed_by=?, print_description=?, internal_note=?, service_case_role=?, linked_company_name=? WHERE id=?''',
                          (data['company_name'], data['amount'], data['amount_base'], data['type'], data['date'], data['notes'], data['currency'],
                           data['updated_by'], data['updated_at'], data['amount_original'], data['currency_original'], data['exchange_rate_to_usd'], data['status'], data['payment_due_date'], data['payment_reminder_note'],
-                          data.get('person_name'), data.get('person_name_search'), data.get('service_type'), data.get('operation_type'), data.get('is_locked', 0), data.get('reversal_of'), data.get('reversed_by'), expense_id))
+                          data.get('person_name'), data.get('person_name_search'), data.get('service_type'), data.get('operation_type'), data.get('is_locked', 0), data.get('reversal_of'), data.get('reversed_by'), data.get('print_description'), data.get('internal_note'), data.get('service_case_role'), data.get('linked_company_name'), expense_id))
             if cur.rowcount != 1:
                 conn.rollback()
                 raise ValueError(f"لم يتم العثور على القيد المطلوب تعديله id={expense_id}")

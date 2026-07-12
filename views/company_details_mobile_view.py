@@ -53,6 +53,12 @@ class CompanyDetailsMobileView(ft.Column):
                 color=ft.Colors.WHITE,
             ),
             ft.FilledButton(
+                content=ft.Row([ft.Icon(ft.Icons.FACT_CHECK), ft.Text("كشف مطابقة")], tight=True),
+                on_click=self._export_reconciliation_statement,
+                bgcolor=ft.Colors.BLUE,
+                color=ft.Colors.WHITE,
+            ),
+            ft.FilledButton(
                 content=ft.Row([ft.Icon(ft.Icons.SHARE), ft.Text("مشاركة")], tight=True),
                 on_click=self._share_statement,
                 bgcolor=ft.Colors.GREEN,
@@ -193,6 +199,11 @@ class CompanyDetailsMobileView(ft.Column):
                         color=ft.Colors.INDIGO if r.get('source_type') == 'third_party_payment' else ft.Colors.ORANGE_900,
                         bgcolor=ft.Colors.INDIGO_50 if r.get('source_type') == 'third_party_payment' else ft.Colors.ORANGE_50,
                     ) if r.get('source_type') in ('third_party_payment', 'third_party_payment_reversal') else ft.Container(width=0, height=0),
+                    pill(
+                        '🧭 ملف خدمة - عميل' if r.get('source_type') == 'service_case_client' else ('🧭 ملف خدمة - مورد' if r.get('source_type') == 'service_case_supplier' else '↩️ عكس ملف خدمة'),
+                        color=ft.Colors.BLUE_900,
+                        bgcolor=ft.Colors.BLUE_50,
+                    ) if r.get('source_type') in ('service_case_client', 'service_case_supplier', 'service_case_reversal') else ft.Container(width=0, height=0),
                     ft.Row([
                         action_text_button("تعديل", ft.Icons.EDIT, lambda e, rec=r: self._edit_record(rec), color=ft.Colors.INDIGO, visible=(not is_viewer and not r.get('source_type') and not int(r.get('is_locked') or 0))),
                         action_text_button("حذف", ft.Icons.DELETE, lambda e, rec=r: self._delete_record(rec), color=ft.Colors.RED, visible=(not is_viewer and not r.get('source_type') and not int(r.get('is_locked') or 0))),
@@ -222,6 +233,16 @@ class CompanyDetailsMobileView(ft.Column):
             self._show_snackbar(f"خطأ في إنشاء الكشف: {str(ex)}", True)
 
 
+    async def _export_reconciliation_statement(self, e):
+        try:
+            from reports.account_statement import export_reconciliation_statement_html
+            from services.file_export_service import FileExportService
+            path = export_reconciliation_statement_html(self.company_name, self.records)
+            result = await FileExportService.open_file_async(self._page, path, title="فتح أو طباعة كشف مطابقة")
+            self._show_snackbar(result.message if result.ok else result.message or f"تم إنشاء كشف المطابقة: {path}", not result.ok)
+        except Exception as ex:
+            self._show_snackbar(f"خطأ في إنشاء كشف المطابقة: {str(ex)}", True)
+
     async def _share_statement(self, e):
         try:
             from reports.account_statement import export_account_statement_html
@@ -235,10 +256,10 @@ class CompanyDetailsMobileView(ft.Column):
 
     async def _share_statement_whatsapp(self, e):
         try:
-            from reports.account_statement import export_account_statement_html
+            from reports.account_statement import export_reconciliation_statement_html
             from reports.share import share_file_async
-            path = export_account_statement_html(self.company_name, self.records)
-            message = f"كشف حساب - {self.company_name}"
+            path = export_reconciliation_statement_html(self.company_name, self.records)
+            message = f"كشف مطابقة - {self.company_name}"
             result = await share_file_async(self._page, path, message, open_whatsapp=True, title="مشاركة كشف الحساب عبر واتساب")
             self._show_snackbar(result.message if result.ok else result.message or f"تم إنشاء الكشف: {path}", not result.ok)
         except Exception as ex:

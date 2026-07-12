@@ -52,8 +52,8 @@ class LocalDataSource:
             (company_name, amount, amount_base, type, date, notes, currency, created_by, created_at,
              updated_by, updated_at, amount_original, currency_original, exchange_rate_to_usd,
              status, payment_due_date, payment_reminder_note, source_type, source_ref, counterparty_company_name,
-             person_name, person_name_search, service_type, operation_type, is_locked, reversal_of, reversed_by)
-            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+             person_name, person_name_search, service_type, operation_type, is_locked, reversal_of, reversed_by, print_description, internal_note, service_case_role, linked_company_name)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
             (
                 data["company_name"], data["amount"], data.get("amount_base", data["amount"]), data["type"], data["date"], data.get("notes", ""), data["currency"],
                 data.get("created_by", 1), data.get("created_at", now), data.get("updated_by", 1), data.get("updated_at", now),
@@ -61,7 +61,7 @@ class LocalDataSource:
                 data.get("exchange_rate_to_usd", 1.0), data.get("status", "approved"), data.get("payment_due_date"),
                 data.get("payment_reminder_note"), data.get("source_type"), data.get("source_ref"), data.get("counterparty_company_name"),
                 data.get("person_name"), data.get("person_name_search"), data.get("service_type"), data.get("operation_type"),
-                data.get("is_locked", 0), data.get("reversal_of"), data.get("reversed_by"),
+                data.get("is_locked", 0), data.get("reversal_of"), data.get("reversed_by"), data.get("print_description"), data.get("internal_note"), data.get("service_case_role"), data.get("linked_company_name"),
             ),
         )
         conn.commit()
@@ -75,7 +75,7 @@ class LocalDataSource:
             """UPDATE expenses SET
             company_name=?, amount=?, amount_base=?, type=?, date=?, notes=?, currency=?, updated_by=?, updated_at=?,
             amount_original=?, currency_original=?, exchange_rate_to_usd=?, status=?, payment_due_date=?, payment_reminder_note=?,
-            person_name=?, person_name_search=?, service_type=?, operation_type=?, is_locked=?, reversal_of=?, reversed_by=?
+            person_name=?, person_name_search=?, service_type=?, operation_type=?, is_locked=?, reversal_of=?, reversed_by=?, print_description=?, internal_note=?, service_case_role=?, linked_company_name=?
             WHERE id=?""",
             (
                 data["company_name"], data["amount"], data.get("amount_base", data["amount"]), data["type"], data["date"], data.get("notes", ""), data["currency"],
@@ -83,7 +83,7 @@ class LocalDataSource:
                 data.get("currency_original", data["currency"]), data.get("exchange_rate_to_usd", 1.0),
                 data.get("status", "approved"), data.get("payment_due_date"), data.get("payment_reminder_note"),
                 data.get("person_name"), data.get("person_name_search"), data.get("service_type"), data.get("operation_type"),
-                data.get("is_locked", 0), data.get("reversal_of"), data.get("reversed_by"), int(expense_id),
+                data.get("is_locked", 0), data.get("reversal_of"), data.get("reversed_by"), data.get("print_description"), data.get("internal_note"), data.get("service_case_role"), data.get("linked_company_name"), int(expense_id),
             ),
         )
         if cur.rowcount != 1:

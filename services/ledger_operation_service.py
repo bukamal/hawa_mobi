@@ -15,12 +15,16 @@ NORMAL_OPERATION = "normal"
 THIRD_PARTY_OPERATION = "third_party_payment"
 THIRD_PARTY_REVERSAL_OPERATION = "third_party_payment_reversal"
 REVERSAL_OPERATION = "reversal"
+SERVICE_CASE_CLIENT_OPERATION = "service_case_client"
+SERVICE_CASE_SUPPLIER_OPERATION = "service_case_supplier"
+SERVICE_CASE_REVERSAL_OPERATION = "service_case_reversal"
 
 SERVICE_TYPES = [
     "غير محدد",
     "تذكرة سفر",
     "حجز فندق",
     "فيزا",
+    "تأشيرة سياحية",
     "رسوم",
     "تسديد",
     "سداد بالنيابة",
@@ -41,6 +45,9 @@ OPERATION_TYPES = [
     THIRD_PARTY_REVERSAL_OPERATION,
     "liability_transfer",
     REVERSAL_OPERATION,
+    SERVICE_CASE_CLIENT_OPERATION,
+    SERVICE_CASE_SUPPLIER_OPERATION,
+    SERVICE_CASE_REVERSAL_OPERATION,
     "other",
 ]
 
@@ -55,6 +62,9 @@ OPERATION_LABELS = {
     THIRD_PARTY_REVERSAL_OPERATION: "عكس سداد بالنيابة",
     "liability_transfer": "تحويل ذمة",
     REVERSAL_OPERATION: "عكس قيد",
+    SERVICE_CASE_CLIENT_OPERATION: "خدمة وسيطة - عميل",
+    SERVICE_CASE_SUPPLIER_OPERATION: "خدمة وسيطة - مورد",
+    SERVICE_CASE_REVERSAL_OPERATION: "عكس خدمة وسيطة",
     "other": "أخرى",
 }
 
@@ -63,6 +73,7 @@ SERVICE_TO_OPERATION = {
     "تذكرة سفر": "ticket",
     "حجز فندق": "booking",
     "فيزا": "visa",
+    "تأشيرة سياحية": "visa",
     "رسوم": "fee",
     "تسديد": "payment",
     "سداد بالنيابة": THIRD_PARTY_OPERATION,
@@ -84,7 +95,7 @@ def normalize_service_type(value: Any) -> str:
 
 def normalize_operation_type(value: Any, service_type: Any = None, source_type: Any = None) -> str:
     source = clean_text(source_type)
-    if source in {THIRD_PARTY_OPERATION, THIRD_PARTY_REVERSAL_OPERATION}:
+    if source in {THIRD_PARTY_OPERATION, THIRD_PARTY_REVERSAL_OPERATION, SERVICE_CASE_CLIENT_OPERATION, SERVICE_CASE_SUPPLIER_OPERATION, SERVICE_CASE_REVERSAL_OPERATION}:
         return source
     value = clean_text(value)
     if value in OPERATION_TYPES:
@@ -93,7 +104,7 @@ def normalize_operation_type(value: Any, service_type: Any = None, source_type: 
 
 
 def is_generated_source(source_type: Any) -> bool:
-    return clean_text(source_type) in {THIRD_PARTY_OPERATION, THIRD_PARTY_REVERSAL_OPERATION}
+    return clean_text(source_type) in {THIRD_PARTY_OPERATION, THIRD_PARTY_REVERSAL_OPERATION, SERVICE_CASE_CLIENT_OPERATION, SERVICE_CASE_SUPPLIER_OPERATION, SERVICE_CASE_REVERSAL_OPERATION}
 
 
 def is_locked_payload(data: Dict[str, Any]) -> int:

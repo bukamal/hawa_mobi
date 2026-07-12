@@ -200,6 +200,20 @@ class RestClient:
     def get_expense_summary(self) -> Dict:
         return self._request('GET', '/api/expenses/summary')
 
+    def add_service_case(self, data: Dict) -> Dict:
+        try:
+            return self._request('POST', '/api/service_cases', data)
+        except Exception as exc:
+            if 'API error 404' in str(exc):
+                raise Exception('خادم ويندوز لا يدعم ملفات الخدمات الوسيطة بعد. حدّث الخادم إلى النسخة الحالية.') from exc
+            raise
+
+    def get_service_cases(self) -> List[Dict]:
+        return self._request('GET', '/api/service_cases')
+
+    def reverse_service_case(self, reference: str) -> Dict:
+        return self._request('POST', f'/api/service_cases/{reference}/reverse')
+
     def add_third_party_payment(self, data: Dict) -> Dict:
         try:
             return self._request('POST', '/api/third_party_payments', data)

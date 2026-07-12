@@ -43,6 +43,7 @@ FIELD_LABELS = {
     "person_name_search": "اسم الزبون/المسافر",
     "service_type": "نوع الخدمة",
     "operation_type": "نوع العملية",
+    "print_description": "بيان الطباعة",
 }
 
 SEARCH_FIELDS = (
@@ -61,6 +62,7 @@ SEARCH_FIELDS = (
     "person_name",
     "service_type",
     "operation_type",
+    "print_description",
 )
 
 

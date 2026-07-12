@@ -47,6 +47,9 @@ class AccountsMobileView(ft.Column):
 
         self.controls = [
             page_header(translate('accounts'), icon=ft.Icons.ACCOUNT_BALANCE, subtitle=translate('accounts_search_subtitle')),
+            ft.Container(content=ft.Row([
+                ft.OutlinedButton(content=ft.Row([ft.Icon(ft.Icons.INSIGHTS), ft.Text('تقرير أرباح الخدمات')], tight=True), on_click=self._export_service_profit_report),
+            ], alignment=ft.MainAxisAlignment.END), padding=ft.Padding(left=10, right=10, top=0, bottom=0)),
             ft.Container(content=self.search_field, padding=ft.Padding(left=10, right=10, top=0, bottom=0)),
             self.search_status,
             self.summary_bar,
@@ -206,6 +209,7 @@ class AccountsMobileView(ft.Column):
                     action_text_button("تفاصيل", ft.Icons.INFO_OUTLINE, lambda e, c=company, r=vals['records'], q=details_query: self._show_details(c, r, q)),
                     action_text_button("قيد", ft.Icons.ADD, lambda e, c=company: self._add_record(c), color=ft.Colors.GREEN),
                     action_text_button("سداد عني", ft.Icons.SWAP_HORIZ, lambda e, c=company: self._add_third_party_payment(paid_to_company=c), color=ft.Colors.INDIGO),
+                    action_text_button("خدمة", ft.Icons.TRAVEL_EXPLORE, lambda e, c=company: self._add_service_case(client_company=c), color=ft.Colors.BLUE),
                 ], alignment=ft.MainAxisAlignment.SPACE_AROUND)
             )
             card = data_card(
@@ -230,6 +234,18 @@ class AccountsMobileView(ft.Column):
 
         self.cards_container.controls = cards
         self._page.update()
+
+    async def _export_service_profit_report(self, e):
+        try:
+            from database import ServiceCaseRepository
+            from reports.account_statement import export_service_profit_report_html
+            from services.file_export_service import FileExportService
+            cases = ServiceCaseRepository().list_cases()
+            path = export_service_profit_report_html(cases)
+            result = await FileExportService.open_file_async(self._page, path, title="تقرير أرباح الخدمات الداخلي")
+            self._show_snackbar(result.message if result.ok else result.message or f"تم إنشاء تقرير الأرباح: {path}", not result.ok)
+        except Exception as ex:
+            self._show_snackbar(f"خطأ في تقرير أرباح الخدمات: {str(ex)}", True)
 
     def _show_details(self, company_name, records, search_query=None):
         from views.company_details_mobile_view import CompanyDetailsMobileView
@@ -259,6 +275,10 @@ class AccountsMobileView(ft.Column):
             self._close_dialog(dlg)
             self._add_third_party_payment()
 
+        def open_service_case(_):
+            self._close_dialog(dlg)
+            self._add_service_case()
+
         dlg = ft.AlertDialog(
             title=ft.Text(translate('choose_operation'), weight=ft.FontWeight.BOLD),
             content=ft.Column([
@@ -266,6 +286,12 @@ class AccountsMobileView(ft.Column):
                     content=ft.Row([ft.Icon(ft.Icons.ADD), ft.Text(translate('normal_entry'))], tight=True),
                     on_click=open_normal,
                     bgcolor=ft.Colors.GREEN,
+                    color=ft.Colors.WHITE,
+                ),
+                ft.FilledButton(
+                    content=ft.Row([ft.Icon(ft.Icons.TRAVEL_EXPLORE), ft.Text("خدمة لعميل عبر مورد")], tight=True),
+                    on_click=open_service_case,
+                    bgcolor=ft.Colors.BLUE,
                     color=ft.Colors.WHITE,
                 ),
                 ft.FilledButton(
@@ -278,6 +304,19 @@ class AccountsMobileView(ft.Column):
             actions=[ft.TextButton(translate('cancel'), on_click=lambda _: self._close_dialog(dlg))],
         )
         open_control(self._page, dlg)
+
+    def _add_service_case(self, client_company=None, supplier_company=None):
+        if UserSession.get_current() and UserSession.get_current().get('role') == 'viewer':
+            self._show_snackbar("ليس لديك صلاحية لإضافة ملفات خدمات", True)
+            return
+        from views.dialogs.service_case_dialog import ServiceCaseDialog
+        dialog = ServiceCaseDialog(
+            page=self._page,
+            on_save=lambda _: self._refresh_cards(None),
+            client_company_name=client_company,
+            supplier_company_name=supplier_company,
+        )
+        open_control(self._page, dialog)
 
     def _add_third_party_payment(self, payer_company=None, paid_to_company=None):
         if UserSession.get_current() and UserSession.get_current().get('role') == 'viewer':
