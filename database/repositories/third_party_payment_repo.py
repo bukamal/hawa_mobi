@@ -8,6 +8,7 @@ from typing import Dict
 from auth.session import UserSession
 from database.repositories.base_repo import BaseRepository
 from services.currency_ledger_service import CurrencyLedgerService
+from services.ledger_operation_service import normalize_expense_metadata
 
 
 class ThirdPartyPaymentRepository(BaseRepository):
@@ -58,10 +59,14 @@ class ThirdPartyPaymentRepository(BaseRepository):
             "source_ref": source_ref,
             "counterparty_company_name": counterparty,
         }
-        normalized = self.ledger.normalize_expense_payload(data)
+        data["service_type"] = "سداد بالنيابة"
+        data["operation_type"] = source_type
+        data["is_locked"] = 1
+        normalized = normalize_expense_metadata(self.ledger.normalize_expense_payload(data))
         normalized["source_type"] = source_type
         normalized["source_ref"] = source_ref
         normalized["counterparty_company_name"] = counterparty
+        normalized["is_locked"] = 1
         return normalized
 
     def _insert_expense(self, conn, data: Dict) -> int:
@@ -69,13 +74,15 @@ class ThirdPartyPaymentRepository(BaseRepository):
             """INSERT INTO expenses
             (company_name, amount, amount_base, type, date, notes, currency, created_by, created_at,
              updated_by, updated_at, amount_original, currency_original, exchange_rate_to_usd,
-             status, payment_due_date, payment_reminder_note, source_type, source_ref, counterparty_company_name)
-            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+             status, payment_due_date, payment_reminder_note, source_type, source_ref, counterparty_company_name,
+             person_name, person_name_search, service_type, operation_type, is_locked, reversal_of, reversed_by)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
             (
                 data["company_name"], data["amount"], data["amount_base"], data["type"], data["date"], data.get("notes", ""), data["currency"],
                 data.get("created_by"), data.get("created_at"), data.get("updated_by"), data.get("updated_at"),
                 data["amount_original"], data["currency_original"], data["exchange_rate_to_usd"], data.get("status", "approved"),
                 data.get("payment_due_date"), data.get("payment_reminder_note"), data.get("source_type"), data.get("source_ref"), data.get("counterparty_company_name"),
+                data.get("person_name"), data.get("person_name_search"), data.get("service_type"), data.get("operation_type"), data.get("is_locked", 1), data.get("reversal_of"), data.get("reversed_by"),
             ),
         )
         return int(cur.lastrowid)

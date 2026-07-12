@@ -39,6 +39,10 @@ FIELD_LABELS = {
     "created_full_name": "اسم المستخدم",
     "status": "الحالة",
     "type": "نوع القيد",
+    "person_name": "اسم الزبون/المسافر",
+    "person_name_search": "اسم الزبون/المسافر",
+    "service_type": "نوع الخدمة",
+    "operation_type": "نوع العملية",
 }
 
 SEARCH_FIELDS = (
@@ -54,6 +58,9 @@ SEARCH_FIELDS = (
     "created_full_name",
     "status",
     "type",
+    "person_name",
+    "service_type",
+    "operation_type",
 )
 
 

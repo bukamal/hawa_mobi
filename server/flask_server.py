@@ -81,6 +81,7 @@ def _capabilities_payload() -> Dict[str, Any]:
         "supports_audit_post": True,
         "supports_expense_summary": True,
         "supports_company_deep_search": True,
+        "supports_ledger_operation_core": True,
         "auth_required": True,
         "token_type": "Bearer",
         "endpoints": REQUIRED_MOBILE_ENDPOINTS,
@@ -280,23 +281,38 @@ def _expense_payload(conn: sqlite3.Connection, data: Dict[str, Any], *, existing
             "updated_at": data.get("updated_at") or _now(),
             "payment_due_date": data.get("payment_due_date"),
             "payment_reminder_note": data.get("payment_reminder_note"),
+            "source_type": data.get("source_type") or ((existing or {}).get("source_type") if existing else None),
+            "source_ref": data.get("source_ref") or ((existing or {}).get("source_ref") if existing else None),
+            "counterparty_company_name": data.get("counterparty_company_name") or ((existing or {}).get("counterparty_company_name") if existing else None),
+            "person_name": data.get("person_name") or "",
+            "service_type": data.get("service_type") or "غير محدد",
+            "operation_type": data.get("operation_type") or "normal",
+            "is_locked": data.get("is_locked", (existing or {}).get("is_locked", 0) if existing else 0),
+            "reversal_of": data.get("reversal_of") or ((existing or {}).get("reversal_of") if existing else None),
+            "reversed_by": data.get("reversed_by") or ((existing or {}).get("reversed_by") if existing else None),
         },
         existing=existing,
     )
+    from services.ledger_operation_service import normalize_expense_metadata
+    normalized = normalize_expense_metadata(normalized)
     normalized["status"] = data.get("status") or ("waiting_payment" if normalized["amount_original"] == 0 else "approved")
     return normalized
 
 
 def _insert_expense_with_source(conn: sqlite3.Connection, p: Dict[str, Any]) -> int:
+    from services.ledger_operation_service import normalize_expense_metadata
+    p = normalize_expense_metadata(p)
     cur = conn.execute(
         """INSERT INTO expenses
         (company_name, amount, amount_base, type, date, notes, currency, created_by, created_at,
          updated_by, updated_at, amount_original, currency_original, exchange_rate_to_usd,
-         status, payment_due_date, payment_reminder_note, source_type, source_ref, counterparty_company_name)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+         status, payment_due_date, payment_reminder_note, source_type, source_ref, counterparty_company_name,
+         person_name, person_name_search, service_type, operation_type, is_locked, reversal_of, reversed_by)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
         (p["company_name"], p["amount"], p["amount_base"], p["type"], p["date"], p.get("notes", ""), p["currency"], p.get("created_by"), p.get("created_at"),
          p.get("updated_by"), p.get("updated_at"), p["amount_original"], p["currency_original"], p["exchange_rate_to_usd"],
-         p.get("status", "approved"), p.get("payment_due_date"), p.get("payment_reminder_note"), p.get("source_type"), p.get("source_ref"), p.get("counterparty_company_name")),
+         p.get("status", "approved"), p.get("payment_due_date"), p.get("payment_reminder_note"), p.get("source_type"), p.get("source_ref"), p.get("counterparty_company_name"),
+         p.get("person_name"), p.get("person_name_search"), p.get("service_type"), p.get("operation_type"), p.get("is_locked", 0), p.get("reversal_of"), p.get("reversed_by")),
     )
     return int(cur.lastrowid)
 
@@ -515,11 +531,11 @@ def add_expense():
             """INSERT INTO expenses
             (company_name, amount, amount_base, type, date, notes, currency, created_by, created_at,
              updated_by, updated_at, amount_original, currency_original, exchange_rate_to_usd,
-             status, payment_due_date, payment_reminder_note)
-            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+             status, payment_due_date, payment_reminder_note, person_name, person_name_search, service_type, operation_type, is_locked, reversal_of, reversed_by)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
             (p["company_name"], p["amount"], p["amount_base"], p["type"], p["date"], p["notes"], p["currency"], p["created_by"], p["created_at"],
              p["updated_by"], p["updated_at"], p["amount_original"], p["currency_original"], p["exchange_rate_to_usd"],
-             p["status"], p["payment_due_date"], p["payment_reminder_note"]),
+             p["status"], p["payment_due_date"], p["payment_reminder_note"], p.get("person_name"), p.get("person_name_search"), p.get("service_type"), p.get("operation_type"), p.get("is_locked", 0), p.get("reversal_of"), p.get("reversed_by")),
         )
         eid = cur.lastrowid
         if p["status"] == "waiting_payment" and p["payment_due_date"]:
@@ -542,8 +558,8 @@ def update_expense(expense_id: int):
         existing_row = conn.execute("SELECT * FROM expenses WHERE id=?", (expense_id,)).fetchone()
         if not existing_row:
             return _json_error(f"لم يتم العثور على القيد id={expense_id}", 404)
-        if "source_type" in existing_row.keys() and existing_row["source_type"] in {"third_party_payment", "third_party_payment_reversal"}:
-            return _json_error("هذا القيد مولّد من عملية سداد بالنيابة ولا يُعدّل منفرداً", 409)
+        if ("source_type" in existing_row.keys() and existing_row["source_type"] in {"third_party_payment", "third_party_payment_reversal"}) or ("is_locked" in existing_row.keys() and int(existing_row["is_locked"] or 0)):
+            return _json_error("هذا القيد مرتبط بعملية محاسبية ولا يُعدّل منفرداً. استخدم عكس العملية عند الحاجة.", 409)
         try:
             p = _expense_payload(conn, data, existing=dict(existing_row))
         except ValueError as e:
@@ -551,10 +567,12 @@ def update_expense(expense_id: int):
         cur = conn.execute(
             """UPDATE expenses SET
             company_name=?, amount=?, amount_base=?, type=?, date=?, notes=?, currency=?, updated_by=?, updated_at=?,
-            amount_original=?, currency_original=?, exchange_rate_to_usd=?, status=?, payment_due_date=?, payment_reminder_note=?
+            amount_original=?, currency_original=?, exchange_rate_to_usd=?, status=?, payment_due_date=?, payment_reminder_note=?,
+            person_name=?, person_name_search=?, service_type=?, operation_type=?, is_locked=?, reversal_of=?, reversed_by=?
             WHERE id=?""",
             (p["company_name"], p["amount"], p["amount_base"], p["type"], p["date"], p["notes"], p["currency"], p["updated_by"], p["updated_at"],
-             p["amount_original"], p["currency_original"], p["exchange_rate_to_usd"], p["status"], p["payment_due_date"], p["payment_reminder_note"], expense_id),
+             p["amount_original"], p["currency_original"], p["exchange_rate_to_usd"], p["status"], p["payment_due_date"], p["payment_reminder_note"],
+             p.get("person_name"), p.get("person_name_search"), p.get("service_type"), p.get("operation_type"), p.get("is_locked", 0), p.get("reversal_of"), p.get("reversed_by"), expense_id),
         )
         if cur.rowcount != 1:
             return _json_error(f"لم يتم العثور على القيد id={expense_id}", 404)
@@ -577,9 +595,9 @@ def update_expense(expense_id: int):
 def delete_expense(expense_id: int):
     conn = _connect()
     try:
-        row = conn.execute("SELECT company_name, amount_original, currency_original, source_type, source_ref FROM expenses WHERE id=?", (expense_id,)).fetchone()
-        if row and "source_type" in row.keys() and row["source_type"] in {"third_party_payment", "third_party_payment_reversal"}:
-            return _json_error("هذا القيد مولّد من عملية سداد بالنيابة. استخدم عكس العملية بدلاً من الحذف.", 409)
+        row = conn.execute("SELECT company_name, amount_original, currency_original, source_type, source_ref, is_locked, operation_type FROM expenses WHERE id=?", (expense_id,)).fetchone()
+        if row and (("source_type" in row.keys() and row["source_type"] in {"third_party_payment", "third_party_payment_reversal"}) or ("is_locked" in row.keys() and int(row["is_locked"] or 0))):
+            return _json_error("هذا القيد مرتبط بعملية محاسبية ولا يُحذف منفرداً. استخدم عكس العملية بدلاً من الحذف.", 409)
         cur = conn.execute("DELETE FROM expenses WHERE id=?", (expense_id,))
         if cur.rowcount != 1:
             return _json_error(f"لم يتم العثور على القيد id={expense_id}", 404)

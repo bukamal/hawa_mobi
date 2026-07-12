@@ -79,6 +79,9 @@ def build_rows(records: Iterable[Dict], display_currency: str | None = None) -> 
             "historical_currency_value": historical,
             "status": "بانتظار الدفع" if is_waiting else "معتمد",
             "due_date": str(r.get("payment_due_date") or ""),
+            "person_name": str(r.get("person_name") or ""),
+            "service_type": str(r.get("service_type") or ""),
+            "operation_type": str(r.get("operation_type") or ""),
         })
 
     return rows, {

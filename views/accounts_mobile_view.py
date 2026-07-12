@@ -150,7 +150,7 @@ class AccountsMobileView(ft.Column):
             self._last_search_results = []
             self._search_banner('', 0)
 
-        groups = defaultdict(lambda: {'incoming': 0.0, 'outgoing': 0.0, 'records': [], 'waiting_payment': 0})
+        groups = defaultdict(lambda: {'incoming': 0.0, 'outgoing': 0.0, 'records': [], 'waiting_payment': 0, 'persons': set()})
         for ex in expenses:
             company = ex.get('company_name') or ''
             if visible_companies is not None and company not in visible_companies:
@@ -159,6 +159,8 @@ class AccountsMobileView(ft.Column):
                 groups[company]['waiting_payment'] += 1
             else:
                 groups[company][ex.get('type') or 'incoming'] += float(ex.get('amount') or ex.get('amount_base') or 0)
+            if (ex.get('person_name') or '').strip():
+                groups[company]['persons'].add((ex.get('person_name') or '').strip())
             groups[company]['records'].append(ex)
 
         display_curr = currency.get_display_currency()
@@ -189,6 +191,8 @@ class AccountsMobileView(ft.Column):
                     key_value_tile("📤 له", currency.format_amount(out, display_curr), ft.Colors.RED),
                     ft.VerticalDivider(width=1, color=ft.Colors.GREY_200),
                     key_value_tile("📋 عدد", str(len(vals['records']))),
+                    ft.VerticalDivider(width=1, color=ft.Colors.GREY_200),
+                    key_value_tile("👥 أشخاص", str(len(vals.get('persons') or []))),
                 ], alignment=ft.MainAxisAlignment.SPACE_AROUND),
                 pill(
                     f"⏳ بانتظار الدفع: {vals['waiting_payment']}",

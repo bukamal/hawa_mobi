@@ -16,7 +16,7 @@ def init_database():
     cursor.executescript('''
         CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT UNIQUE NOT NULL, password_hash TEXT NOT NULL, salt TEXT NOT NULL, full_name TEXT, role TEXT DEFAULT 'user', created_at TEXT, last_login TEXT, force_password_change INTEGER DEFAULT 0);
         CREATE TABLE IF NOT EXISTS audit_log (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, username TEXT, action TEXT, table_name TEXT, record_id INTEGER, details TEXT, ip_address TEXT, timestamp TEXT);
-        CREATE TABLE IF NOT EXISTS expenses (id INTEGER PRIMARY KEY AUTOINCREMENT, company_name TEXT NOT NULL, amount REAL NOT NULL, amount_base REAL NOT NULL DEFAULT 0, type TEXT NOT NULL CHECK(type IN ('incoming','outgoing')), date TEXT NOT NULL, notes TEXT, currency TEXT DEFAULT 'USD', created_by INTEGER, created_at TEXT, updated_by INTEGER, updated_at TEXT, amount_original REAL NOT NULL DEFAULT 0, currency_original TEXT NOT NULL DEFAULT 'USD', exchange_rate_to_usd REAL NOT NULL DEFAULT 1.0, status TEXT NOT NULL DEFAULT 'approved', payment_due_date TEXT, payment_reminder_note TEXT, source_type TEXT, source_ref TEXT, counterparty_company_name TEXT);
+        CREATE TABLE IF NOT EXISTS expenses (id INTEGER PRIMARY KEY AUTOINCREMENT, company_name TEXT NOT NULL, amount REAL NOT NULL, amount_base REAL NOT NULL DEFAULT 0, type TEXT NOT NULL CHECK(type IN ('incoming','outgoing')), date TEXT NOT NULL, notes TEXT, currency TEXT DEFAULT 'USD', created_by INTEGER, created_at TEXT, updated_by INTEGER, updated_at TEXT, amount_original REAL NOT NULL DEFAULT 0, currency_original TEXT NOT NULL DEFAULT 'USD', exchange_rate_to_usd REAL NOT NULL DEFAULT 1.0, status TEXT NOT NULL DEFAULT 'approved', payment_due_date TEXT, payment_reminder_note TEXT, source_type TEXT, source_ref TEXT, counterparty_company_name TEXT, person_name TEXT, person_name_search TEXT, service_type TEXT NOT NULL DEFAULT 'غير محدد', operation_type TEXT NOT NULL DEFAULT 'normal', is_locked INTEGER NOT NULL DEFAULT 0, reversal_of INTEGER, reversed_by INTEGER);
         CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT);
         CREATE TABLE IF NOT EXISTS exchange_rates (currency_code TEXT PRIMARY KEY, rate_to_usd REAL NOT NULL, updated_at TEXT);
         CREATE TABLE IF NOT EXISTS exchange_rate_history (id INTEGER PRIMARY KEY AUTOINCREMENT, currency_code TEXT NOT NULL, rate_to_usd REAL NOT NULL, previous_rate_to_usd REAL, changed_by INTEGER, changed_at TEXT NOT NULL);
@@ -29,6 +29,8 @@ def init_database():
         CREATE INDEX IF NOT EXISTS idx_expenses_date ON expenses(date);
         CREATE INDEX IF NOT EXISTS idx_expenses_status ON expenses(status);
         CREATE INDEX IF NOT EXISTS idx_expenses_source_ref ON expenses(source_ref);
+        CREATE INDEX IF NOT EXISTS idx_expenses_person_name_search ON expenses(person_name_search);
+        CREATE INDEX IF NOT EXISTS idx_expenses_operation_type ON expenses(operation_type);
         CREATE INDEX IF NOT EXISTS idx_third_party_payments_ref ON third_party_payments(reference);
         CREATE INDEX IF NOT EXISTS idx_payment_reminders_date ON payment_reminders(reminder_date);
         CREATE INDEX IF NOT EXISTS idx_audit_log_user ON audit_log(user_id);
@@ -42,7 +44,7 @@ def init_database():
             ('theme','light'),
             ('base_currency','USD'),
             ('display_currency','USD'),
-            ('schema_version','19'),
+            ('schema_version','20'),
             ('abbreviate_numbers','false'),
             ('network/mode','local'),
             ('network/server_url','');
@@ -118,8 +120,30 @@ def ensure_db():
                 cursor.execute("ALTER TABLE expenses ADD COLUMN source_ref TEXT")
             if 'counterparty_company_name' not in cols:
                 cursor.execute("ALTER TABLE expenses ADD COLUMN counterparty_company_name TEXT")
+            if 'person_name' not in cols:
+                cursor.execute("ALTER TABLE expenses ADD COLUMN person_name TEXT")
+            if 'person_name_search' not in cols:
+                cursor.execute("ALTER TABLE expenses ADD COLUMN person_name_search TEXT")
+            if 'service_type' not in cols:
+                cursor.execute("ALTER TABLE expenses ADD COLUMN service_type TEXT NOT NULL DEFAULT 'غير محدد'")
+            if 'operation_type' not in cols:
+                cursor.execute("ALTER TABLE expenses ADD COLUMN operation_type TEXT NOT NULL DEFAULT 'normal'")
+            if 'is_locked' not in cols:
+                cursor.execute("ALTER TABLE expenses ADD COLUMN is_locked INTEGER NOT NULL DEFAULT 0")
+                cursor.execute("UPDATE expenses SET is_locked=1 WHERE source_type IS NOT NULL AND source_type <> ''")
+            if 'reversal_of' not in cols:
+                cursor.execute("ALTER TABLE expenses ADD COLUMN reversal_of INTEGER")
+            if 'reversed_by' not in cols:
+                cursor.execute("ALTER TABLE expenses ADD COLUMN reversed_by INTEGER")
+            try:
+                from services.company_search_service import normalize_search_text
+                rows_to_index = cursor.execute("SELECT id, person_name FROM expenses WHERE person_name IS NOT NULL AND person_name <> '' AND (person_name_search IS NULL OR person_name_search='')").fetchall()
+                for r in rows_to_index:
+                    cursor.execute("UPDATE expenses SET person_name_search=? WHERE id=?", (normalize_search_text(r[1]), r[0]))
+            except Exception:
+                pass
             cursor.execute("CREATE TABLE IF NOT EXISTS exchange_rate_history (id INTEGER PRIMARY KEY AUTOINCREMENT, currency_code TEXT NOT NULL, rate_to_usd REAL NOT NULL, previous_rate_to_usd REAL, changed_by INTEGER, changed_at TEXT NOT NULL)")
-            cursor.execute("INSERT OR REPLACE INTO settings (key, value) VALUES (?,?)", ('schema_version','19'))
+            cursor.execute("INSERT OR REPLACE INTO settings (key, value) VALUES (?,?)", ('schema_version','20'))
             cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='token_blacklist'")
             if not cursor.fetchone():
                 cursor.execute("CREATE TABLE token_blacklist (jti TEXT PRIMARY KEY, created_at TEXT)")
@@ -130,6 +154,8 @@ def ensure_db():
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_expenses_status ON expenses(status)")
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_payment_reminders_date ON payment_reminders(reminder_date)")
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_expenses_source_ref ON expenses(source_ref)")
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_expenses_person_name_search ON expenses(person_name_search)")
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_expenses_operation_type ON expenses(operation_type)")
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_third_party_payments_ref ON third_party_payments(reference)")
             conn.commit()
             conn.close()

@@ -16,7 +16,10 @@ ACCOUNT_STATEMENT_DEFAULT_COLUMNS: List[Dict[str, object]] = [
     {"key": "notes", "label": "الملاحظات", "visible": True, "width": "34%"},
     {"key": "debit", "label": "لنا", "visible": True, "width": "14%"},
     {"key": "credit", "label": "له", "visible": True, "width": "14%"},
-    {"key": "running_balance", "label": "التراكمي", "visible": True, "width": "16%"},
+    {"key": "running_balance", "label": "التراكمي", "visible": True, "width": "14%"},
+    {"key": "person_name", "label": "الزبون/المسافر", "visible": False, "width": "14%"},
+    {"key": "service_type", "label": "نوع الخدمة", "visible": False, "width": "12%"},
+    {"key": "operation_type", "label": "نوع العملية", "visible": False, "width": "12%"},
     # Optional business columns. They are kept disabled by default and can be
     # activated later without changing the report engine.
     {"key": "currency", "label": "العملة", "visible": False, "width": "8%"},

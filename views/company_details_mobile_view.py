@@ -7,6 +7,7 @@ from i18n.translator import translate
 from currency import currency
 from views.ui_kit import show_snackbar, empty_state, data_card, action_text_button, amount_pill, key_value_tile, pill, summary_bar, metric_tile, info_banner
 from services.company_search_service import enrich_expense_match, normalize_search_text
+from services.ledger_operation_service import operation_label
 
 class CompanyDetailsMobileView(ft.Column):
     def __init__(self, page, company_name, records=None, on_changed=None, search_query=None):
@@ -41,6 +42,7 @@ class CompanyDetailsMobileView(ft.Column):
             metric_tile("الصافي", self.net_text),
             metric_tile("انتظار", self.waiting_text),
         ], visible=True, bgcolor=ft.Colors.GREY_100)
+        self.people_summary = ft.Column(spacing=6, visible=False)
         self.records_list = ft.Column(spacing=8, scroll=ft.ScrollMode.AUTO)
 
         self.report_actions = ft.Row([
@@ -71,7 +73,7 @@ class CompanyDetailsMobileView(ft.Column):
             color=ft.Colors.INDIGO,
             bgcolor=ft.Colors.INDIGO_50,
         ) if normalize_search_text(self.search_query) else ft.Container(width=0, height=0)
-        self.controls = [self.summary_panel, search_banner, self.report_actions, ft.Divider(height=1), self.records_list]
+        self.controls = [self.summary_panel, search_banner, self.report_actions, self.people_summary, ft.Divider(height=1), self.records_list]
         self._load_data()
 
     def _show_snackbar(self, message, is_error=False):
@@ -111,6 +113,29 @@ class CompanyDetailsMobileView(ft.Column):
         self.net_text.value = currency.format_amount(net, display_curr)
         self.net_text.color = ft.Colors.GREEN if net_usd >= 0 else ft.Colors.RED
         self.waiting_text.value = str(waiting_count)
+
+        person_buckets = {}
+        for rr in self.records:
+            person = (rr.get('person_name') or '').strip()
+            if not person:
+                continue
+            item = person_buckets.setdefault(person, {'incoming': 0.0, 'outgoing': 0.0, 'count': 0})
+            item['count'] += 1
+            if rr.get('status') != 'waiting_payment':
+                if rr.get('type') == 'incoming':
+                    item['incoming'] += float(rr.get('amount') or 0)
+                else:
+                    item['outgoing'] += float(rr.get('amount') or 0)
+        if person_buckets:
+            chips = [ft.Text("الأشخاص داخل الحساب", size=13, weight=ft.FontWeight.BOLD, color=ft.Colors.INDIGO)]
+            for person, item in sorted(person_buckets.items(), key=lambda kv: kv[0])[:8]:
+                net_p = currency.convert(item['incoming'] - item['outgoing'], 'USD', display_curr)
+                chips.append(pill(f"{person}: {currency.format_amount(net_p, display_curr)} · {item['count']} قيد", color=ft.Colors.INDIGO, bgcolor=ft.Colors.INDIGO_50))
+            self.people_summary.controls = chips
+            self.people_summary.visible = True
+        else:
+            self.people_summary.controls = []
+            self.people_summary.visible = False
 
         cards = []
         running_usd = 0.0
@@ -156,6 +181,11 @@ class CompanyDetailsMobileView(ft.Column):
                         color=ft.Colors.ORANGE_900,
                         bgcolor=ft.Colors.ORANGE_50,
                     ) if is_waiting else ft.Container(width=0, height=0),
+                    ft.Row([
+                        pill(f"👤 {r.get('person_name')}", color=ft.Colors.BLUE_900, bgcolor=ft.Colors.BLUE_50) if (r.get('person_name') or '').strip() else ft.Container(width=0, height=0),
+                        pill(f"🧾 {r.get('service_type') or 'غير محدد'}", color=ft.Colors.GREY_800, bgcolor=ft.Colors.GREY_100),
+                        pill(f"⚙️ {operation_label(r.get('operation_type'))}", color=ft.Colors.INDIGO, bgcolor=ft.Colors.INDIGO_50),
+                    ], spacing=5, wrap=True),
                     ft.Text(r['notes'] or '', size=12, color=ft.Colors.GREY_600, max_lines=2, overflow=ft.TextOverflow.ELLIPSIS),
                     self._match_chip(r) if normalize_search_text(self.search_query) else ft.Container(width=0, height=0),
                     pill(
@@ -164,8 +194,8 @@ class CompanyDetailsMobileView(ft.Column):
                         bgcolor=ft.Colors.INDIGO_50 if r.get('source_type') == 'third_party_payment' else ft.Colors.ORANGE_50,
                     ) if r.get('source_type') in ('third_party_payment', 'third_party_payment_reversal') else ft.Container(width=0, height=0),
                     ft.Row([
-                        action_text_button("تعديل", ft.Icons.EDIT, lambda e, rec=r: self._edit_record(rec), color=ft.Colors.INDIGO, visible=(not is_viewer and not r.get('source_type'))),
-                        action_text_button("حذف", ft.Icons.DELETE, lambda e, rec=r: self._delete_record(rec), color=ft.Colors.RED, visible=(not is_viewer and not r.get('source_type'))),
+                        action_text_button("تعديل", ft.Icons.EDIT, lambda e, rec=r: self._edit_record(rec), color=ft.Colors.INDIGO, visible=(not is_viewer and not r.get('source_type') and not int(r.get('is_locked') or 0))),
+                        action_text_button("حذف", ft.Icons.DELETE, lambda e, rec=r: self._delete_record(rec), color=ft.Colors.RED, visible=(not is_viewer and not r.get('source_type') and not int(r.get('is_locked') or 0))),
                         action_text_button("عكس", ft.Icons.UNDO, lambda e, rec=r: self._reverse_third_party(rec), color=ft.Colors.ORANGE, visible=(not is_viewer and r.get('source_type') == 'third_party_payment')),
                     ], alignment=ft.MainAxisAlignment.END)
                 ], spacing=8),
