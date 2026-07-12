@@ -85,6 +85,8 @@ def _capabilities_payload() -> Dict[str, Any]:
         "supports_company_deep_search": True,
         "supports_ledger_operation_core": True,
         "supports_service_cases": True,
+        "supports_service_case_components": True,
+        "supports_embassy_and_ground_transport_components": True,
         "supports_reconciliation_statement": True,
         "auth_required": True,
         "token_type": "Bearer",
@@ -769,7 +771,15 @@ def get_service_cases():
     conn = _connect()
     try:
         rows = conn.execute("SELECT * FROM service_cases ORDER BY date DESC, id DESC").fetchall()
-        return jsonify([dict(r) for r in rows])
+        out = []
+        for r in rows:
+            case = dict(r)
+            comps = conn.execute("SELECT * FROM service_case_components WHERE service_case_ref=? ORDER BY component_index", (case["reference"],)).fetchall()
+            case["components"] = [dict(c) for c in comps]
+            if case["components"]:
+                case["components_summary"] = " ؛ ".join(f"{c.get('service_type')} / {c.get('supplier_company_name') or '-'} / تكلفة {c.get('cost_amount_original')}" for c in case["components"])
+            out.append(case)
+        return jsonify(out)
     finally:
         conn.close()
 
@@ -795,6 +805,7 @@ def add_service_case():
         user = _current_user() or {}
         uid = user.get("id") or data.get("created_by") or 1
         now = _now()
+        supplier_summary = payload.get("supplier_summary") or payload.get("supplier_company_name")
         client_payload = _expense_payload(conn, {
             "company_name": payload["client_company_name"],
             "amount": payload["sale_amount_original"],
@@ -808,43 +819,83 @@ def add_service_case():
             "updated_at": now,
             "source_type": SERVICE_CASE_SOURCE_CLIENT,
             "source_ref": reference,
-            "counterparty_company_name": payload["supplier_company_name"],
+            "counterparty_company_name": supplier_summary,
             "person_name": payload["person_name"],
             "service_type": payload["service_type"],
             "operation_type": SERVICE_CASE_OPERATION_CLIENT,
             "is_locked": 1,
             "print_description": client_print_description(payload),
             "service_case_role": "client",
-            "linked_company_name": payload["supplier_company_name"],
+            "linked_company_name": supplier_summary,
         })
-        supplier_payload = _expense_payload(conn, {
-            "company_name": payload["supplier_company_name"],
-            "amount": payload["cost_amount_original"],
-            "type": "outgoing",
-            "date": payload["date"],
-            "notes": build_supplier_note(reference, payload),
-            "currency": payload["currency_original"],
-            "created_by": uid,
-            "created_at": now,
-            "updated_by": uid,
-            "updated_at": now,
-            "source_type": SERVICE_CASE_SOURCE_SUPPLIER,
-            "source_ref": reference,
-            "counterparty_company_name": payload["client_company_name"],
-            "person_name": payload["person_name"],
-            "service_type": payload["service_type"],
-            "operation_type": SERVICE_CASE_OPERATION_SUPPLIER,
-            "is_locked": 1,
-            "print_description": supplier_print_description(payload),
-            "service_case_role": "supplier",
-            "linked_company_name": payload["client_company_name"],
-        })
-        note = internal_note(reference, payload, client_payload.get("amount_base"), supplier_payload.get("amount_base"))
+        supplier_payloads = []
+        for component in payload.get("components") or []:
+            if float(component.get("cost_amount_original") or 0) <= 0:
+                continue
+            supplier_payloads.append({
+                "component": component,
+                "payload": _expense_payload(conn, {
+                    "company_name": component["supplier_company_name"],
+                    "amount": component["cost_amount_original"],
+                    "type": "outgoing",
+                    "date": payload["date"],
+                    "notes": build_supplier_note(reference, payload, component),
+                    "currency": payload["currency_original"],
+                    "created_by": uid,
+                    "created_at": now,
+                    "updated_by": uid,
+                    "updated_at": now,
+                    "source_type": SERVICE_CASE_SOURCE_SUPPLIER,
+                    "source_ref": reference,
+                    "counterparty_company_name": payload["client_company_name"],
+                    "person_name": payload["person_name"],
+                    "service_type": component["service_type"],
+                    "operation_type": SERVICE_CASE_OPERATION_SUPPLIER,
+                    "is_locked": 1,
+                    "print_description": supplier_print_description(payload, component),
+                    "service_case_role": "supplier",
+                    "linked_company_name": payload["client_company_name"],
+                })
+            })
+        note = internal_note(reference, payload, client_payload.get("amount_base"), sum(float(x["payload"].get("amount_base") or 0) for x in supplier_payloads))
         client_payload["internal_note"] = note
-        supplier_payload["internal_note"] = note
+        for item in supplier_payloads:
+            item["payload"]["internal_note"] = note
         conn.execute("BEGIN IMMEDIATE")
         client_expense_id = _insert_expense_with_source(conn, client_payload)
-        supplier_expense_id = _insert_expense_with_source(conn, supplier_payload)
+        supplier_expense_ids = []
+        first_supplier_expense_id = None
+        component_rows = []
+        for idx, component in enumerate(payload.get("components") or [], 1):
+            supplier_expense_id = None
+            supplier_payload_for_component = None
+            for item in supplier_payloads:
+                if item["component"] is component:
+                    supplier_payload_for_component = item["payload"]
+                    supplier_expense_id = _insert_expense_with_source(conn, supplier_payload_for_component)
+                    supplier_expense_ids.append(supplier_expense_id)
+                    if first_supplier_expense_id is None:
+                        first_supplier_expense_id = supplier_expense_id
+                    break
+            component_rows.append((idx, component, supplier_expense_id, supplier_payload_for_component))
+        for idx, component, supplier_expense_id, supplier_payload_for_component in component_rows:
+            conn.execute(
+                """INSERT INTO service_case_components
+                (service_case_ref, component_index, service_type, supplier_company_name,
+                 sale_amount_original, cost_amount_original, currency_original, exchange_rate_to_usd,
+                 sale_amount_base, cost_amount_base, supplier_expense_id, print_description_client,
+                 print_description_supplier, notes)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                (
+                    reference, idx, component.get("service_type"), component.get("supplier_company_name"),
+                    float(component.get("sale_amount_original") or 0), float(component.get("cost_amount_original") or 0),
+                    payload.get("currency_original"), float((supplier_payload_for_component or {}).get("exchange_rate_to_usd") or 1.0),
+                    0.0, float((supplier_payload_for_component or {}).get("amount_base") or 0), supplier_expense_id,
+                    component.get("print_description_client") or "", component.get("print_description_supplier") or "", component.get("notes") or "",
+                ),
+            )
+        sale_base = float(client_payload.get("amount_base") or 0)
+        cost_base = sum(float(x["payload"].get("amount_base") or 0) for x in supplier_payloads)
         conn.execute(
             """INSERT INTO service_cases
             (reference, client_company_name, supplier_company_name, person_name, service_type,
@@ -853,15 +904,15 @@ def add_service_case():
              created_by, created_at, print_description_client, print_description_supplier, internal_note)
             VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
             (
-                reference, payload["client_company_name"], payload["supplier_company_name"], payload["person_name"], payload["service_type"],
+                reference, payload["client_company_name"], supplier_summary, payload["person_name"], payload["service_type"],
                 payload["sale_amount_original"], payload["cost_amount_original"], payload["currency_original"], client_payload.get("exchange_rate_to_usd", 1.0),
-                client_payload.get("amount_base", 0), supplier_payload.get("amount_base", 0), payload["date"], payload.get("notes", ""), "open",
-                client_expense_id, supplier_expense_id, uid, now, client_print_description(payload), supplier_print_description(payload), note,
+                sale_base, cost_base, payload["date"], payload.get("notes", ""), "open",
+                client_expense_id, first_supplier_expense_id, uid, now, client_print_description(payload), "تفاصيل حسب بنود الخدمة", note,
             ),
         )
-        _audit(conn, "إضافة ملف خدمة", "service_cases", None, f"{reference}: {payload['client_company_name']} / {payload['supplier_company_name']}")
+        _audit(conn, "إضافة ملف خدمة", "service_cases", None, f"{reference}: {payload['client_company_name']} / {supplier_summary}")
         conn.commit()
-        return jsonify({"ok": True, "reference": reference, "client_expense_id": client_expense_id, "supplier_expense_id": supplier_expense_id, "profit_base": client_payload.get("amount_base", 0) - supplier_payload.get("amount_base", 0)})
+        return jsonify({"ok": True, "reference": reference, "client_expense_id": client_expense_id, "supplier_expense_id": first_supplier_expense_id, "supplier_expense_ids": supplier_expense_ids, "profit_base": sale_base - cost_base})
     except Exception as e:
         try:
             conn.rollback()
@@ -870,7 +921,6 @@ def add_service_case():
         return _json_error(e, 400)
     finally:
         conn.close()
-
 
 @app.post("/api/service_cases/<path:reference>/reverse")
 @require_roles(*_role_allows_write())

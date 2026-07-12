@@ -46,7 +46,13 @@ class ServiceCaseDialog(ft.AlertDialog):
         default_service = "تأشيرة سياحية" if "تأشيرة سياحية" in SERVICE_TYPES else "فيزا"
         self.service_dropdown = ft.Dropdown(label="نوع الخدمة", value=default_service, options=[ft.dropdown.Option(s) for s in SERVICE_TYPES], width=dialog_width - 20)
         self.sale_field = ft.TextField(label="سعر البيع على الشركة العميلة", keyboard_type=ft.KeyboardType.NUMBER, width=dialog_width - 20)
-        self.cost_field = ft.TextField(label="تكلفة الشركة المورّدة", keyboard_type=ft.KeyboardType.NUMBER, width=dialog_width - 20)
+        self.cost_field = ft.TextField(label="تكلفة الشركة المورّدة الأساسية", keyboard_type=ft.KeyboardType.NUMBER, width=dialog_width - 20)
+        self.embassy_supplier_field = ft.TextField(label="حساب السفارة / رسوم السفارة", width=dialog_width - 20, hint_text="مثال: رسوم سفارات أو سفارة الأردن")
+        self.embassy_sale_field = ft.TextField(label="بيع رسوم السفارة على العميل", keyboard_type=ft.KeyboardType.NUMBER, width=(dialog_width - 34) / 2)
+        self.embassy_cost_field = ft.TextField(label="تكلفة رسوم السفارة", keyboard_type=ft.KeyboardType.NUMBER, width=(dialog_width - 34) / 2)
+        self.transport_supplier_field = ft.TextField(label="شركة النقل البري", width=dialog_width - 20, hint_text="مثال: شركة نقل الشام")
+        self.transport_sale_field = ft.TextField(label="بيع النقل على العميل", keyboard_type=ft.KeyboardType.NUMBER, width=(dialog_width - 34) / 2)
+        self.transport_cost_field = ft.TextField(label="تكلفة النقل", keyboard_type=ft.KeyboardType.NUMBER, width=(dialog_width - 34) / 2)
         self.currency_dropdown = ft.Dropdown(label="العملة", value=currency.get_display_currency(), options=[ft.dropdown.Option(c) for c in ["USD","SAR","SYP","EUR","GBP","AED","QAR","KWD","OMR"]], width=120)
         self.date_field = ft.TextField(label="التاريخ", value=datetime.datetime.now().strftime("%Y-%m-%d"), hint_text="YYYY-MM-DD", width=150)
         self.notes_field = ft.TextField(label="ملاحظات داخلية", multiline=True, min_lines=2, max_lines=3, width=dialog_width - 20)
@@ -62,7 +68,7 @@ class ServiceCaseDialog(ft.AlertDialog):
         )
 
         self.save_btn = save_button("إنشاء ملف الخدمة", self._save)
-        for fld in (self.sale_field, self.cost_field):
+        for fld in (self.sale_field, self.cost_field, self.embassy_sale_field, self.embassy_cost_field, self.transport_sale_field, self.transport_cost_field):
             fld.on_change = self._update_profit
         self.currency_dropdown.on_change = self._update_profit
         self._update_profit(None)
@@ -77,6 +83,12 @@ class ServiceCaseDialog(ft.AlertDialog):
             self.service_dropdown,
             ft.Row([self.sale_field, self.currency_dropdown], spacing=10, wrap=True),
             self.cost_field,
+            ft.Divider(height=1),
+            ft.Text("بنود إضافية اختيارية", size=13, weight=ft.FontWeight.BOLD, color=ft.Colors.INDIGO),
+            self.embassy_supplier_field,
+            ft.Row([self.embassy_sale_field, self.embassy_cost_field], spacing=10, wrap=True),
+            self.transport_supplier_field,
+            ft.Row([self.transport_sale_field, self.transport_cost_field], spacing=10, wrap=True),
             ft.Row([self.date_field], spacing=10, wrap=True),
             self.profit_text,
             self.notes_field,
@@ -106,10 +118,18 @@ class ServiceCaseDialog(ft.AlertDialog):
 
     def _update_profit(self, e):
         try:
-            sale = parse_non_negative_amount(self.sale_field.value or 0)
-            cost = parse_non_negative_amount(self.cost_field.value or 0)
+            sale = (
+                parse_non_negative_amount(self.sale_field.value or 0)
+                + parse_non_negative_amount(self.embassy_sale_field.value or 0)
+                + parse_non_negative_amount(self.transport_sale_field.value or 0)
+            )
+            cost = (
+                parse_non_negative_amount(self.cost_field.value or 0)
+                + parse_non_negative_amount(self.embassy_cost_field.value or 0)
+                + parse_non_negative_amount(self.transport_cost_field.value or 0)
+            )
             code = self.currency_dropdown.value or currency.get_display_currency()
-            self.profit_text.value = f"الربح المتوقع: {currency.format_amount(sale - cost, code)}"
+            self.profit_text.value = f"إجمالي البيع: {currency.format_amount(sale, code)} · التكلفة: {currency.format_amount(cost, code)} · الربح: {currency.format_amount(sale - cost, code)}"
             self.profit_text.color = ft.Colors.GREEN if (sale - cost) >= 0 else ft.Colors.RED
         except Exception:
             self.profit_text.value = ""
@@ -119,16 +139,37 @@ class ServiceCaseDialog(ft.AlertDialog):
             pass
 
     def _build_payload(self):
+        components = [
+            {
+                "service_type": self.service_dropdown.value or "تأشيرة سياحية",
+                "supplier_company_name": normalize_text(self.supplier_field.value),
+                "sale_amount_original": self.sale_field.value,
+                "cost_amount_original": self.cost_field.value,
+            }
+        ]
+        if normalize_text(self.embassy_supplier_field.value) or normalize_text(self.embassy_sale_field.value) or normalize_text(self.embassy_cost_field.value):
+            components.append({
+                "service_type": "سفارة / رسوم سفارة",
+                "supplier_company_name": normalize_text(self.embassy_supplier_field.value) or "رسوم سفارات",
+                "sale_amount_original": self.embassy_sale_field.value,
+                "cost_amount_original": self.embassy_cost_field.value,
+            })
+        if normalize_text(self.transport_supplier_field.value) or normalize_text(self.transport_sale_field.value) or normalize_text(self.transport_cost_field.value):
+            components.append({
+                "service_type": "نقل بري",
+                "supplier_company_name": normalize_text(self.transport_supplier_field.value),
+                "sale_amount_original": self.transport_sale_field.value,
+                "cost_amount_original": self.transport_cost_field.value,
+            })
         payload = {
             "client_company_name": normalize_text(self.client_field.value),
             "supplier_company_name": normalize_text(self.supplier_field.value),
             "person_name": normalize_text(self.person_field.value),
             "service_type": self.service_dropdown.value or "تأشيرة سياحية",
-            "sale_amount_original": self.sale_field.value,
-            "cost_amount_original": self.cost_field.value,
             "currency_original": self.currency_dropdown.value,
             "date": normalize_text(self.date_field.value) or datetime.datetime.now().strftime("%Y-%m-%d"),
             "notes": self.notes_field.value or "",
+            "components": components,
         }
         # Reuse the business validator before any network/database call so the
         # button returns a visible field-level error instead of appearing dead.

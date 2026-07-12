@@ -24,6 +24,7 @@ def init_database():
         CREATE TABLE IF NOT EXISTS payment_reminders (id INTEGER PRIMARY KEY AUTOINCREMENT, expense_id INTEGER NOT NULL, reminder_date TEXT NOT NULL, note TEXT, is_done INTEGER NOT NULL DEFAULT 0, created_at TEXT, FOREIGN KEY(expense_id) REFERENCES expenses(id) ON DELETE CASCADE);
         CREATE TABLE IF NOT EXISTS third_party_payments (id INTEGER PRIMARY KEY AUTOINCREMENT, reference TEXT UNIQUE NOT NULL, payer_company_name TEXT NOT NULL, paid_to_company_name TEXT NOT NULL, amount_original REAL NOT NULL, currency_original TEXT NOT NULL, exchange_rate_to_usd REAL NOT NULL DEFAULT 1.0, amount_base REAL NOT NULL DEFAULT 0, date TEXT NOT NULL, notes TEXT, status TEXT NOT NULL DEFAULT 'approved', payer_expense_id INTEGER, paid_to_expense_id INTEGER, created_by INTEGER, created_at TEXT, reversed_at TEXT, reversal_ref TEXT);
         CREATE TABLE IF NOT EXISTS service_cases (id INTEGER PRIMARY KEY AUTOINCREMENT, reference TEXT UNIQUE NOT NULL, client_company_name TEXT NOT NULL, supplier_company_name TEXT NOT NULL, person_name TEXT NOT NULL, service_type TEXT NOT NULL DEFAULT 'تأشيرة سياحية', sale_amount_original REAL NOT NULL DEFAULT 0, cost_amount_original REAL NOT NULL DEFAULT 0, currency_original TEXT NOT NULL DEFAULT 'USD', exchange_rate_to_usd REAL NOT NULL DEFAULT 1.0, sale_amount_base REAL NOT NULL DEFAULT 0, cost_amount_base REAL NOT NULL DEFAULT 0, date TEXT NOT NULL, notes TEXT, status TEXT NOT NULL DEFAULT 'open', client_expense_id INTEGER, supplier_expense_id INTEGER, created_by INTEGER, created_at TEXT, reversed_at TEXT, reversal_ref TEXT, print_description_client TEXT, print_description_supplier TEXT, internal_note TEXT);
+        CREATE TABLE IF NOT EXISTS service_case_components (id INTEGER PRIMARY KEY AUTOINCREMENT, service_case_ref TEXT NOT NULL, component_index INTEGER NOT NULL DEFAULT 1, service_type TEXT NOT NULL, supplier_company_name TEXT, sale_amount_original REAL NOT NULL DEFAULT 0, cost_amount_original REAL NOT NULL DEFAULT 0, currency_original TEXT NOT NULL DEFAULT 'USD', exchange_rate_to_usd REAL NOT NULL DEFAULT 1.0, sale_amount_base REAL NOT NULL DEFAULT 0, cost_amount_base REAL NOT NULL DEFAULT 0, supplier_expense_id INTEGER, print_description_client TEXT, print_description_supplier TEXT, notes TEXT);
     ''')
     cursor.executescript('''
         CREATE INDEX IF NOT EXISTS idx_expenses_company ON expenses(company_name);
@@ -36,6 +37,8 @@ def init_database():
         CREATE INDEX IF NOT EXISTS idx_service_cases_ref ON service_cases(reference);
         CREATE INDEX IF NOT EXISTS idx_service_cases_client ON service_cases(client_company_name);
         CREATE INDEX IF NOT EXISTS idx_service_cases_supplier ON service_cases(supplier_company_name);
+        CREATE INDEX IF NOT EXISTS idx_service_case_components_ref ON service_case_components(service_case_ref);
+        CREATE INDEX IF NOT EXISTS idx_service_case_components_supplier ON service_case_components(supplier_company_name);
         CREATE INDEX IF NOT EXISTS idx_payment_reminders_date ON payment_reminders(reminder_date);
         CREATE INDEX IF NOT EXISTS idx_audit_log_user ON audit_log(user_id);
         CREATE INDEX IF NOT EXISTS idx_audit_log_timestamp ON audit_log(timestamp);
@@ -48,7 +51,7 @@ def init_database():
             ('theme','light'),
             ('base_currency','USD'),
             ('display_currency','USD'),
-            ('schema_version','21'),
+            ('schema_version','22'),
             ('abbreviate_numbers','false'),
             ('network/mode','local'),
             ('network/server_url','');
@@ -155,7 +158,7 @@ def ensure_db():
             except Exception:
                 pass
             cursor.execute("CREATE TABLE IF NOT EXISTS exchange_rate_history (id INTEGER PRIMARY KEY AUTOINCREMENT, currency_code TEXT NOT NULL, rate_to_usd REAL NOT NULL, previous_rate_to_usd REAL, changed_by INTEGER, changed_at TEXT NOT NULL)")
-            cursor.execute("INSERT OR REPLACE INTO settings (key, value) VALUES (?,?)", ('schema_version','21'))
+            cursor.execute("INSERT OR REPLACE INTO settings (key, value) VALUES (?,?)", ('schema_version','22'))
             cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='token_blacklist'")
             if not cursor.fetchone():
                 cursor.execute("CREATE TABLE token_blacklist (jti TEXT PRIMARY KEY, created_at TEXT)")
@@ -164,6 +167,7 @@ def ensure_db():
                 cursor.execute("CREATE TABLE payment_reminders (id INTEGER PRIMARY KEY AUTOINCREMENT, expense_id INTEGER NOT NULL, reminder_date TEXT NOT NULL, note TEXT, is_done INTEGER NOT NULL DEFAULT 0, created_at TEXT, FOREIGN KEY(expense_id) REFERENCES expenses(id) ON DELETE CASCADE)")
             cursor.execute("CREATE TABLE IF NOT EXISTS third_party_payments (id INTEGER PRIMARY KEY AUTOINCREMENT, reference TEXT UNIQUE NOT NULL, payer_company_name TEXT NOT NULL, paid_to_company_name TEXT NOT NULL, amount_original REAL NOT NULL, currency_original TEXT NOT NULL, exchange_rate_to_usd REAL NOT NULL DEFAULT 1.0, amount_base REAL NOT NULL DEFAULT 0, date TEXT NOT NULL, notes TEXT, status TEXT NOT NULL DEFAULT 'approved', payer_expense_id INTEGER, paid_to_expense_id INTEGER, created_by INTEGER, created_at TEXT, reversed_at TEXT, reversal_ref TEXT)")
             cursor.execute("CREATE TABLE IF NOT EXISTS service_cases (id INTEGER PRIMARY KEY AUTOINCREMENT, reference TEXT UNIQUE NOT NULL, client_company_name TEXT NOT NULL, supplier_company_name TEXT NOT NULL, person_name TEXT NOT NULL, service_type TEXT NOT NULL DEFAULT 'تأشيرة سياحية', sale_amount_original REAL NOT NULL DEFAULT 0, cost_amount_original REAL NOT NULL DEFAULT 0, currency_original TEXT NOT NULL DEFAULT 'USD', exchange_rate_to_usd REAL NOT NULL DEFAULT 1.0, sale_amount_base REAL NOT NULL DEFAULT 0, cost_amount_base REAL NOT NULL DEFAULT 0, date TEXT NOT NULL, notes TEXT, status TEXT NOT NULL DEFAULT 'open', client_expense_id INTEGER, supplier_expense_id INTEGER, created_by INTEGER, created_at TEXT, reversed_at TEXT, reversal_ref TEXT, print_description_client TEXT, print_description_supplier TEXT, internal_note TEXT)")
+            cursor.execute("CREATE TABLE IF NOT EXISTS service_case_components (id INTEGER PRIMARY KEY AUTOINCREMENT, service_case_ref TEXT NOT NULL, component_index INTEGER NOT NULL DEFAULT 1, service_type TEXT NOT NULL, supplier_company_name TEXT, sale_amount_original REAL NOT NULL DEFAULT 0, cost_amount_original REAL NOT NULL DEFAULT 0, currency_original TEXT NOT NULL DEFAULT 'USD', exchange_rate_to_usd REAL NOT NULL DEFAULT 1.0, sale_amount_base REAL NOT NULL DEFAULT 0, cost_amount_base REAL NOT NULL DEFAULT 0, supplier_expense_id INTEGER, print_description_client TEXT, print_description_supplier TEXT, notes TEXT)")
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_expenses_status ON expenses(status)")
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_payment_reminders_date ON payment_reminders(reminder_date)")
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_expenses_source_ref ON expenses(source_ref)")
@@ -173,6 +177,8 @@ def ensure_db():
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_service_cases_ref ON service_cases(reference)")
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_service_cases_client ON service_cases(client_company_name)")
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_service_cases_supplier ON service_cases(supplier_company_name)")
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_service_case_components_ref ON service_case_components(service_case_ref)")
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_service_case_components_supplier ON service_case_components(supplier_company_name)")
             conn.commit()
             conn.close()
         except Exception as e:

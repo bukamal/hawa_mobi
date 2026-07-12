@@ -282,7 +282,7 @@ def export_reconciliation_statement_html(company_name: str, records: Iterable[Di
     total_credit = _money(currency.convert(totals["total_credit_usd"], "USD", display_currency), display_currency)
     net_label = _statement_balance_label(totals["net_usd"], display_currency)
     person_th = "<th>الزبون / المسافر</th>" if show_person else ""
-    service_th = "<th>الخدمة</th>" if show_service else ""
+    service_th = "<th>الخدمة / البنود</th>" if show_service else ""
     body_rows = []
     for row in rows:
         body_rows.append(
@@ -334,7 +334,14 @@ def export_service_profit_report_html(cases: Iterable[Dict], output_path: str | 
         cost = float(c.get("cost_amount_base") or 0)
         profit = sale - cost
         total_profit += profit if (c.get("status") or "open") != "reversed" else 0
-        rows.append(f"<tr><td>{_safe(c.get('date'))}</td><td>{_safe(c.get('reference'))}</td><td>{_safe(c.get('person_name'))}</td><td>{_safe(c.get('client_company_name'))}</td><td>{_safe(c.get('supplier_company_name'))}</td><td>{_safe(c.get('service_type'))}</td><td>{_safe(_money(currency.convert(sale,'USD',display_currency),display_currency))}</td><td>{_safe(_money(currency.convert(cost,'USD',display_currency),display_currency))}</td><td>{_safe(_money(currency.convert(profit,'USD',display_currency),display_currency))}</td><td>{_safe(c.get('status'))}</td></tr>")
+        component_summary = c.get("components_summary") or ""
+        if not component_summary and c.get("components"):
+            try:
+                component_summary = " ؛ ".join(f"{x.get('service_type')} / {x.get('supplier_company_name') or '-'}" for x in c.get("components") or [])
+            except Exception:
+                component_summary = ""
+        service_cell = (str(c.get("service_type") or "") + (f"<br><small>{_safe(component_summary)}</small>" if component_summary else ""))
+        rows.append(f"<tr><td>{_safe(c.get('date'))}</td><td>{_safe(c.get('reference'))}</td><td>{_safe(c.get('person_name'))}</td><td>{_safe(c.get('client_company_name'))}</td><td>{_safe(c.get('supplier_company_name'))}</td><td>{service_cell}</td><td>{_safe(_money(currency.convert(sale,'USD',display_currency),display_currency))}</td><td>{_safe(_money(currency.convert(cost,'USD',display_currency),display_currency))}</td><td>{_safe(_money(currency.convert(profit,'USD',display_currency),display_currency))}</td><td>{_safe(c.get('status'))}</td></tr>")
     if not rows:
         rows.append("<tr><td colspan='10' class='empty'>لا توجد ملفات خدمات</td></tr>")
     filename = f"service_profit_report_{_dt.datetime.now().strftime('%Y%m%d_%H%M%S')}.html"
