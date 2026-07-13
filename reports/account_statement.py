@@ -78,10 +78,19 @@ def _statement_meta(record_or_row: Dict, *, include_full_ref: bool = False) -> L
     person = str(record_or_row.get("person_name") or "").strip()
     service = str(record_or_row.get("service_type") or "").strip()
     ref = str(record_or_row.get("reference") or record_or_row.get("source_ref") or "").strip()
+    historical = str(record_or_row.get("historical_currency_value") or "").strip()
+    currency_code = str(record_or_row.get("currency") or "").strip()
     if person:
         meta.append(f"الزبون: {person}")
     if service:
         meta.append(f"الخدمة: {service}")
+    # Keep the historical exchange-rate snapshot visible in the detailed
+    # statement.  Phase 71 folded optional columns into the statement body to
+    # avoid a wide mobile table; the QA contract still requires the historical
+    # value to be printed when present.
+    if historical:
+        suffix = f" ({currency_code})" if currency_code else ""
+        meta.append(f"القيمة التاريخية للعملة{suffix}: {historical}")
     if ref:
         meta.append(f"Ref: {ref if include_full_ref else _short_ref(ref)}")
     return meta
