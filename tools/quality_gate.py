@@ -87,6 +87,7 @@ def main() -> int:
         "tools/apk_release_preflight.py",
         "tools/share_export_fallback_smoke_test.py",
         "tools/report_action_share_print_whatsapp_smoke_test.py",
+        "tools/professional_statement_layout_smoke_test.py",
         "tools/backup_restore_smoke_test.py",
         "tools/backup_restore_button_nonblocking_smoke_test.py",
         "tools/backup_restore_snackbar_duration_smoke_test.py",

@@ -245,14 +245,16 @@ class CompanyDetailsMobileView(ft.Column):
 
     async def _share_statement(self, e):
         try:
-            from reports.account_statement import export_account_statement_html
-            from reports.share import build_statement_message, share_file_async
-            path = export_account_statement_html(self.company_name, self.records)
-            message = build_statement_message(self.company_name, path)
-            result = await share_file_async(self._page, path, message, open_whatsapp=False, title="مشاركة كشف الحساب")
-            self._show_snackbar(result.message if result.ok else result.message or f"تم إنشاء الكشف: {path}", not result.ok)
+            # المشاركة العامة تستخدم كشف المطابقة المختصر؛ أما زر "كشف للطباعة"
+            # فيبقى للكشف التفصيلي الداخلي/العريض.
+            from reports.account_statement import export_reconciliation_statement_html
+            from reports.share import share_file_async
+            path = export_reconciliation_statement_html(self.company_name, self.records)
+            message = f"كشف مطابقة - {self.company_name}"
+            result = await share_file_async(self._page, path, message, open_whatsapp=False, title="مشاركة كشف المطابقة")
+            self._show_snackbar(result.message if result.ok else result.message or f"تم إنشاء كشف المطابقة: {path}", not result.ok)
         except Exception as ex:
-            self._show_snackbar(f"خطأ في مشاركة الكشف: {str(ex)}", True)
+            self._show_snackbar(f"خطأ في مشاركة كشف المطابقة: {str(ex)}", True)
 
     async def _share_statement_whatsapp(self, e):
         try:
