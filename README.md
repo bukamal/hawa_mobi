@@ -230,3 +230,7 @@ PYTHONPATH=. python tools/quality_gate.py
 ruff check .
 bandit -q -r auth database services reports views main.py config.py currency.py
 ```
+## Phase 76 — Android 1.1.1 CI/API contract fix
+
+الإصدار 1.1.1 يصلح فشل GitHub Actions عند غياب Flask، ويستبدل فحص علامات الاقتباس الهش بتحليل AST، ويشغّل اختبار Flask الحي في CI بعد تثبيت متطلبات الخادم. لا يغيّر هذا الإصدار مخطط قاعدة البيانات أو صيغة النسخ الاحتياطية، وتبقى قواعد البيانات القديمة متوافقة.
+

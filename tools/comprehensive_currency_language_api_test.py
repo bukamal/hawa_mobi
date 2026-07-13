@@ -221,10 +221,40 @@ def language_checks() -> None:
 
 
 def static_api_contract_checks() -> None:
+    import ast
     import re
 
-    server_text = (ROOT / "server" / "flask_server.py").read_text(encoding="utf-8")
-    rest_text = (ROOT / "database" / "connection_rest.py").read_text(encoding="utf-8")
+    server_path = ROOT / "server" / "flask_server.py"
+    rest_path = ROOT / "database" / "connection_rest.py"
+    server_text = server_path.read_text(encoding="utf-8")
+    rest_text = rest_path.read_text(encoding="utf-8")
+    server_tree = ast.parse(server_text, filename=str(server_path))
+    rest_tree = ast.parse(rest_text, filename=str(rest_path))
+
+    server_strings = {
+        node.value
+        for node in ast.walk(server_tree)
+        if isinstance(node, ast.Constant) and isinstance(node.value, str)
+    }
+    rest_strings = {
+        node.value
+        for node in ast.walk(rest_tree)
+        if isinstance(node, ast.Constant) and isinstance(node.value, str)
+    }
+    rest_client = next(
+        (
+            node
+            for node in rest_tree.body
+            if isinstance(node, ast.ClassDef) and node.name == "RestClient"
+        ),
+        None,
+    )
+    assert rest_client is not None, "RestClient class is missing"
+    rest_methods = {
+        node.name
+        for node in rest_client.body
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+    }
 
     required_flags = [
         "supports_historic_currency_snapshot",
@@ -236,7 +266,7 @@ def static_api_contract_checks() -> None:
         "supports_ledger_operation_core",
     ]
     for flag in required_flags:
-        assert flag in server_text, f"server capabilities missing {flag}"
+        assert flag in server_strings, f"server capabilities missing {flag}"
     required_routes = [
         "/api/capabilities",
         "/api/expenses",
@@ -250,7 +280,7 @@ def static_api_contract_checks() -> None:
         "/api/exchange_rates/{currency_code}",
     ]
     for route in required_routes:
-        assert route in server_text, f"server route declaration missing {route}"
+        assert route in server_strings, f"server route declaration missing {route}"
 
     for token in [
         "def add_service_case",
@@ -264,15 +294,22 @@ def static_api_contract_checks() -> None:
         "is_locked",
     ]:
         assert token in server_text, f"server implementation missing {token}"
-    for token in [
-        "def add_service_case",
-        "def reverse_service_case",
-        "def get_exchange_rate_history",
-        "def update_exchange_rate",
-        "'/api/service_cases'",
-        "'/api/exchange_rate_history'",
+    for method_name in [
+        "add_service_case",
+        "reverse_service_case",
+        "get_exchange_rate_history",
+        "update_exchange_rate",
     ]:
-        assert token in rest_text, f"RestClient implementation missing {token}"
+        assert method_name in rest_methods, (
+            f"RestClient implementation missing method {method_name}"
+        )
+    for endpoint in [
+        "/api/service_cases",
+        "/api/exchange_rate_history",
+    ]:
+        assert endpoint in rest_strings, (
+            f"RestClient implementation missing endpoint {endpoint}"
+        )
 
     route_decorators = set(
         re.findall(

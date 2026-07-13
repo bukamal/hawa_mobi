@@ -28,44 +28,43 @@ def run_py(script: str) -> None:
         [sys.executable, str(ROOT / script)],
         cwd=str(ROOT),
         env=env,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        text=True,
+        # Inherit the quality-gate streams instead of piping them. Some Flet
+        # helper processes inherit stdout/stderr and keep pipe descriptors open
+        # after the actual smoke-test process exits, which previously forced an
+        # unnecessary 80-second wait for each successful test on GitHub Actions.
         start_new_session=use_process_group,
     )
-    try:
-        try:
-            out, err = proc.communicate(timeout=80)
-        except subprocess.TimeoutExpired:
-            # Some Flet/mobile smoke tests can finish their Python body but leave
-            # helper processes/threads with inherited stdout handles alive. Kill
-            # the whole process group so the release gate never hangs indefinitely.
-            if use_process_group:
-                try:
-                    os.killpg(proc.pid, signal.SIGTERM)
-                except ProcessLookupError:
-                    pass
-            else:
-                proc.kill()
-            out, err = proc.communicate(timeout=10)
 
-        if out:
-            print(out, end="")
-        if err:
-            print(err, end="", file=sys.stderr)
-        if proc.returncode != 0:
-            raise subprocess.CalledProcessError(
-                proc.returncode, [sys.executable, str(ROOT / script)]
-            )
-
+    def stop_process_group() -> None:
         if use_process_group:
             try:
                 os.killpg(proc.pid, signal.SIGTERM)
-            except ProcessLookupError:
+            except (ProcessLookupError, PermissionError):
                 pass
-            except PermissionError:
-                pass
+        elif proc.poll() is None:
+            proc.kill()
+
+    try:
+        try:
+            return_code = proc.wait(timeout=80)
+        except subprocess.TimeoutExpired:
+            stop_process_group()
+            try:
+                return_code = proc.wait(timeout=10)
+            except subprocess.TimeoutExpired:
+                if proc.poll() is None:
+                    proc.kill()
+                return_code = proc.wait(timeout=5)
+
+        if return_code != 0:
+            raise subprocess.CalledProcessError(
+                return_code, [sys.executable, str(ROOT / script)]
+            )
     finally:
+        # The test process may have exited successfully while a Flet helper is
+        # still alive in the same process group. Terminate only that isolated
+        # group so the next smoke test starts cleanly.
+        stop_process_group()
         shutil.rmtree(isolated_data_dir, ignore_errors=True)
 
 
