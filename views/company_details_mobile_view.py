@@ -32,10 +32,10 @@ class CompanyDetailsMobileView(ft.Column):
         self.scroll = ft.ScrollMode.AUTO
 
         self.summary_text = ft.Text("", size=14, weight=ft.FontWeight.BOLD)
-        self.total_in_text = ft.Text("0", size=15, weight=ft.FontWeight.BOLD, color=ft.Colors.GREEN)
-        self.total_out_text = ft.Text("0", size=15, weight=ft.FontWeight.BOLD, color=ft.Colors.RED)
-        self.net_text = ft.Text("0", size=15, weight=ft.FontWeight.BOLD, color=ft.Colors.INDIGO)
-        self.waiting_text = ft.Text("0", size=15, weight=ft.FontWeight.BOLD, color=ft.Colors.ORANGE)
+        self.total_in_text = ft.Text("0", size=15, weight=ft.FontWeight.BOLD, color=SUCCESS)
+        self.total_out_text = ft.Text("0", size=15, weight=ft.FontWeight.BOLD, color=DANGER)
+        self.net_text = ft.Text("0", size=15, weight=ft.FontWeight.BOLD, color=PRIMARY)
+        self.waiting_text = ft.Text("0", size=15, weight=ft.FontWeight.BOLD, color=WARNING)
         self.summary_panel = summary_bar([
             metric_tile("لنا", self.total_in_text),
             metric_tile("له", self.total_out_text),
@@ -49,19 +49,19 @@ class CompanyDetailsMobileView(ft.Column):
             ft.FilledButton(
                 content=ft.Row([ft.Icon(ft.Icons.PRINT), ft.Text("كشف للطباعة")], tight=True),
                 on_click=self._export_printable_statement,
-                bgcolor=ft.Colors.INDIGO,
+                bgcolor=PRIMARY,
                 color=ft.Colors.WHITE,
             ),
             ft.FilledButton(
                 content=ft.Row([ft.Icon(ft.Icons.FACT_CHECK), ft.Text("كشف مطابقة")], tight=True),
                 on_click=self._export_reconciliation_statement,
-                bgcolor=ft.Colors.BLUE,
+                bgcolor=PRIMARY,
                 color=ft.Colors.WHITE,
             ),
             ft.FilledButton(
                 content=ft.Row([ft.Icon(ft.Icons.SHARE), ft.Text("مشاركة")], tight=True),
                 on_click=self._share_statement,
-                bgcolor=ft.Colors.GREEN,
+                bgcolor=SUCCESS,
                 color=ft.Colors.WHITE,
             ),
             ft.TextButton(
@@ -76,8 +76,8 @@ class CompanyDetailsMobileView(ft.Column):
         search_banner = info_banner(
             f"نتائج داخل {company_name} عن: {self.search_query}",
             icon=ft.Icons.MANAGE_SEARCH,
-            color=ft.Colors.INDIGO,
-            bgcolor=ft.Colors.INDIGO_50,
+            color=PRIMARY,
+            bgcolor=PRIMARY_SOFT,
         ) if normalize_search_text(self.search_query) else ft.Container(width=0, height=0)
         self.controls = [self.summary_panel, search_banner, self.report_actions, self.people_summary, ft.Divider(height=1), self.records_list]
         self._load_data()
@@ -94,10 +94,10 @@ class CompanyDetailsMobileView(ft.Column):
         snippet = match.get('snippet') or ''
         return ft.Container(
             content=ft.Row([
-                ft.Icon(ft.Icons.SEARCH, color=ft.Colors.INDIGO, size=14),
-                ft.Text(f"{label}: {snippet}", size=11, color=ft.Colors.INDIGO, expand=True, max_lines=2, overflow=ft.TextOverflow.ELLIPSIS),
+                ft.Icon(ft.Icons.SEARCH, color=PRIMARY, size=14),
+                ft.Text(f"{label}: {snippet}", size=11, color=PRIMARY, expand=True, max_lines=2, overflow=ft.TextOverflow.ELLIPSIS),
             ], spacing=5),
-            bgcolor=ft.Colors.INDIGO_50,
+            bgcolor=PRIMARY_SOFT,
             border_radius=10,
             padding=ft.Padding(left=8, right=8, top=5, bottom=5),
         )
@@ -117,7 +117,7 @@ class CompanyDetailsMobileView(ft.Column):
         self.total_in_text.value = currency.format_amount(total_in, display_curr)
         self.total_out_text.value = currency.format_amount(total_out, display_curr)
         self.net_text.value = currency.format_amount(net, display_curr)
-        self.net_text.color = ft.Colors.GREEN if net_usd >= 0 else ft.Colors.RED
+        self.net_text.color = SUCCESS if net_usd >= 0 else DANGER
         self.waiting_text.value = str(waiting_count)
 
         person_buckets = {}
@@ -133,10 +133,10 @@ class CompanyDetailsMobileView(ft.Column):
                 else:
                     item['outgoing'] += float(rr.get('amount') or 0)
         if person_buckets:
-            chips = [ft.Text("الأشخاص داخل الحساب", size=13, weight=ft.FontWeight.BOLD, color=ft.Colors.INDIGO)]
+            chips = [ft.Text("الأشخاص داخل الحساب", size=13, weight=ft.FontWeight.BOLD, color=PRIMARY)]
             for person, item in sorted(person_buckets.items(), key=lambda kv: kv[0])[:8]:
                 net_p = currency.convert(item['incoming'] - item['outgoing'], 'USD', display_curr)
-                chips.append(pill(f"{person}: {currency.format_amount(net_p, display_curr)} · {item['count']} قيد", color=ft.Colors.INDIGO, bgcolor=ft.Colors.INDIGO_50))
+                chips.append(pill(f"{person}: {currency.format_amount(net_p, display_curr)} · {item['count']} قيد", color=PRIMARY, bgcolor=PRIMARY_SOFT))
             self.people_summary.controls = chips
             self.people_summary.visible = True
         else:
@@ -155,7 +155,7 @@ class CompanyDetailsMobileView(ft.Column):
                 out_txt = "—"
                 if not is_waiting:
                     running_usd += float(r['amount'])
-                amount_color = ft.Colors.ORANGE if is_waiting else ft.Colors.GREEN
+                amount_color = WARNING if is_waiting else SUCCESS
                 icon = ft.Icons.PAYMENTS if is_waiting else ft.Icons.ARROW_DOWNWARD
                 amount_label = "بانتظار الدفع" if is_waiting else "لنا"
             else:
@@ -163,13 +163,13 @@ class CompanyDetailsMobileView(ft.Column):
                 out_txt = amount_str
                 if not is_waiting:
                     running_usd -= float(r['amount'])
-                amount_color = ft.Colors.ORANGE if is_waiting else ft.Colors.RED
+                amount_color = WARNING if is_waiting else DANGER
                 icon = ft.Icons.PAYMENTS if is_waiting else ft.Icons.ARROW_UPWARD
                 amount_label = "بانتظار الدفع" if is_waiting else "له"
 
             running_display = currency.convert(running_usd, 'USD', display_curr)
             running_str = currency.format_amount(running_display, display_curr)
-            running_color = ft.Colors.GREEN if running_usd >= 0 else ft.Colors.RED
+            running_color = SUCCESS if running_usd >= 0 else DANGER
 
             card = data_card(
                 ft.Column([
@@ -184,30 +184,30 @@ class CompanyDetailsMobileView(ft.Column):
                     ], alignment=ft.MainAxisAlignment.SPACE_AROUND),
                     pill(
                         f"⏳ تنبيه الدفع: {r.get('payment_due_date') or 'غير محدد'}",
-                        color=ft.Colors.ORANGE_900,
-                        bgcolor=ft.Colors.ORANGE_50,
+                        color=WARNING,
+                        bgcolor="#FFF7E3",
                     ) if is_waiting else ft.Container(width=0, height=0),
                     ft.Row([
-                        pill(f"👤 {r.get('person_name')}", color=ft.Colors.BLUE_900, bgcolor=ft.Colors.BLUE_50) if (r.get('person_name') or '').strip() else ft.Container(width=0, height=0),
+                        pill(f"👤 {r.get('person_name')}", color=PRIMARY, bgcolor=PRIMARY_SOFT) if (r.get('person_name') or '').strip() else ft.Container(width=0, height=0),
                         pill(f"🧾 {r.get('service_type') or 'غير محدد'}", color=ft.Colors.GREY_800, bgcolor=ft.Colors.GREY_100),
-                        pill(f"⚙️ {operation_label(r.get('operation_type'))}", color=ft.Colors.INDIGO, bgcolor=ft.Colors.INDIGO_50),
+                        pill(f"⚙️ {operation_label(r.get('operation_type'))}", color=PRIMARY, bgcolor=PRIMARY_SOFT),
                     ], spacing=5, wrap=True),
                     ft.Text(r['notes'] or '', size=12, color=ft.Colors.GREY_600, max_lines=2, overflow=ft.TextOverflow.ELLIPSIS),
                     self._match_chip(r) if normalize_search_text(self.search_query) else ft.Container(width=0, height=0),
                     pill(
                         "🔁 سداد بالنيابة" if r.get('source_type') == 'third_party_payment' else "↩️ عكس سداد بالنيابة",
-                        color=ft.Colors.INDIGO if r.get('source_type') == 'third_party_payment' else ft.Colors.ORANGE_900,
-                        bgcolor=ft.Colors.INDIGO_50 if r.get('source_type') == 'third_party_payment' else ft.Colors.ORANGE_50,
+                        color=PRIMARY if r.get('source_type') == 'third_party_payment' else WARNING,
+                        bgcolor=PRIMARY_SOFT if r.get('source_type') == 'third_party_payment' else "#FFF7E3",
                     ) if r.get('source_type') in ('third_party_payment', 'third_party_payment_reversal') else ft.Container(width=0, height=0),
                     pill(
                         '🧭 ملف خدمة - عميل' if r.get('source_type') == 'service_case_client' else ('🧭 ملف خدمة - مورد' if r.get('source_type') == 'service_case_supplier' else '↩️ عكس ملف خدمة'),
-                        color=ft.Colors.BLUE_900,
-                        bgcolor=ft.Colors.BLUE_50,
+                        color=PRIMARY,
+                        bgcolor=PRIMARY_SOFT,
                     ) if r.get('source_type') in ('service_case_client', 'service_case_supplier', 'service_case_reversal') else ft.Container(width=0, height=0),
                     ft.Row([
-                        action_text_button("تعديل", ft.Icons.EDIT, lambda e, rec=r: self._edit_record(rec), color=ft.Colors.INDIGO, visible=(not is_viewer and not r.get('source_type') and not int(r.get('is_locked') or 0))),
-                        action_text_button("حذف", ft.Icons.DELETE, lambda e, rec=r: self._delete_record(rec), color=ft.Colors.RED, visible=(not is_viewer and not r.get('source_type') and not int(r.get('is_locked') or 0))),
-                        action_text_button("عكس", ft.Icons.UNDO, lambda e, rec=r: self._reverse_third_party(rec), color=ft.Colors.ORANGE, visible=(not is_viewer and r.get('source_type') == 'third_party_payment')),
+                        action_text_button("تعديل", ft.Icons.EDIT, lambda e, rec=r: self._edit_record(rec), color=PRIMARY, visible=(not is_viewer and not r.get('source_type') and not int(r.get('is_locked') or 0))),
+                        action_text_button("حذف", ft.Icons.DELETE, lambda e, rec=r: self._delete_record(rec), color=DANGER, visible=(not is_viewer and not r.get('source_type') and not int(r.get('is_locked') or 0))),
+                        action_text_button("عكس", ft.Icons.UNDO, lambda e, rec=r: self._reverse_third_party(rec), color=WARNING, visible=(not is_viewer and r.get('source_type') == 'third_party_payment')),
                     ], alignment=ft.MainAxisAlignment.END)
                 ], spacing=8),
                 padding=12,

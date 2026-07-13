@@ -6,7 +6,7 @@ from auth.session import UserSession
 from i18n.translator import translate
 from currency import currency
 from collections import defaultdict
-from views.ui_kit import show_snackbar, page_header, search_field, summary_bar, metric_tile, empty_state, action_text_button, data_card, amount_pill, key_value_tile, pill, info_banner
+from views.ui_kit import show_snackbar, page_header, search_field, summary_bar, metric_tile, empty_state, action_text_button, data_card, amount_pill, key_value_tile, pill, info_banner, PRIMARY, PRIMARY_SOFT, SUCCESS, DANGER, WARNING, TEXT, MUTED, money_text, modern_action_button
 from services.company_search_service import normalize_search_text
 
 
@@ -22,9 +22,9 @@ class AccountsMobileView(ft.Column):
         self.search_field = search_field(translate('company_deep_search_hint'), self._refresh_cards)
         self.search_status = ft.Container(visible=False)
 
-        self.net_text = ft.Text("0", size=22, weight=ft.FontWeight.BOLD, color=ft.Colors.INDIGO)
-        self.companies_count_text = ft.Text("0", size=22, weight=ft.FontWeight.BOLD, color=ft.Colors.BLUE)
-        self.records_count_text = ft.Text("0", size=22, weight=ft.FontWeight.BOLD, color=ft.Colors.ORANGE)
+        self.net_text = money_text("0", size=24, color=PRIMARY)
+        self.companies_count_text = money_text("0", size=23, color=PRIMARY)
+        self.records_count_text = money_text("0", size=23, color=WARNING)
 
         self.summary_bar = summary_bar([
             metric_tile("صافي", self.net_text),
@@ -36,7 +36,7 @@ class AccountsMobileView(ft.Column):
 
         self.fab = make_floating_action_button(
             icon=ft.Icons.ADD,
-            bgcolor=ft.Colors.GREEN,
+            bgcolor=SUCCESS,
             foreground_color=ft.Colors.WHITE,
             on_click=self._open_add_menu,
             tooltip=translate('add'),
@@ -48,7 +48,7 @@ class AccountsMobileView(ft.Column):
         self.controls = [
             page_header(translate('accounts'), icon=ft.Icons.ACCOUNT_BALANCE, subtitle=translate('accounts_search_subtitle')),
             ft.Container(content=ft.Row([
-                ft.OutlinedButton(content=ft.Row([ft.Icon(ft.Icons.INSIGHTS), ft.Text('تقرير أرباح الخدمات')], tight=True), on_click=self._export_service_profit_report),
+                ft.OutlinedButton(content=ft.Row([ft.Icon(ft.Icons.INSIGHTS, color=PRIMARY), ft.Text('تقرير أرباح الخدمات', color=PRIMARY, weight=ft.FontWeight.BOLD)], tight=True), on_click=self._export_service_profit_report),
             ], alignment=ft.MainAxisAlignment.END), padding=ft.Padding(left=10, right=10, top=0, bottom=0)),
             ft.Container(content=self.search_field, padding=ft.Padding(left=10, right=10, top=0, bottom=0)),
             self.search_status,
@@ -74,8 +74,8 @@ class AccountsMobileView(ft.Column):
         self.search_status.content = info_banner(
             f"🔎 {translate('deep_search_results')}: {result_count} — {translate('deep_search_scope')}",
             icon=ft.Icons.MANAGE_SEARCH,
-            color=ft.Colors.INDIGO,
-            bgcolor=ft.Colors.INDIGO_50,
+            color=PRIMARY,
+            bgcolor=PRIMARY_SOFT,
         )
 
     def _entry_amount_text(self, row):
@@ -97,8 +97,8 @@ class AccountsMobileView(ft.Column):
         controls = [
             ft.Divider(height=1, color=ft.Colors.GREY_200),
             ft.Row([
-                ft.Icon(ft.Icons.SEARCH, color=ft.Colors.INDIGO, size=16),
-                ft.Text(f"{translate('matches_inside_company')}: {len(matches)}", size=12, weight=ft.FontWeight.BOLD, color=ft.Colors.INDIGO, expand=True),
+                ft.Icon(ft.Icons.SEARCH, color=PRIMARY, size=16),
+                ft.Text(f"{translate('matches_inside_company')}: {len(matches)}", size=12, weight=ft.FontWeight.BOLD, color=PRIMARY, expand=True),
             ], spacing=6),
         ]
         for m in matches[:3]:
@@ -109,9 +109,9 @@ class AccountsMobileView(ft.Column):
                 ft.Container(
                     content=ft.Column([
                         ft.Row([
-                            pill(label, color=ft.Colors.INDIGO, bgcolor=ft.Colors.INDIGO_50, size=10),
+                            pill(label, color=PRIMARY, bgcolor=PRIMARY_SOFT, size=10),
                             ft.Text(str(m.get('date') or ''), size=11, color=ft.Colors.GREY_600, expand=True),
-                            ft.Text(direction, size=11, color=ft.Colors.GREEN if m.get('type') == 'incoming' else ft.Colors.RED, weight=ft.FontWeight.BOLD),
+                            ft.Text(direction, size=11, color=SUCCESS if m.get('type') == 'incoming' else DANGER, weight=ft.FontWeight.BOLD),
                         ], spacing=5),
                         ft.Text(str(snippet), size=11, color=ft.Colors.GREY_700, max_lines=2, overflow=ft.TextOverflow.ELLIPSIS),
                         ft.Text(self._entry_amount_text(m), size=11, color=ft.Colors.GREY_600),
@@ -179,19 +179,19 @@ class AccountsMobileView(ft.Column):
             total_records += len(vals['records'])
             matches = matching_by_company.get(company, [])
 
-            net_color = ft.Colors.GREEN if net >= 0 else ft.Colors.RED
+            net_color = SUCCESS if net >= 0 else DANGER
             details_query = raw_search if normalized_query else None
             content_controls = [
                 ft.Row([
-                    ft.Icon(ft.Icons.BUSINESS, color=ft.Colors.INDIGO, size=24),
+                    ft.Icon(ft.Icons.BUSINESS, color=PRIMARY, size=24),
                     ft.Text(company, size=16, weight=ft.FontWeight.BOLD, expand=True, max_lines=2, overflow=ft.TextOverflow.ELLIPSIS),
                     amount_pill(currency.format_amount(net, display_curr), net_color),
                 ]),
                 ft.Divider(height=1, color=ft.Colors.GREY_200),
                 ft.Row([
-                    key_value_tile("📥 لنا", currency.format_amount(inc, display_curr), ft.Colors.GREEN),
+                    key_value_tile("📥 لنا", currency.format_amount(inc, display_curr), SUCCESS),
                     ft.VerticalDivider(width=1, color=ft.Colors.GREY_200),
-                    key_value_tile("📤 له", currency.format_amount(out, display_curr), ft.Colors.RED),
+                    key_value_tile("📤 له", currency.format_amount(out, display_curr), DANGER),
                     ft.VerticalDivider(width=1, color=ft.Colors.GREY_200),
                     key_value_tile("📋 عدد", str(len(vals['records']))),
                     ft.VerticalDivider(width=1, color=ft.Colors.GREY_200),
@@ -199,17 +199,17 @@ class AccountsMobileView(ft.Column):
                 ], alignment=ft.MainAxisAlignment.SPACE_AROUND),
                 pill(
                     f"⏳ بانتظار الدفع: {vals['waiting_payment']}",
-                    color=ft.Colors.ORANGE_900,
-                    bgcolor=ft.Colors.ORANGE_50,
+                    color=WARNING,
+                    bgcolor="#FFF7E3",
                 ) if vals['waiting_payment'] > 0 else ft.Container(width=0, height=0),
             ]
             content_controls.extend(self._match_preview_controls(company, matches, raw_search))
             content_controls.append(
                 ft.Row([
                     action_text_button("تفاصيل", ft.Icons.INFO_OUTLINE, lambda e, c=company, r=vals['records'], q=details_query: self._show_details(c, r, q)),
-                    action_text_button("قيد", ft.Icons.ADD, lambda e, c=company: self._add_record(c), color=ft.Colors.GREEN),
-                    action_text_button("سداد عني", ft.Icons.SWAP_HORIZ, lambda e, c=company: self._add_third_party_payment(paid_to_company=c), color=ft.Colors.INDIGO),
-                    action_text_button("خدمة", ft.Icons.TRAVEL_EXPLORE, lambda e, c=company: self._add_service_case(client_company=c), color=ft.Colors.BLUE),
+                    action_text_button("قيد", ft.Icons.ADD, lambda e, c=company: self._add_record(c), color=SUCCESS),
+                    action_text_button("سداد عني", ft.Icons.SWAP_HORIZ, lambda e, c=company: self._add_third_party_payment(paid_to_company=c), color=PRIMARY),
+                    action_text_button("خدمة", ft.Icons.TRAVEL_EXPLORE, lambda e, c=company: self._add_service_case(client_company=c), color=PRIMARY),
                 ], alignment=ft.MainAxisAlignment.SPACE_AROUND)
             )
             card = data_card(
@@ -222,7 +222,7 @@ class AccountsMobileView(ft.Column):
 
         if cards:
             self.net_text.value = currency.format_amount(total_net, display_curr)
-            self.net_text.color = ft.Colors.GREEN if total_net >= 0 else ft.Colors.RED
+            self.net_text.color = SUCCESS if total_net >= 0 else DANGER
             self.companies_count_text.value = str(len(cards))
             self.records_count_text.value = str(total_records)
             self.summary_bar.visible = True
@@ -259,7 +259,7 @@ class AccountsMobileView(ft.Column):
         # Very old fallback: keep behavior functional if AppLayout is not present.
         from views.company_details_mobile_view import CompanyDetailsMobileView
         dialog = ft.AlertDialog(
-            title=ft.Row([ft.Icon(ft.Icons.BUSINESS, color=ft.Colors.INDIGO), ft.Text(company_name, size=18, weight=ft.FontWeight.BOLD, expand=True)]),
+            title=ft.Row([ft.Icon(ft.Icons.BUSINESS, color=PRIMARY), ft.Text(company_name, size=18, weight=ft.FontWeight.BOLD, expand=True)]),
             content=ft.Container(content=CompanyDetailsMobileView(self._page, company_name, records, on_changed=lambda: self._refresh_cards(None), search_query=search_query), height=500, width=400),
             actions=[ft.TextButton("إغلاق", on_click=lambda e: self._close_dialog(dialog))],
             inset_padding=20,
@@ -294,19 +294,19 @@ class AccountsMobileView(ft.Column):
                 ft.FilledButton(
                     content=ft.Row([ft.Icon(ft.Icons.ADD), ft.Text(translate('normal_entry'))], tight=True),
                     on_click=open_normal,
-                    bgcolor=ft.Colors.GREEN,
+                    bgcolor=SUCCESS,
                     color=ft.Colors.WHITE,
                 ),
                 ft.FilledButton(
                     content=ft.Row([ft.Icon(ft.Icons.TRAVEL_EXPLORE), ft.Text("خدمة لعميل عبر مورد")], tight=True),
                     on_click=open_service_case,
-                    bgcolor=ft.Colors.BLUE,
+                    bgcolor=PRIMARY,
                     color=ft.Colors.WHITE,
                 ),
                 ft.FilledButton(
                     content=ft.Row([ft.Icon(ft.Icons.SWAP_HORIZ), ft.Text(translate('third_party_payment'))], tight=True),
                     on_click=open_third_party,
-                    bgcolor=ft.Colors.INDIGO,
+                    bgcolor=PRIMARY,
                     color=ft.Colors.WHITE,
                 ),
             ], spacing=12, tight=True),

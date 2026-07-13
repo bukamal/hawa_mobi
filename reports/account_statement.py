@@ -130,29 +130,29 @@ def _header_html(info: Dict, *, company_name: str, statement_kind: str, settings
 
 
 def _base_css(*, compact: bool, use_colors: bool = True) -> str:
-    color_rules = ".debit{color:#047857}.credit{color:#b91c1c}.balance{color:#1e3a8a}" if use_colors else ".debit,.credit,.balance{color:#111827}"
+    color_rules = ".debit{color:#1FA56A}.credit{color:#E54848}.balance{color:#0A3F70}" if use_colors else ".debit,.credit,.balance{color:#172033}"
     return f"""
 @page {{ size:A4; margin:12mm; }}
 * {{ box-sizing:border-box; }}
-body {{ margin:0; background:#f8fafc; color:#111827; direction:rtl; font-family:Tahoma,Arial,system-ui,sans-serif; }}
+body {{ margin:0; background:#f8fafc; color:#172033; direction:rtl; font-family:Tahoma,Arial,system-ui,sans-serif; }}
 .sheet {{ max-width:{'860px' if compact else '1120px'}; margin:0 auto; padding:18px; background:#fff; }}
-.report-header {{ border-bottom:3px solid #1e3a8a; padding-bottom:14px; margin-bottom:18px; position:relative; }}
+.report-header {{ border-bottom:3px solid #0A3F70; padding-bottom:14px; margin-bottom:18px; position:relative; }}
 .brand-block {{ display:flex; align-items:center; justify-content:center; gap:18px; text-align:center; }}
-.brand-text h1 {{ margin:0; color:#1e3a8a; font-size:28px; line-height:1.35; }}
+.brand-text h1 {{ margin:0; color:#0A3F70; font-size:28px; line-height:1.35; }}
 .company-logo {{ width:64px; height:64px; object-fit:contain; border:1px solid #e5e7eb; border-radius:14px; background:#fff; padding:4px; flex:0 0 auto; }}
 .contact-line {{ color:#4b5563; font-size:13px; line-height:1.8; margin-top:5px; }}
 .statement-kind {{ color:#4b5563; font-size:12px; margin-top:4px; }}
-.account-badge {{ position:absolute; left:0; top:0; background:#eff6ff; color:#1e40af; border-radius:12px; padding:9px 13px; font-weight:700; max-width:145px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }}
+.account-badge {{ position:absolute; left:0; top:0; background:#EAF4FF; color:#0A3F70; border-radius:12px; padding:9px 13px; font-weight:700; max-width:145px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }}
 .title {{ text-align:center; margin:16px 0 14px; }}
-.title h2 {{ margin:0 0 7px; font-size:25px; color:#111827; }}
+.title h2 {{ margin:0 0 7px; font-size:25px; color:#172033; }}
 .title .meta {{ color:#6b7280; font-size:13px; }}
-.account-line {{ font-size:16px; font-weight:700; color:#1e3a8a; margin-top:4px; }}
+.account-line {{ font-size:16px; font-weight:700; color:#0A3F70; margin-top:4px; }}
 .summary {{ display:grid; grid-template-columns:repeat(3,1fr); gap:10px; margin:14px 0; }}
 .metric {{ border:1px solid #e5e7eb; border-radius:14px; padding:12px; background:#f9fafb; text-align:center; min-height:78px; }}
 .metric small {{ display:block; color:#6b7280; margin-bottom:7px; }}
 .metric strong {{ display:block; font-size:20px; line-height:1.35; }}
 .final-metric strong {{ font-size:16px; }}
-.note {{ border:1px solid #bfdbfe; background:#eff6ff; color:#1e3a8a; padding:11px 13px; border-radius:14px; margin:12px 0; font-size:13px; line-height:1.75; }}
+.note {{ border:1px solid #B8D7F2; background:#EAF4FF; color:#0A3F70; padding:11px 13px; border-radius:14px; margin:12px 0; font-size:13px; line-height:1.75; }}
 .money,.ltr,.ref {{ direction:ltr; unicode-bidi:isolate; white-space:nowrap; display:inline-block; }}
 .muted {{ color:#9ca3af; }}
 {color_rules}
@@ -160,7 +160,7 @@ body {{ margin:0; background:#f8fafc; color:#111827; direction:rtl; font-family:
 .empty {{ text-align:center; color:#6b7280; padding:22px; border:1px dashed #d1d5db; border-radius:14px; }}
 .table-scroll {{ width:100%; overflow-x:auto; -webkit-overflow-scrolling:touch; border-radius:14px; border:1px solid #d1d5db; }}
 .modern-table {{ width:100%; border-collapse:collapse; min-width:760px; background:#fff; }}
-.modern-table th {{ background:#1e3a8a; color:#fff; padding:10px 8px; border:1px solid #1e3a8a; font-size:13px; white-space:nowrap; }}
+.modern-table th {{ background:#0A3F70; color:#fff; padding:10px 8px; border:1px solid #0A3F70; font-size:13px; white-space:nowrap; }}
 .modern-table td {{ border:1px solid #d1d5db; padding:9px 8px; font-size:12px; vertical-align:top; line-height:1.7; }}
 .modern-table tr:nth-child(even) td {{ background:#f9fafb; }}
 .statement-main {{ font-weight:700; line-height:1.65; }}
@@ -407,7 +407,7 @@ def _statement_css(settings: Dict[str, object], *, compact: bool) -> str:
 .movement { border:1px solid #d1d5db; border-radius:16px; padding:12px; background:#fff; page-break-inside:avoid; }
 .movement:nth-child(even) { background:#f9fafb; }
 .movement-head { display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; color:#6b7280; }
-.idx { background:#eff6ff; color:#1e40af; border-radius:999px; padding:3px 8px; font-weight:700; }
+.idx { background:#EAF4FF; color:#0A3F70; border-radius:999px; padding:3px 8px; font-weight:700; }
 .date { font-weight:700; color:#374151; }
 .movement-desc { font-size:15px; font-weight:700; line-height:1.65; margin-bottom:6px; }
 .movement-meta { display:flex; flex-wrap:wrap; gap:5px 7px; margin-bottom:10px; color:#4b5563; font-size:12px; }
@@ -535,7 +535,7 @@ def export_service_profit_report_html(cases: Iterable[Dict], output_path: str | 
     filename = f"service_profit_report_{_dt.datetime.now().strftime('%Y%m%d_%H%M%S')}.html"
     output_path = output_path or os.path.join(_report_dir(), filename)
     settings = get_report_settings()
-    css = _base_css(compact=False, use_colors=bool(settings.get("statement_use_colors", True))) + "table{width:100%;border-collapse:collapse;min-width:980px}th{background:#1e3a8a;color:#fff;padding:8px;border:1px solid #1e3a8a}td{border:1px solid #d1d5db;padding:7px;font-size:12px;vertical-align:top}.summary-box{background:#eff6ff;border:1px solid #bfdbfe;border-radius:12px;padding:12px;margin:12px 0}"
+    css = _base_css(compact=False, use_colors=bool(settings.get("statement_use_colors", True))) + "table{width:100%;border-collapse:collapse;min-width:980px}th{background:#0A3F70;color:#fff;padding:8px;border:1px solid #0A3F70}td{border:1px solid #d1d5db;padding:7px;font-size:12px;vertical-align:top}.summary-box{background:#EAF4FF;border:1px solid #B8D7F2;border-radius:12px;padding:12px;margin:12px 0}"
     doc = f"""<!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>تقرير أرباح الخدمات</title><style>{css}</style></head><body><div class="sheet">{_header_html(info, company_name='داخلي', statement_kind='تقرير أرباح الخدمات', settings={'show_company_logo': True, 'show_company_contact': True})}<div class="title"><h2>تقرير أرباح الخدمات الداخلي</h2></div><div class="summary-box">إجمالي الربح: <strong>{_money_span(_money(currency.convert(total_profit,'USD',display_currency),display_currency),'balance')}</strong></div><div class='table-scroll'><table><thead><tr><th>التاريخ</th><th>المرجع</th><th>الزبون</th><th>العميل</th><th>المورد</th><th>الخدمة</th><th>البيع</th><th>التكلفة</th><th>الربح</th><th>الحالة</th></tr></thead><tbody>{''.join(rows)}</tbody></table></div></div></body></html>"""
     with open(output_path, "w", encoding="utf-8") as f:
         f.write(doc)

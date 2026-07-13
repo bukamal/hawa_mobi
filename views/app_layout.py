@@ -186,13 +186,13 @@ class AppLayout(ft.Column):
                     ft.IconButton(icon=ft.Icons.ARROW_FORWARD, tooltip='رجوع', on_click=go_back),
                     ft.Icon(ft.Icons.BUSINESS, color=PRIMARY, size=24),
                     ft.Column([
-                        ft.Text(str(company_name), size=19, weight=ft.FontWeight.BOLD, color=ft.Colors.BLACK),
-                        ft.Text('تفاصيل الحساب والقيود والكشوف', size=12, color=ft.Colors.GREY_600),
+                        ft.Text(str(company_name), size=20, weight=ft.FontWeight.BOLD, color=TEXT),
+                        ft.Text('تفاصيل الحساب والقيود والكشوف', size=12, color=MUTED),
                     ], spacing=2, expand=True),
                 ], alignment=ft.MainAxisAlignment.START, vertical_alignment=ft.CrossAxisAlignment.CENTER),
                 bgcolor=CARD_BG,
                 padding=ft.Padding(left=10, right=10, top=8, bottom=8),
-                border=ft.Border(bottom=ft.BorderSide(1, ft.Colors.GREY_200)),
+                border=ft.Border(bottom=ft.BorderSide(1, BORDER)),
             )
             details = CompanyDetailsMobileView(
                 self._page,
