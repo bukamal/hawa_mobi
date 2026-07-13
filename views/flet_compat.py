@@ -176,6 +176,47 @@ def _ensure_overlay_contains(page, control) -> None:
         pass
 
 
+def _install_dialog_dismiss_cleanup(page, control) -> None:
+    """Ensure Android modal surfaces are purged when a dialog is dismissed.
+
+    Some Flet builds call ``on_dismiss`` when the user taps outside a dialog or
+    presses Android Back.  Wrap that callback so our app-managed stack/overlay is
+    also cleaned.  The explicit close buttons still call ``close_control``.
+    """
+    if page is None or control is None:
+        return
+    try:
+        if getattr(control, "_hawaa_dismiss_cleanup_installed", False):
+            return
+        original = getattr(control, "on_dismiss", None)
+
+        def _cleanup(ev=None):
+            try:
+                if callable(original):
+                    original(ev)
+            finally:
+                try:
+                    control.open = False
+                except Exception:
+                    pass
+                _remove_from_stack(page, control)
+                _remove_from_overlay(page, control)
+                try:
+                    if getattr(page, "dialog", None) is control:
+                        page.dialog = None
+                except Exception:
+                    pass
+                try:
+                    page.update()
+                except Exception:
+                    pass
+
+        control.on_dismiss = _cleanup
+        control._hawaa_dismiss_cleanup_installed = True
+    except Exception:
+        pass
+
+
 def _set_page_dialog_pointer(page, control) -> None:
     """Best-effort legacy dialog pointer for Flet 0.28.x.
 
@@ -183,10 +224,11 @@ def _set_page_dialog_pointer(page, control) -> None:
     used on Android in this project.  That route path is what produced the
     persistent blank white surface that disappeared only after Android Back.
 
-    AlertDialog is deliberately *not* appended to ``page.overlay``.  On some
-    Android Flet builds, overlay-managed AlertDialog controls leave a hidden
-    modal surface after close.  The stable old-Flet path is ``page.dialog = dlg``
-    plus ``dlg.open = True``.
+    AlertDialog is attached to overlay on Flet 0.28.x because that is the path
+    that actually renders modals in the Android shell.  The prior page.dialog-only
+    route prevented windows from opening.  The blank white surface is avoided by
+    aggressive cleanup on close: clear open, remove from overlay, clear
+    page.dialog, and never call native page.close/pop_dialog/show_dialog.
     """
     try:
         if isinstance(control, ft.AlertDialog):
@@ -218,10 +260,11 @@ def open_control(page: ft.Page, control):
     try:
         if _is_dialog_like(control):
             if _is_alert_dialog(control):
-                # Do not append AlertDialog to overlay.  In the Android APK this
-                # was the remaining cause of the blank white surface left behind
-                # after every modal was closed.
-                _remove_from_overlay(page, control)
+                # Flet 0.28.x Android only renders AlertDialog reliably when it
+                # is also present in page.overlay.  Keep page.dialog as the
+                # legacy pointer, but make close_control remove the dialog from
+                # overlay immediately so no hidden white surface remains.
+                _ensure_overlay_contains(page, control)
                 _set_page_dialog_pointer(page, control)
             else:
                 # DatePicker/TimePicker still need the overlay/service path on
@@ -231,6 +274,8 @@ def open_control(page: ft.Page, control):
                 control.open = True
             except Exception:
                 pass
+            if _is_alert_dialog(control):
+                _install_dialog_dismiss_cleanup(page, control)
             stack = _get_stack(page)
             if control in stack:
                 stack.remove(control)
@@ -314,7 +359,26 @@ def close_control(page: ft.Page, control):
     _remove_from_overlay(page, control)
     _restore_page_dialog_pointer(page, closed_control=control)
     try:
+        if _is_alert_dialog(control) and getattr(page, "dialog", None) is control:
+            page.dialog = None
+    except Exception:
+        pass
+    try:
         page.update()
+    except Exception:
+        pass
+    # Android/Flet can repaint one frame late after modal close.  Schedule a
+    # second best-effort cleanup/update without blocking the event handler.
+    try:
+        def _late_cleanup():
+            try:
+                _remove_from_overlay(page, control)
+                if getattr(page, "dialog", None) is control:
+                    page.dialog = None
+                page.update()
+            except Exception:
+                pass
+        threading.Timer(0.05, _late_cleanup).start()
     except Exception:
         pass
     return None

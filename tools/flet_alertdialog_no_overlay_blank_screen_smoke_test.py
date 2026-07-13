@@ -3,8 +3,7 @@
 
 The Android Flet runtime used by this APK may leave a hidden white modal surface
 when AlertDialog is managed through page.overlay or closed through page.close.
-AlertDialog must use page.dialog + open=True, and close_control must not call
-page.close/pop_dialog.
+AlertDialog must render via the Flet 0.28 overlay/page.dialog path, and close_control must remove it from overlay without page.close/pop_dialog.
 """
 from __future__ import annotations
 from pathlib import Path
@@ -19,7 +18,8 @@ code = "\n".join(line.split("#", 1)[0] for line in code.splitlines())
 required = [
     ("AlertDialog detector exists", "def _is_alert_dialog" in compat),
     ("AlertDialog path uses page.dialog", "page.dialog = control" in compat),
-    ("AlertDialog path explicitly removes overlay", "_remove_from_overlay(page, control)" in compat),
+    ("AlertDialog path attaches overlay for rendering", "_ensure_overlay_contains(page, control)" in compat),
+    ("close path removes overlay", "_remove_from_overlay(page, control)" in compat),
     ("close_control does not call page.close", ".close(control" not in code),
     ("close_control does not call pop_dialog", ".pop_dialog(" not in code),
     ("close_all_dialogs clears page.dialog", "page.dialog = None" in compat),
