@@ -182,6 +182,11 @@ def _set_page_dialog_pointer(page, control) -> None:
     Native ``page.show_dialog``/``page.pop_dialog`` routes are intentionally not
     used on Android in this project.  That route path is what produced the
     persistent blank white surface that disappeared only after Android Back.
+
+    AlertDialog is deliberately *not* appended to ``page.overlay``.  On some
+    Android Flet builds, overlay-managed AlertDialog controls leave a hidden
+    modal surface after close.  The stable old-Flet path is ``page.dialog = dlg``
+    plus ``dlg.open = True``.
     """
     try:
         if isinstance(control, ft.AlertDialog):
@@ -190,22 +195,38 @@ def _set_page_dialog_pointer(page, control) -> None:
         pass
 
 
+def _is_alert_dialog(control) -> bool:
+    try:
+        return isinstance(control, ft.AlertDialog)
+    except Exception:
+        return control.__class__.__name__.lower() == "alertdialog" if control is not None else False
+
+
 def open_control(page: ft.Page, control):
     """Open a dialog/transient control without native dialog routes.
 
     Flet 0.28.x on Android can leave a blank native modal route when
     ``page.show_dialog`` is used during login, save, edit or delete flows.  The
-    stable APK path is the legacy overlay/open mechanism: attach the control to
-    ``page.overlay`` when needed, set ``open=True``, and update the page.  This
-    keeps Android Back from being required to dismiss a hidden modal surface.
+    stable APK path avoids native modal routes. AlertDialog uses
+    ``page.dialog`` + ``open=True`` without overlay attachment; DatePicker and
+    service controls attach to overlay only when the pinned runtime requires it.
+    This keeps Android Back from being required to dismiss a hidden modal surface.
     """
     if page is None or control is None:
         return None
 
     try:
         if _is_dialog_like(control):
-            _ensure_overlay_contains(page, control)
-            _set_page_dialog_pointer(page, control)
+            if _is_alert_dialog(control):
+                # Do not append AlertDialog to overlay.  In the Android APK this
+                # was the remaining cause of the blank white surface left behind
+                # after every modal was closed.
+                _remove_from_overlay(page, control)
+                _set_page_dialog_pointer(page, control)
+            else:
+                # DatePicker/TimePicker still need the overlay/service path on
+                # the pinned Flet line.  They are explicitly removed on close.
+                _ensure_overlay_contains(page, control)
             try:
                 control.open = True
             except Exception:
@@ -262,6 +283,10 @@ def _restore_page_dialog_pointer(page, closed_control=None) -> None:
                     return
             except Exception:
                 continue
+        try:
+            page.dialog = None
+        except Exception:
+            pass
     except Exception:
         pass
 
@@ -277,16 +302,10 @@ def close_control(page: ft.Page, control):
     if page is None or control is None:
         return None
 
-    try:
-        if hasattr(page, "close") and callable(getattr(page, "close")):
-            # Newer Flet has page.close(control).  It is safe as a best-effort
-            # close because it targets the concrete control, not a route stack.
-            try:
-                page.close(control)
-            except Exception:
-                pass
-    except Exception:
-        pass
+    # Do not call page.close(control) here.  On the Android runtime used by the
+    # APK, closing native modal controls through Page.close can leave a blank
+    # white route above the app; the user then has to press Android Back.
+    # App dialogs are closed by clearing open/page.dialog/stack state only.
     try:
         control.open = False
     except Exception:
@@ -321,6 +340,12 @@ def close_all_dialogs(page: ft.Page):
     except Exception:
         pass
     try:
+        current_dialog = getattr(page, "dialog", None)
+        if current_dialog is not None:
+            try:
+                current_dialog.open = False
+            except Exception:
+                pass
         ov = _overlay(page) or []
         for item in list(ov):
             # Do not remove service controls such as FilePicker/PermissionHandler.
