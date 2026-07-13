@@ -8,7 +8,6 @@ Contract compatible with Hawaa Windows Phase 17:
 - amount_base: accounting value in USD.
 - amount: legacy mirror of amount_base for older mobile views.
 """
-
 from __future__ import annotations
 
 from typing import Any, Dict, Mapping, Optional
@@ -30,7 +29,6 @@ class CurrencyLedgerService:
         # rate_getter(currency_code) -> rate_to_usd where 1 USD = rate units.
         if rate_getter is None:
             from currency import currency
-
             rate_getter = currency.get_rate_to_usd
         self.rate_getter = rate_getter
 
@@ -41,9 +39,7 @@ class CurrencyLedgerService:
         rate = _to_float(self.rate_getter(code), 1.0)
         return rate if rate > 0 else 1.0
 
-    def to_base(
-        self, amount_original: float, currency_code: str, rate_to_usd: float
-    ) -> float:
+    def to_base(self, amount_original: float, currency_code: str, rate_to_usd: float) -> float:
         amount_original = _to_float(amount_original, 0.0)
         code = (currency_code or self.BASE_CURRENCY).upper()
         rate = _to_float(rate_to_usd, 1.0)
@@ -60,13 +56,7 @@ class CurrencyLedgerService:
             return amount_base
         return amount_base * self.get_rate_to_usd(code)
 
-    def snapshot(
-        self,
-        amount_original: float,
-        currency_code: str,
-        *,
-        existing: Optional[Mapping[str, Any]] = None,
-    ) -> Dict[str, Any]:
+    def snapshot(self, amount_original: float, currency_code: str, *, existing: Optional[Mapping[str, Any]] = None) -> Dict[str, Any]:
         """Build a historical snapshot.
 
         When editing an existing transaction and the original currency did not
@@ -75,15 +65,9 @@ class CurrencyLedgerService:
         """
         code = (currency_code or self.BASE_CURRENCY).upper()
         amount_original = _to_float(amount_original, 0.0)
-        existing_currency = (
-            (existing or {}).get("currency_original")
-            or (existing or {}).get("currency")
-            or ""
-        ).upper()
+        existing_currency = ((existing or {}).get("currency_original") or (existing or {}).get("currency") or "").upper()
         if existing and existing_currency == code:
-            rate = _to_float(
-                (existing or {}).get("exchange_rate_to_usd"), self.get_rate_to_usd(code)
-            )
+            rate = _to_float((existing or {}).get("exchange_rate_to_usd"), self.get_rate_to_usd(code))
             if rate <= 0:
                 rate = self.get_rate_to_usd(code)
         else:
@@ -99,12 +83,8 @@ class CurrencyLedgerService:
             "currency": code,
         }
 
-    def normalize_expense_payload(
-        self, data: Mapping[str, Any], *, existing: Optional[Mapping[str, Any]] = None
-    ) -> Dict[str, Any]:
-        code = (
-            data.get("currency_original") or data.get("currency") or self.BASE_CURRENCY
-        ).upper()
+    def normalize_expense_payload(self, data: Mapping[str, Any], *, existing: Optional[Mapping[str, Any]] = None) -> Dict[str, Any]:
+        code = (data.get("currency_original") or data.get("currency") or self.BASE_CURRENCY).upper()
         amount_original = data.get("amount_original")
         if amount_original in (None, ""):
             # Client UIs usually send amount as the original user input. Older
@@ -112,9 +92,7 @@ class CurrencyLedgerService:
             # and recompute amount_base server-side.
             amount_original = data.get("amount", 0)
         snap = self.snapshot(amount_original, code, existing=existing)
-        status = data.get("status") or (
-            "waiting_payment" if snap["amount_original"] == 0 else "approved"
-        )
+        status = data.get("status") or ("waiting_payment" if snap["amount_original"] == 0 else "approved")
         normalized = dict(data)
         normalized.update(snap)
         normalized["status"] = status

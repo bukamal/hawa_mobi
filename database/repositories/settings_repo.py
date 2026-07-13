@@ -39,13 +39,13 @@ class SettingsRepository(BaseRepository):
 
     def get_currency_settings(self):
         return {
-            "symbol": self.get("currency_symbol", "$"),
-            "decimals": int(self.get("currency_decimals", "2")),
-            "format": self.get("number_format", "western"),
+            'symbol': self.get('currency_symbol', '$'),
+            'decimals': int(self.get('currency_decimals', '2')),
+            'format': self.get('number_format', 'western'),
         }
 
     def get_language(self):
-        return self.get("language", "ar")
+        return self.get('language', 'ar')
 
     def get_theme(self):
-        return self.get("theme", "light")
+        return self.get('theme', 'light')

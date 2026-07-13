@@ -5,7 +5,6 @@ Keep this module presentation-only.  It must not import database/network code.
 The helpers are intentionally small so APK builds do not pull extra runtime
 requirements into the client package.
 """
-
 from __future__ import annotations
 
 import flet as ft
@@ -53,9 +52,7 @@ def save_button(label: str, on_click, ref=None):
     return button
 
 
-def set_button_busy(
-    button, busy: bool, label: str | None = None, busy_label: str = "جارٍ الحفظ..."
-):
+def set_button_busy(button, busy: bool, label: str | None = None, busy_label: str = "جارٍ الحفظ..."):
     if button is None:
         return
     try:
@@ -70,9 +67,7 @@ def set_button_busy(
 
 def show_snackbar(page, message, is_error=False, duration=3000):
     from views.flet_compat import show_snackbar as compat_show_snackbar
-
     return compat_show_snackbar(page, message, is_error=is_error, duration=duration)
-
 
 def normalize_text(value) -> str:
     return str(value or "").strip()

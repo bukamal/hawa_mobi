@@ -4,7 +4,6 @@
 The Android/APK client must not import this module. It is used only by
 server/run_server.py and server/flask_server.py.
 """
-
 from __future__ import annotations
 
 import os
@@ -18,9 +17,7 @@ def _int_env(name: str, default: int) -> int:
     try:
         return int(raw)
     except ValueError as exc:
-        raise ValueError(
-            f"Invalid integer environment variable {name}={raw!r}"
-        ) from exc
+        raise ValueError(f"Invalid integer environment variable {name}={raw!r}") from exc
 
 
 def _bool_env(name: str, default: bool = False) -> bool:
@@ -37,6 +34,7 @@ class ServerConfig:
     threads: int
     token_ttl_minutes: int
     expose_database_path: bool
+
 
 
 def load_server_config() -> ServerConfig:

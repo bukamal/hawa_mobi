@@ -1,6 +1,5 @@
 # -*- coding: utf-8 -*-
 """User-friendly Android network diagnostics for Windows pairing/client mode."""
-
 from __future__ import annotations
 
 import socket
@@ -27,7 +26,7 @@ def classify_connection_error(url: str, exc_or_message) -> DiagnosticHint:
     text = str(exc_or_message or "")
     lower = text.lower()
     host = _host_of(url)
-    same_device_hosts = {"127.0.0.1", "localhost", "0.0.0.0"}  # nosec B104 - address comparison/normalization, not socket binding
+    same_device_hosts = {"127.0.0.1", "localhost", "0.0.0.0"}
 
     if "network is unreachable" in lower or "errno 101" in lower:
         return DiagnosticHint(
@@ -68,14 +67,10 @@ def build_diagnostic_steps(url: str) -> list[str]:
         "تأكد أن الهاتف والكمبيوتر على نفس Wi‑Fi أو نفس نقطة الاتصال.",
         "اسمح للمنفذ 8000 في جدار الحماية على Windows.",
     ]
-    if host in {"127.0.0.1", "localhost", "0.0.0.0"}:  # nosec B104 - address comparison/normalization, not socket binding
-        steps.append(
-            "للهاتف الحقيقي لا تستخدم localhost؛ استخدم IP الكمبيوتر داخل الشبكة."
-        )
+    if host in {"127.0.0.1", "localhost", "0.0.0.0"}:
+        steps.append("للهاتف الحقيقي لا تستخدم localhost؛ استخدم IP الكمبيوتر داخل الشبكة.")
     if host.startswith("192.168.43."):
-        steps.append(
-            "عنوان 192.168.43.x غالبًا من Hotspot. تأكد أن الجهازين متصلان بنفس نقطة الاتصال وأن عزل العملاء غير مفعل."
-        )
+        steps.append("عنوان 192.168.43.x غالبًا من Hotspot. تأكد أن الجهازين متصلان بنفس نقطة الاتصال وأن عزل العملاء غير مفعل.")
     return steps
 
 

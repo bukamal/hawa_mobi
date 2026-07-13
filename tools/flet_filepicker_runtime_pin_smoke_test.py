@@ -6,7 +6,6 @@ The project needs true external-file import for backups and logos.  The Flet
 exposed in Python but rejected by the Flutter client as "Unknown control:
 FilePicker".  This test prevents silently building that broken APK line.
 """
-
 from pathlib import Path
 import re
 
@@ -18,9 +17,7 @@ COMPAT = ROOT / "views" / "flet_compat.py"
 def _read_flet_pin() -> str:
     text = PYPROJECT.read_text(encoding="utf-8")
     m = re.search(r'"flet==([^"\n]+)"', text)
-    assert m, (
-        "pyproject.toml must pin flet with flet==<version>; loose ranges are not allowed for APK builds"
-    )
+    assert m, "pyproject.toml must pin flet with flet==<version>; loose ranges are not allowed for APK builds"
     return m.group(1)
 
 
@@ -43,12 +40,8 @@ def main():
         "Use flet==0.28.3 unless the FilePicker runtime regression is verified fixed on real APK."
     )
     compat = COMPAT.read_text(encoding="utf-8")
-    assert "_allow_legacy_filepicker_overlay" in compat, (
-        "flet_compat.py must allow legacy overlay FilePicker for the pinned runtime"
-    )
-    assert "Unknown control: FilePicker" in compat, (
-        "flet_compat.py must document/guard the Android FilePicker regression"
-    )
+    assert "_allow_legacy_filepicker_overlay" in compat, "flet_compat.py must allow legacy overlay FilePicker for the pinned runtime"
+    assert "Unknown control: FilePicker" in compat, "flet_compat.py must document/guard the Android FilePicker regression"
     print("flet_filepicker_runtime_pin_smoke_test passed")
     return 0
 

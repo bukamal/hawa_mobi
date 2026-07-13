@@ -5,7 +5,6 @@ Android must not rely on arbitrary external paths in reports.  A selected logo i
 copied into app-owned storage, and print HTML embeds it as a data URI so the
 logo survives sharing/opening outside the app.
 """
-
 from __future__ import annotations
 
 import base64

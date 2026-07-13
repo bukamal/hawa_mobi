@@ -6,7 +6,6 @@ blank modal surface behind dialog routes; the first-login password change is a
 navigation state, not an optional popup.  Cancel must log the user out and
 return to Login.
 """
-
 from __future__ import annotations
 
 import flet as ft
@@ -15,15 +14,7 @@ from auth.session import UserSession
 from auth.password_policy import evaluate_password
 from database import UserRepository
 from i18n.translator import translate
-from views.ui_kit import (
-    app_brand,
-    brand_background,
-    brand_card,
-    PRIMARY,
-    MUTED,
-    DANGER,
-    SUCCESS,
-)
+from views.ui_kit import app_brand, brand_background, brand_card, PRIMARY, MUTED, DANGER, SUCCESS
 from views.flet_compat import ALIGN_CENTER
 from views.dialogs.dialog_kit import normalize_text
 
@@ -42,46 +33,22 @@ class MandatoryPasswordChangeView(ft.Container):
         page_width = page.width or 420
         field_width = min(340, max(260, page_width - 80))
 
-        self.old_password = ft.TextField(
-            label=translate("old_password"),
-            password=True,
-            can_reveal_password=True,
-            width=field_width,
-            border_radius=14,
-        )
-        self.new_password = ft.TextField(
-            label=translate("new_password"),
-            password=True,
-            can_reveal_password=True,
-            width=field_width,
-            border_radius=14,
-        )
-        self.confirm_password = ft.TextField(
-            label=translate("confirm_password"),
-            password=True,
-            can_reveal_password=True,
-            width=field_width,
-            border_radius=14,
-        )
+        self.old_password = ft.TextField(label=translate('old_password'), password=True, can_reveal_password=True, width=field_width, border_radius=14)
+        self.new_password = ft.TextField(label=translate('new_password'), password=True, can_reveal_password=True, width=field_width, border_radius=14)
+        self.confirm_password = ft.TextField(label=translate('confirm_password'), password=True, can_reveal_password=True, width=field_width, border_radius=14)
         self.status = ft.Text(
             "يجب تغيير كلمة المرور الافتراضية قبل الدخول إلى التطبيق.",
             size=12,
             color=MUTED,
             text_align=ft.TextAlign.CENTER,
         )
-        self.strength_text = ft.Text(
-            "", size=11, color=MUTED, text_align=ft.TextAlign.CENTER
-        )
-        self.match_text = ft.Text(
-            "", size=11, color=MUTED, text_align=ft.TextAlign.CENTER
-        )
+        self.strength_text = ft.Text('', size=11, color=MUTED, text_align=ft.TextAlign.CENTER)
+        self.match_text = ft.Text('', size=11, color=MUTED, text_align=ft.TextAlign.CENTER)
         self.new_password.on_change = self._validate_live
         self.confirm_password.on_change = self._validate_live
 
         self.save_btn = ft.FilledButton(
-            content=ft.Text(
-                "حفظ كلمة المرور والمتابعة", size=15, weight=ft.FontWeight.BOLD
-            ),
+            content=ft.Text("حفظ كلمة المرور والمتابعة", size=15, weight=ft.FontWeight.BOLD),
             width=field_width,
             height=48,
             bgcolor=PRIMARY,
@@ -96,24 +63,9 @@ class MandatoryPasswordChangeView(ft.Container):
 
         form = ft.Column(
             controls=[
-                app_brand(
-                    translate("app_name"),
-                    "تغيير كلمة المرور الإلزامي",
-                    size=86,
-                    dark=True,
-                ),
-                ft.Text(
-                    "تغيير كلمة المرور",
-                    size=22,
-                    weight=ft.FontWeight.BOLD,
-                    color="#102033",
-                ),
-                ft.Text(
-                    f"المستخدم: {self.username}",
-                    size=12,
-                    color=MUTED,
-                    text_align=ft.TextAlign.CENTER,
-                ),
+                app_brand(translate('app_name'), "تغيير كلمة المرور الإلزامي", size=86, dark=True),
+                ft.Text("تغيير كلمة المرور", size=22, weight=ft.FontWeight.BOLD, color="#102033"),
+                ft.Text(f"المستخدم: {self.username}", size=12, color=MUTED, text_align=ft.TextAlign.CENTER),
                 self.status,
                 self.old_password,
                 self.new_password,
@@ -131,9 +83,7 @@ class MandatoryPasswordChangeView(ft.Container):
         self.expand = True
         self.alignment = ALIGN_CENTER
         self.padding = 0
-        self.content = brand_background(
-            brand_card(form, width=430, padding=24), padding=20, dark=False
-        )
+        self.content = brand_background(brand_card(form, width=430, padding=24), padding=20, dark=False)
 
     def _set_status(self, message: str, is_error: bool = False):
         self.status.value = message
@@ -148,23 +98,15 @@ class MandatoryPasswordChangeView(ft.Container):
         confirm = normalize_text(self.confirm_password.value)
         if new:
             policy = evaluate_password(new)
-            self.strength_text.value = f"قوة كلمة المرور: {policy['label']}" + (
-                " — ينقص: " + "، ".join(policy["problems"][:2])
-                if policy["problems"]
-                else ""
-            )
-            self.strength_text.color = SUCCESS if policy["ok"] else ft.Colors.ORANGE
+            self.strength_text.value = f"قوة كلمة المرور: {policy['label']}" + (" — ينقص: " + "، ".join(policy['problems'][:2]) if policy['problems'] else "")
+            self.strength_text.color = SUCCESS if policy['ok'] else ft.Colors.ORANGE
         else:
-            self.strength_text.value = ""
+            self.strength_text.value = ''
         if confirm:
-            self.match_text.value = (
-                "كلمتا المرور متطابقتان"
-                if new == confirm
-                else "كلمتا المرور غير متطابقتين"
-            )
+            self.match_text.value = 'كلمتا المرور متطابقتان' if new == confirm else 'كلمتا المرور غير متطابقتين'
             self.match_text.color = SUCCESS if new == confirm else DANGER
         else:
-            self.match_text.value = ""
+            self.match_text.value = ''
         try:
             self._page.update()
         except Exception:
@@ -178,9 +120,7 @@ class MandatoryPasswordChangeView(ft.Container):
         self.save_btn.disabled = busy
         self.cancel_btn.disabled = busy
         try:
-            self.save_btn.content.value = (
-                "جاري الحفظ..." if busy else "حفظ كلمة المرور والمتابعة"
-            )
+            self.save_btn.content.value = "جاري الحفظ..." if busy else "حفظ كلمة المرور والمتابعة"
         except Exception:
             pass
 
@@ -203,13 +143,11 @@ class MandatoryPasswordChangeView(ft.Container):
             self._set_status("جميع الحقول مطلوبة", True)
             return
         policy = evaluate_password(new)
-        if not policy["ok"]:
-            self._set_status(
-                "كلمة المرور ضعيفة: " + "، ".join(policy["problems"][:3]), True
-            )
+        if not policy['ok']:
+            self._set_status('كلمة المرور ضعيفة: ' + '، '.join(policy['problems'][:3]), True)
             return
         if old == new:
-            self._set_status("كلمة المرور الجديدة يجب أن تختلف عن الحالية", True)
+            self._set_status('كلمة المرور الجديدة يجب أن تختلف عن الحالية', True)
             return
         if new != confirm:
             self._set_status("كلمتا المرور غير متطابقتين", True)
@@ -226,7 +164,7 @@ class MandatoryPasswordChangeView(ft.Container):
                 # get_current() returns the active session dict.  Mutating it
                 # preserves any remote auth token while clearing the mandatory
                 # password-change flag after a successful save.
-                current["force_password_change"] = 0
+                current['force_password_change'] = 0
             self._set_status("تم تغيير كلمة المرور بنجاح", False)
             if callable(self.on_save):
                 self.on_save()

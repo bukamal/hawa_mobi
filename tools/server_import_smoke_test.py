@@ -1,6 +1,5 @@
 # -*- coding: utf-8 -*-
 """Verify that the standalone server imports without starting it."""
-
 from __future__ import annotations
 
 import os
@@ -12,7 +11,6 @@ sys.path.insert(0, str(ROOT))
 os.environ["HAWAA_SERVER_PROCESS"] = "1"
 
 from server.config import load_server_config
-
 try:
     from server.flask_server import app
 except ModuleNotFoundError as exc:
@@ -26,9 +24,7 @@ def main() -> int:
     cfg = load_server_config()
     assert cfg.port > 0
     if app is None:
-        print(
-            "⚠️ server_import_smoke_test skipped Flask app import لأن flask غير مثبتة في بيئة الفحص"
-        )
+        print("⚠️ server_import_smoke_test skipped Flask app import لأن flask غير مثبتة في بيئة الفحص")
         return 0
     routes = {rule.rule for rule in app.url_map.iter_rules()}
     required = {"/api/health", "/api/login", "/api/expenses", "/api/server_info"}

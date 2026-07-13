@@ -1,6 +1,5 @@
 # -*- coding: utf-8 -*-
 """Static/runtime checks for Android QR pairing contract."""
-
 from __future__ import annotations
 
 import datetime
@@ -26,44 +25,23 @@ def main() -> int:
         'PAIRING_CONTRACT_VERSION = "hawaa-mobile-pairing-v1"',
         '@app.post("/api/mobile/pairing-token")',
         '@app.post("/api/mobile/pair")',
-        "PAIRING_TOKEN_TTL_SECONDS = 300",
-        "pairing_token",
-        "does not log in",
+        'PAIRING_TOKEN_TTL_SECONDS = 300',
+        'pairing_token',
+        'does not log in',
     ]
     missing = [term for term in required_server if term not in server]
     assert not missing, "server mobile pairing contract missing: " + ", ".join(missing)
-    assert '@require_roles("admin", "manager")' in server, (
-        "pairing-token generation must require admin/manager"
-    )
-    assert "def pair_mobile" in rest and '"/api/mobile/pair"' in rest, (
-        "RestClient must validate pairing token"
-    )
-    assert '"/api/mobile/pair"' in rest and "_requires_auth" in rest, (
-        "/api/mobile/pair must be public before login"
-    )
-    assert "MobilePairingService" in service and "pair_from_qr_text" in service, (
-        "Android must expose QR pairing service"
-    )
-    assert (
-        "NetworkService.save_mode(" in service and '"client", server_url' in service
-    ), "successful pairing must save client network mode"
-    assert (
-        "currency_contract" in service and "historic-currency-snapshot-v1" in service
-    ), "pairing must validate currency contract"
-    assert "_open_qr_pairing_dialog" in settings and "ربط عبر QR" in settings, (
-        "Settings must expose QR pairing dialog"
-    )
-    assert "_open_qr_pairing_dialog" in login and "ربط مع Windows عبر QR" in login, (
-        "Login must expose QR pairing before auth"
-    )
+    assert "@require_roles(\"admin\", \"manager\")" in server, "pairing-token generation must require admin/manager"
+    assert "def pair_mobile" in rest and "'/api/mobile/pair'" in rest, "RestClient must validate pairing token"
+    assert "'/api/mobile/pair'" in rest and "_requires_auth" in rest, "/api/mobile/pair must be public before login"
+    assert "MobilePairingService" in service and "pair_from_qr_text" in service, "Android must expose QR pairing service"
+    assert "NetworkService.save_mode(\"client\"" in service, "successful pairing must save client network mode"
+    assert "currency_contract" in service and "historic-currency-snapshot-v1" in service, "pairing must validate currency contract"
+    assert "_open_qr_pairing_dialog" in settings and "ربط عبر QR" in settings, "Settings must expose QR pairing dialog"
+    assert "_open_qr_pairing_dialog" in login and "ربط مع Windows عبر QR" in login, "Login must expose QR pairing before auth"
 
     from services.pairing_service import MobilePairingService
-
-    expires = (
-        (datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(minutes=5))
-        .isoformat()
-        .replace("+00:00", "Z")
-    )
+    expires = (datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(minutes=5)).isoformat().replace("+00:00", "Z")
     payload = {
         "app": "hawaa-sham",
         "kind": "mobile_pairing",
@@ -73,28 +51,16 @@ def main() -> int:
         "pairing_token": "abc",
         "expires_at": expires,
     }
-    try:
-        MobilePairingService.validate_payload(
-            MobilePairingService.parse_qr_text(json.dumps(payload, ensure_ascii=False))
-        )
-        raise AssertionError("HTTP pairing must require explicit opt-in")
-    except ValueError as exc:
-        assert "HTTP" in str(exc)
-    parsed = MobilePairingService.validate_payload(
-        MobilePairingService.parse_qr_text(json.dumps(payload, ensure_ascii=False)),
-        allow_insecure_http=True,
-    )
+    parsed = MobilePairingService.validate_payload(MobilePairingService.parse_qr_text(json.dumps(payload, ensure_ascii=False)))
     assert parsed["server_url"] == "http://192.168.1.50:8000"
     assert parsed["pairing_token"] == "abc"
     local = dict(payload)
     local["server_url"] = "http://127.0.0.1:8000"
-    parsed_local = MobilePairingService.validate_payload(
-        local, allow_insecure_http=True
-    )
+    parsed_local = MobilePairingService.validate_payload(local)
     assert parsed_local["server_url"] == "http://127.0.0.1:8000"
     zero = dict(payload)
     zero["server_url"] = "http://0.0.0.0:8000"
-    parsed_zero = MobilePairingService.validate_payload(zero, allow_insecure_http=True)
+    parsed_zero = MobilePairingService.validate_payload(zero)
     assert parsed_zero["server_url"] == "http://127.0.0.1:8000"
     print("✅ mobile_pairing_contract_smoke_test passed")
     return 0

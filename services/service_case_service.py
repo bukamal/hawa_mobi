@@ -12,7 +12,6 @@ The old expenses table remains the accounting ledger.  service_cases and
 service_case_components only tie related entries together and expose sale,
 cost, profit, and reconciliation output.
 """
-
 from __future__ import annotations
 
 import datetime
@@ -37,30 +36,12 @@ def new_service_case_reference(prefix: str = "SVC") -> str:
     return f"{prefix}-{datetime.datetime.now().strftime('%Y%m%d-%H%M%S')}-{secrets.token_hex(3).upper()}"
 
 
-_ARABIC_DIGITS = str.maketrans(
-    {
-        "٠": "0",
-        "١": "1",
-        "٢": "2",
-        "٣": "3",
-        "٤": "4",
-        "٥": "5",
-        "٦": "6",
-        "٧": "7",
-        "٨": "8",
-        "٩": "9",
-        "۰": "0",
-        "۱": "1",
-        "۲": "2",
-        "۳": "3",
-        "۴": "4",
-        "۵": "5",
-        "۶": "6",
-        "۷": "7",
-        "۸": "8",
-        "۹": "9",
-    }
-)
+_ARABIC_DIGITS = str.maketrans({
+    "٠": "0", "١": "1", "٢": "2", "٣": "3", "٤": "4",
+    "٥": "5", "٦": "6", "٧": "7", "٨": "8", "٩": "9",
+    "۰": "0", "۱": "1", "۲": "2", "۳": "3", "۴": "4",
+    "۵": "5", "۶": "6", "۷": "7", "۸": "8", "۹": "9",
+})
 
 
 def normalize_amount_text(value: Any) -> str:
@@ -111,29 +92,11 @@ def _component_has_value(component: Dict[str, Any]) -> bool:
     return False
 
 
-def validate_service_component(
-    component: Dict[str, Any],
-    *,
-    default_supplier: str = "",
-    default_service: str = "تأشيرة سياحية",
-    idx: int = 1,
-) -> Dict[str, Any]:
-    service = normalize_service_type(
-        component.get("service_type") or default_service or "تأشيرة سياحية"
-    )
-    supplier = clean_text(
-        component.get("supplier_company_name")
-        or component.get("supplier")
-        or default_supplier
-    )
-    sale = parse_amount(
-        component.get("sale_amount_original", component.get("sale_amount", 0)),
-        f"سعر بيع البند {idx}",
-    )
-    cost = parse_amount(
-        component.get("cost_amount_original", component.get("cost_amount", 0)),
-        f"تكلفة البند {idx}",
-    )
+def validate_service_component(component: Dict[str, Any], *, default_supplier: str = "", default_service: str = "تأشيرة سياحية", idx: int = 1) -> Dict[str, Any]:
+    service = normalize_service_type(component.get("service_type") or default_service or "تأشيرة سياحية")
+    supplier = clean_text(component.get("supplier_company_name") or component.get("supplier") or default_supplier)
+    sale = parse_amount(component.get("sale_amount_original", component.get("sale_amount", 0)), f"سعر بيع البند {idx}")
+    cost = parse_amount(component.get("cost_amount_original", component.get("cost_amount", 0)), f"تكلفة البند {idx}")
     notes = clean_text(component.get("notes"))
     print_client = clean_text(component.get("print_description_client"))
     print_supplier = clean_text(component.get("print_description_supplier"))
@@ -152,9 +115,7 @@ def validate_service_component(
     }
 
 
-def _legacy_component_from_payload(
-    data: Dict[str, Any], service: str, supplier: str, sale: float, cost: float
-) -> Dict[str, Any]:
+def _legacy_component_from_payload(data: Dict[str, Any], service: str, supplier: str, sale: float, cost: float) -> Dict[str, Any]:
     return {
         "service_type": service,
         "supplier_company_name": supplier,
@@ -172,9 +133,7 @@ def validate_service_case_payload(data: Dict[str, Any]) -> Dict[str, Any]:
     person = clean_text(data.get("person_name"))
     service = normalize_service_type(data.get("service_type") or "تأشيرة سياحية")
     date = clean_text(data.get("date")) or datetime.datetime.now().strftime("%Y-%m-%d")
-    currency_code = clean_text(
-        data.get("currency_original") or data.get("currency") or "USD"
-    ).upper()
+    currency_code = clean_text(data.get("currency_original") or data.get("currency") or "USD").upper()
     notes = clean_text(data.get("notes"))
 
     if not client:
@@ -189,31 +148,18 @@ def validate_service_case_payload(data: Dict[str, Any]) -> Dict[str, Any]:
             raw = dict(raw or {})
             if not _component_has_value(raw):
                 continue
-            comp = validate_service_component(
-                raw, default_supplier=supplier, default_service=service, idx=idx
-            )
-            if (
-                comp["supplier_company_name"]
-                and comp["supplier_company_name"] == client
-            ):
+            comp = validate_service_component(raw, default_supplier=supplier, default_service=service, idx=idx)
+            if comp["supplier_company_name"] and comp["supplier_company_name"] == client:
                 raise ValueError(f"لا يمكن أن يكون العميل هو نفس مورّد البند {idx}")
             components.append(comp)
     else:
         if not supplier:
             raise ValueError("الشركة المورّدة مطلوبة")
-        sale = parse_amount(
-            data.get("sale_amount_original", data.get("sale_amount", 0)), "سعر البيع"
-        )
-        cost = parse_amount(
-            data.get("cost_amount_original", data.get("cost_amount", 0)), "تكلفة المورد"
-        )
+        sale = parse_amount(data.get("sale_amount_original", data.get("sale_amount", 0)), "سعر البيع")
+        cost = parse_amount(data.get("cost_amount_original", data.get("cost_amount", 0)), "تكلفة المورد")
         if client == supplier:
-            raise ValueError(
-                "لا يمكن أن تكون الشركة العميلة والشركة المورّدة نفس الحساب"
-            )
-        components.append(
-            _legacy_component_from_payload(data, service, supplier, sale, cost)
-        )
+            raise ValueError("لا يمكن أن تكون الشركة العميلة والشركة المورّدة نفس الحساب")
+        components.append(_legacy_component_from_payload(data, service, supplier, sale, cost))
 
     if not components:
         raise ValueError("أضف بند خدمة واحد على الأقل")
@@ -221,9 +167,7 @@ def validate_service_case_payload(data: Dict[str, Any]) -> Dict[str, Any]:
     total_cost = sum(float(c.get("cost_amount_original") or 0) for c in components)
     if total_sale == 0 and total_cost == 0:
         raise ValueError("أدخل سعر البيع أو التكلفة في بنود الخدمة")
-    suppliers = [
-        c["supplier_company_name"] for c in components if c.get("supplier_company_name")
-    ]
+    suppliers = [c["supplier_company_name"] for c in components if c.get("supplier_company_name")]
     primary_supplier = suppliers[0] if suppliers else supplier
     supplier_summary = "، ".join(dict.fromkeys(suppliers))
     service_summary = summarize_component_services(components)
@@ -261,37 +205,20 @@ def summarize_component_services(components: Iterable[Dict[str, Any]]) -> str:
 
 
 def client_print_description(payload: Dict[str, Any]) -> str:
-    service_label = (
-        payload.get("service_description") or payload.get("service_type") or "خدمة"
-    )
+    service_label = payload.get("service_description") or payload.get("service_type") or "خدمة"
     return f"{service_label} - {payload.get('person_name') or ''}".strip(" -")
 
 
-def component_client_print_description(
-    payload: Dict[str, Any], component: Dict[str, Any]
-) -> str:
-    return (
-        component.get("print_description_client")
-        or f"{component.get('service_type') or 'خدمة'} - {payload.get('person_name') or ''}"
-    ).strip(" -")
+def component_client_print_description(payload: Dict[str, Any], component: Dict[str, Any]) -> str:
+    return (component.get("print_description_client") or f"{component.get('service_type') or 'خدمة'} - {payload.get('person_name') or ''}").strip(" -")
 
 
-def supplier_print_description(
-    payload: Dict[str, Any], component: Dict[str, Any] | None = None
-) -> str:
+def supplier_print_description(payload: Dict[str, Any], component: Dict[str, Any] | None = None) -> str:
     comp = component or payload
-    return (
-        comp.get("print_description_supplier")
-        or f"تكلفة {comp.get('service_type') or 'خدمة'} - {payload.get('person_name') or ''}"
-    ).strip(" -")
+    return (comp.get("print_description_supplier") or f"تكلفة {comp.get('service_type') or 'خدمة'} - {payload.get('person_name') or ''}").strip(" -")
 
 
-def internal_note(
-    reference: str,
-    payload: Dict[str, Any],
-    sale_amount_base: float | None = None,
-    cost_amount_base: float | None = None,
-) -> str:
+def internal_note(reference: str, payload: Dict[str, Any], sale_amount_base: float | None = None, cost_amount_base: float | None = None) -> str:
     profit = ""
     if sale_amount_base is not None and cost_amount_base is not None:
         profit = f" | ربح تقريبي USD: {float(sale_amount_base) - float(cost_amount_base):.2f}"
@@ -300,9 +227,7 @@ def internal_note(
     if components:
         parts = []
         for c in components:
-            parts.append(
-                f"{c.get('service_type')} / {c.get('supplier_company_name') or '-'} / بيع {c.get('sale_amount_original')} / تكلفة {c.get('cost_amount_original')}"
-            )
+            parts.append(f"{c.get('service_type')} / {c.get('supplier_company_name') or '-'} / بيع {c.get('sale_amount_original')} / تكلفة {c.get('cost_amount_original')}")
         component_text = " | البنود: " + " ؛ ".join(parts)
     return (
         f"ملف خدمة {reference} | العميل: {payload.get('client_company_name')} | "
@@ -316,15 +241,9 @@ def build_client_note(reference: str, payload: Dict[str, Any]) -> str:
     return f"{client_print_description(payload)}. المرجع {reference}{extra}"
 
 
-def build_supplier_note(
-    reference: str, payload: Dict[str, Any], component: Dict[str, Any] | None = None
-) -> str:
+def build_supplier_note(reference: str, payload: Dict[str, Any], component: Dict[str, Any] | None = None) -> str:
     comp = component or payload
-    extra = (
-        f". {comp.get('notes') or payload.get('notes')}"
-        if (comp.get("notes") or payload.get("notes"))
-        else ""
-    )
+    extra = f". {comp.get('notes') or payload.get('notes')}" if (comp.get("notes") or payload.get("notes")) else ""
     return f"{supplier_print_description(payload, comp)} لصالح {payload.get('client_company_name')}. المرجع {reference}{extra}"
 
 
@@ -340,10 +259,4 @@ def summarize_service_cases(rows: Iterable[Dict[str, Any]]) -> Dict[str, float |
             total_cost += float(r.get("cost_amount_base") or 0)
         if (r.get("status") or "open") == SERVICE_CASE_STATUS_OPEN:
             open_count += 1
-    return {
-        "count": count,
-        "open_count": open_count,
-        "sale_base": total_sale,
-        "cost_base": total_cost,
-        "profit_base": total_sale - total_cost,
-    }
+    return {"count": count, "open_count": open_count, "sale_base": total_sale, "cost_base": total_cost, "profit_base": total_sale - total_cost}

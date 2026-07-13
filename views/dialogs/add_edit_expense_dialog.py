@@ -6,22 +6,8 @@ from auth.session import UserSession
 from i18n.translator import translate
 from currency import currency
 from views.flet_compat import open_control, close_control, ALIGN_CENTER
-from views.dialogs.dialog_kit import (
-    dialog_title,
-    dialog_body,
-    cancel_button,
-    save_button,
-    show_snackbar,
-    set_button_busy,
-    normalize_text,
-    parse_non_negative_amount,
-)
-from services.ledger_operation_service import (
-    SERVICE_TYPES,
-    OPERATION_LABELS,
-    SERVICE_TO_OPERATION,
-)
-
+from views.dialogs.dialog_kit import dialog_title, dialog_body, cancel_button, save_button, show_snackbar, set_button_busy, normalize_text, parse_non_negative_amount
+from services.ledger_operation_service import SERVICE_TYPES, OPERATION_LABELS, SERVICE_TO_OPERATION
 
 class AddEditExpenseDialog(ft.AlertDialog):
     def __init__(self, page, on_save=None, expense=None, company_name=None):
@@ -34,10 +20,10 @@ class AddEditExpenseDialog(ft.AlertDialog):
         self.expense_id = None
         if self.expense is not None:
             try:
-                self.expense_id = int(self.expense.get("id"))
+                self.expense_id = int(self.expense.get('id'))
             except Exception:
                 try:
-                    self.expense_id = int(self.expense["id"])
+                    self.expense_id = int(self.expense['id'])
                 except Exception:
                     self.expense_id = None
 
@@ -53,90 +39,68 @@ class AddEditExpenseDialog(ft.AlertDialog):
         dialog_width = min(380, page_width - 40)
         dialog_height = min(520, page_height - 100)
 
-        is_disabled = (
-            self.predefined_company is not None
-            and self.predefined_company.strip() != ""
-        ) and (self.expense_id is None)
+        is_disabled = (self.predefined_company is not None and self.predefined_company.strip() != "") and (self.expense_id is None)
 
         self.company_field = ft.TextField(
-            label=translate("company_name"),
-            value=self.predefined_company
-            or (expense["company_name"] if expense else ""),
+            label=translate('company_name'),
+            value=self.predefined_company or (expense['company_name'] if expense else ""),
             disabled=is_disabled,
-            width=dialog_width - 20,
+            width=dialog_width - 20
         )
 
         self.amount_field = ft.TextField(
-            label=translate("amount"),
+            label=translate('amount'),
             keyboard_type=ft.KeyboardType.NUMBER,
-            value=str(expense["amount_original"] if expense else ""),
-            width=dialog_width - 20,
+            value=str(expense['amount_original'] if expense else ""),
+            width=dialog_width - 20
         )
 
         self.currency_dropdown = ft.Dropdown(
-            label=translate("currency"),
-            value=expense.get("currency_original", "SAR")
-            if expense
-            else currency.get_display_currency(),
-            options=[
-                ft.dropdown.Option(c)
-                for c in ["USD", "SAR", "SYP", "EUR", "GBP", "AED", "QAR", "KWD", "OMR"]
-            ],
-            width=120,
+            label=translate('currency'),
+            value=expense.get('currency_original', 'SAR') if expense else currency.get_display_currency(),
+            options=[ft.dropdown.Option(c) for c in ["USD","SAR","SYP","EUR","GBP","AED","QAR","KWD","OMR"]],
+            width=120
         )
 
         self.type_dropdown = ft.Dropdown(
-            label=translate("type"),
-            value=translate("incoming")
-            if (not expense or expense["type"] == "incoming")
-            else translate("outgoing"),
-            options=[
-                ft.dropdown.Option(translate("incoming")),
-                ft.dropdown.Option(translate("outgoing")),
-            ],
-            width=120,
+            label=translate('type'),
+            value=translate('incoming') if (not expense or expense['type']=='incoming') else translate('outgoing'),
+            options=[ft.dropdown.Option(translate('incoming')), ft.dropdown.Option(translate('outgoing'))],
+            width=120
         )
 
         self.date_picker_field = ft.TextField(
-            label=translate("date"),
-            value=expense["date"]
-            if expense
-            else datetime.datetime.now().strftime("%Y-%m-%d"),
+            label=translate('date'),
+            value=expense['date'] if expense else datetime.datetime.now().strftime("%Y-%m-%d"),
             hint_text="YYYY-MM-DD",
             width=150,
             read_only=True,
-            suffix=ft.IconButton(
-                ft.Icons.CALENDAR_MONTH, on_click=self._open_date_picker
-            ),
+            suffix=ft.IconButton(ft.Icons.CALENDAR_MONTH, on_click=self._open_date_picker)
         )
         self.date_picker = ft.DatePicker(
             on_change=self._on_date_change,
             first_date=datetime.datetime(2020, 1, 1),
-            last_date=datetime.datetime.now() + datetime.timedelta(days=365 * 10),
+            last_date=datetime.datetime.now() + datetime.timedelta(days=365*10)
         )
 
         self.person_field = ft.TextField(
             label="اسم الزبون / المسافر (اختياري)",
-            value=(expense.get("person_name") if expense else "") or "",
+            value=(expense.get('person_name') if expense else "") or "",
             hint_text="مثال: محمد المصري",
-            width=dialog_width - 20,
+            width=dialog_width - 20
         )
 
-        current_service = (
-            expense.get("service_type") if expense else "غير محدد"
-        ) or "غير محدد"
+        current_service = (expense.get('service_type') if expense else "غير محدد") or "غير محدد"
         if current_service not in SERVICE_TYPES:
             current_service = "غير محدد"
         self.service_dropdown = ft.Dropdown(
             label="نوع الخدمة",
             value=current_service,
             options=[ft.dropdown.Option(s) for s in SERVICE_TYPES],
-            width=dialog_width - 20,
+            width=dialog_width - 20
         )
 
-        current_operation = (
-            expense.get("operation_type") if expense else ""
-        ) or SERVICE_TO_OPERATION.get(current_service, "normal")
+        current_operation = (expense.get('operation_type') if expense else "") or SERVICE_TO_OPERATION.get(current_service, 'normal')
         self.operation_text = ft.Text(
             f"نوع العملية: {OPERATION_LABELS.get(current_operation, 'قيد عادي')}",
             size=12,
@@ -144,19 +108,15 @@ class AddEditExpenseDialog(ft.AlertDialog):
         )
 
         self.notes_field = ft.TextField(
-            label=translate("notes"),
+            label=translate('notes'),
             multiline=True,
             min_lines=2,
             max_lines=4,
-            value=expense["notes"] if expense else "",
-            width=dialog_width - 20,
+            value=expense['notes'] if expense else "",
+            width=dialog_width - 20
         )
 
-        default_due = (
-            expense.get("payment_due_date")
-            if expense
-            else datetime.datetime.now().strftime("%Y-%m-%d")
-        )
+        default_due = expense.get('payment_due_date') if expense else datetime.datetime.now().strftime("%Y-%m-%d")
         self.payment_due_field = ft.TextField(
             label="تاريخ تنبيه الدفع",
             value=default_due or datetime.datetime.now().strftime("%Y-%m-%d"),
@@ -165,8 +125,7 @@ class AddEditExpenseDialog(ft.AlertDialog):
         )
         self.payment_note_field = ft.TextField(
             label="ملاحظة تنبيه الدفع",
-            value=(expense.get("payment_reminder_note") if expense else "")
-            or "بانتظار إدخال الدفعة الأولى",
+            value=(expense.get('payment_reminder_note') if expense else "") or "بانتظار إدخال الدفعة الأولى",
             width=dialog_width - 20,
         )
         self.zero_amount_notice = ft.Container(
@@ -181,52 +140,39 @@ class AddEditExpenseDialog(ft.AlertDialog):
             visible=False,
         )
 
-        self.exchange_rate_text = ft.Text(
-            "", size=12, color=ft.Colors.GREY_600, italic=True
-        )
-        self.converted_amount_text = ft.Text(
-            "", size=14, weight=ft.FontWeight.BOLD, color=ft.Colors.INDIGO
-        )
+        self.exchange_rate_text = ft.Text("", size=12, color=ft.Colors.GREY_600, italic=True)
+        self.converted_amount_text = ft.Text("", size=14, weight=ft.FontWeight.BOLD, color=ft.Colors.INDIGO)
 
         content = dialog_body(
             controls=[
                 self.company_field,
-                ft.Row(
-                    [self.amount_field, self.currency_dropdown], spacing=10, wrap=True
-                ),
-                ft.Row(
-                    [self.type_dropdown, self.date_picker_field], spacing=10, wrap=True
-                ),
+                ft.Row([self.amount_field, self.currency_dropdown], spacing=10, wrap=True),
+                ft.Row([self.type_dropdown, self.date_picker_field], spacing=10, wrap=True),
                 self.person_field,
                 self.service_dropdown,
                 self.operation_text,
-                ft.Container(
-                    content=self.exchange_rate_text,
-                    margin=ft.Margin(top=5, bottom=5, left=0, right=0),
-                ),
-                ft.Container(
-                    content=self.converted_amount_text, alignment=ALIGN_CENTER
-                ),
+                ft.Container(content=self.exchange_rate_text, margin=ft.Margin(top=5, bottom=5, left=0, right=0)),
+                ft.Container(content=self.converted_amount_text, alignment=ALIGN_CENTER),
                 self.zero_amount_notice,
                 ft.Row([self.payment_due_field], spacing=10, wrap=True),
                 self.payment_note_field,
-                self.notes_field,
+                self.notes_field
             ],
             spacing=15,
             width=dialog_width - 10,
-            height=dialog_height - 100,
+            height=dialog_height - 100
         )
 
         self._saving = False
-        self.save_btn = save_button(translate("save"), self._save)
+        self.save_btn = save_button(translate('save'), self._save)
         self.title = dialog_title(
-            translate("edit") if self.expense_id is not None else translate("add"),
-            ft.Icons.EDIT_NOTE,
+            translate('edit') if self.expense_id is not None else translate('add'),
+            ft.Icons.EDIT_NOTE
         )
         self.content = content
         self.actions = [
-            cancel_button(translate("cancel"), lambda e: self._close()),
-            self.save_btn,
+            cancel_button(translate('cancel'), lambda e: self._close()),
+            self.save_btn
         ]
         self.actions_alignment = ft.MainAxisAlignment.END
         self.inset_padding = 20
@@ -241,10 +187,8 @@ class AddEditExpenseDialog(ft.AlertDialog):
     def _update_operation_label(self, e):
         try:
             service = self.service_dropdown.value or "غير محدد"
-            operation = SERVICE_TO_OPERATION.get(service, "normal")
-            self.operation_text.value = (
-                f"نوع العملية: {OPERATION_LABELS.get(operation, 'قيد عادي')}"
-            )
+            operation = SERVICE_TO_OPERATION.get(service, 'normal')
+            self.operation_text.value = f"نوع العملية: {OPERATION_LABELS.get(operation, 'قيد عادي')}"
             self._page.update()
         except Exception:
             pass
@@ -276,22 +220,16 @@ class AddEditExpenseDialog(ft.AlertDialog):
             curr = self.currency_dropdown.value
             rate_to_usd = float(currency.get_rate_to_usd(curr) or 1.0)
             usd_value = amount / rate_to_usd if rate_to_usd != 0 else 0
-            self.zero_amount_notice.visible = amount == 0
-            self.exchange_rate_text.value = (
-                f"سعر الصرف: 1 {curr} = {rate_to_usd:.4f} USD"
-            )
+            self.zero_amount_notice.visible = (amount == 0)
+            self.exchange_rate_text.value = f"سعر الصرف: 1 {curr} = {rate_to_usd:.4f} USD"
             display_curr = currency.get_display_currency()
             if display_curr != curr:
                 rate_to_display = float(currency.get_rate_to_usd(display_curr) or 1.0)
-                display_value = (
-                    usd_value * rate_to_display if rate_to_display != 0 else 0
-                )
-                self.converted_amount_text.value = (
-                    f"≈ {display_value:.2f} {display_curr}"
-                )
+                display_value = usd_value * rate_to_display if rate_to_display != 0 else 0
+                self.converted_amount_text.value = f"≈ {display_value:.2f} {display_curr}"
             else:
                 self.converted_amount_text.value = f"≈ {amount:.2f} {display_curr}"
-        except (TypeError, ValueError, ArithmeticError):
+        except:
             self.exchange_rate_text.value = ""
             self.converted_amount_text.value = ""
         self._page.update()
@@ -306,83 +244,43 @@ class AddEditExpenseDialog(ft.AlertDialog):
         try:
             amount = parse_non_negative_amount(self.amount_field.value)
         except Exception as ex:
-            self._show_snackbar(
-                f"{str(ex)}. يُسمح بالصفر فقط لحفظ العملية بانتظار الدفع.", True
-            )
+            self._show_snackbar(f"{str(ex)}. يُسمح بالصفر فقط لحفظ العملية بانتظار الدفع.", True)
             return
 
-        type_val = (
-            "incoming"
-            if self.type_dropdown.value == translate("incoming")
-            else "outgoing"
-        )
+        type_val = 'incoming' if self.type_dropdown.value == translate('incoming') else 'outgoing'
         date = self.date_picker_field.value or ""
         notes = self.notes_field.value or ""
         currency_code = self.currency_dropdown.value
         person_name = normalize_text(self.person_field.value)
         service_type = self.service_dropdown.value or "غير محدد"
-        operation_type = SERVICE_TO_OPERATION.get(service_type, "normal")
-        payment_due_date = (
-            (self.payment_due_field.value or "").strip() if amount == 0 else None
-        )
-        payment_note = (
-            (self.payment_note_field.value or "").strip() if amount == 0 else None
-        )
+        operation_type = SERVICE_TO_OPERATION.get(service_type, 'normal')
+        payment_due_date = (self.payment_due_field.value or '').strip() if amount == 0 else None
+        payment_note = (self.payment_note_field.value or '').strip() if amount == 0 else None
 
         user = UserSession.get_current()
-        user_id = user["id"] if user else None
+        user_id = user['id'] if user else None
 
         repo = ExpenseRepository()
         self._saving = True
-        set_button_busy(self.save_btn, True, translate("save"))
+        set_button_busy(self.save_btn, True, translate('save'))
         try:
             self._page.update()
         except Exception:
             pass
         try:
             if self.expense_id is not None:
-                repo.update(
-                    self.expense_id,
-                    company,
-                    amount,
-                    type_val,
-                    date,
-                    notes,
-                    currency_code,
-                    user_id,
-                    payment_due_date,
-                    payment_note,
-                    person_name=person_name,
-                    service_type=service_type,
-                    operation_type=operation_type,
-                )
+                repo.update(self.expense_id, company, amount, type_val, date, notes, currency_code, user_id, payment_due_date, payment_note, person_name=person_name, service_type=service_type, operation_type=operation_type)
             else:
-                repo.add(
-                    company,
-                    amount,
-                    type_val,
-                    date,
-                    notes,
-                    currency_code,
-                    user_id,
-                    payment_due_date,
-                    payment_note,
-                    person_name=person_name,
-                    service_type=service_type,
-                    operation_type=operation_type,
-                )
+                repo.add(company, amount, type_val, date, notes, currency_code, user_id, payment_due_date, payment_note, person_name=person_name, service_type=service_type, operation_type=operation_type)
             self._close()
             if self.on_save:
                 self.on_save(None)
-            self._show_snackbar(
-                "📝 تم حفظ العملية بانتظار الدفع" if amount == 0 else "تم الحفظ بنجاح",
-                is_error=False,
-            )
+            self._show_snackbar("📝 تم حفظ العملية بانتظار الدفع" if amount == 0 else "تم الحفظ بنجاح", is_error=False)
         except Exception as ex:
             self._show_snackbar(f"فشل الحفظ: {str(ex)}", True)
         finally:
             self._saving = False
-            set_button_busy(self.save_btn, False, translate("save"))
+            set_button_busy(self.save_btn, False, translate('save'))
             try:
                 self._page.update()
             except Exception:

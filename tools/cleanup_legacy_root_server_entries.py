@@ -6,7 +6,6 @@ client must keep the real server implementation under server/ only. This script
 is intentionally safe: it only removes the two known legacy root files and never
 touches server/.
 """
-
 from __future__ import annotations
 
 import os

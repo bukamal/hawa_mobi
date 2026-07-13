@@ -1,8 +1,6 @@
+import os
 # -*- coding: utf-8 -*-
 """Static checks for dialog UX consistency and APK-safe modal behavior."""
-
-import os
-import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -24,31 +22,14 @@ def read(rel: str) -> str:
 
 def main() -> int:
     helper_src = read("views/dialogs/dialog_kit.py")
-    missing = [
-        name for name in REQUIRED_DIALOG_HELPERS if f"def {name}" not in helper_src
-    ]
+    missing = [name for name in REQUIRED_DIALOG_HELPERS if f"def {name}" not in helper_src]
     if missing:
         raise SystemExit(f"dialog_kit.py missing helpers: {missing}")
 
     expected = {
-        "views/dialogs/add_edit_expense_dialog.py": [
-            "_saving",
-            "set_button_busy",
-            "parse_non_negative_amount",
-            "dialog_title",
-        ],
-        "views/dialogs/user_dialog.py": [
-            "_saving",
-            "set_button_busy",
-            "normalize_text",
-            "dialog_title",
-        ],
-        "views/dialogs/change_password_dialog.py": [
-            "_saving",
-            "set_button_busy",
-            "normalize_text",
-            "dialog_title",
-        ],
+        "views/dialogs/add_edit_expense_dialog.py": ["_saving", "set_button_busy", "parse_non_negative_amount", "dialog_title"],
+        "views/dialogs/user_dialog.py": ["_saving", "set_button_busy", "normalize_text", "dialog_title"],
+        "views/dialogs/change_password_dialog.py": ["_saving", "set_button_busy", "normalize_text", "dialog_title"],
     }
     errors = []
     for rel, needles in expected.items():

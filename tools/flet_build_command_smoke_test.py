@@ -1,6 +1,5 @@
 # -*- coding: utf-8 -*-
 """Ensure the Android build workflow uses arguments supported by flet-cli 0.28.x."""
-
 from __future__ import annotations
 
 from pathlib import Path
@@ -19,16 +18,10 @@ def main() -> int:
         if not path.exists():
             continue
         text = path.read_text(encoding="utf-8", errors="ignore")
-        if (
-            "flet build apk --yes" in text
-            or " --yes" in text
-            and "flet build apk" in text
-        ):
+        if "flet build apk --yes" in text or " --yes" in text and "flet build apk" in text:
             offenders.append(str(path.relative_to(ROOT)))
     if offenders:
-        raise SystemExit(
-            "Unsupported flet build flag --yes found in: " + ", ".join(offenders)
-        )
+        raise SystemExit("Unsupported flet build flag --yes found in: " + ", ".join(offenders))
     print("flet_build_command_smoke_test passed")
     return 0
 

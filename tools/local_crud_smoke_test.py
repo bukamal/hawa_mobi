@@ -6,7 +6,6 @@ Run from project root:
 
 The test uses a temporary database directory and does not touch production data.
 """
-
 from __future__ import annotations
 
 import os
@@ -22,7 +21,6 @@ if ROOT not in sys.path:
 
 def reset_singleton() -> None:
     from database.connection import DatabaseConnection
-
     try:
         DatabaseConnection().close()
     except Exception:
@@ -74,24 +72,13 @@ def main() -> int:
         assert row["status"] == "approved"
 
         # Historical rate preservation: same-currency edits must not pick up a new current rate.
-        db.update_exchange_rate("SYP", 14000)
-        syp_id = repo.add(
-            "شركة ليرة", 14000, "incoming", "2026-06-11", "سعر تاريخي", "SYP", 1
-        )
+        db.update_exchange_rate('SYP', 14000)
+        syp_id = repo.add("شركة ليرة", 14000, "incoming", "2026-06-11", "سعر تاريخي", "SYP", 1)
         syp_row = assert_one(conn, "SELECT * FROM expenses WHERE id=?", (syp_id,))
         assert abs(float(syp_row["amount_base"]) - 1.0) < 1e-9
         assert float(syp_row["exchange_rate_to_usd"]) == 14000.0
-        db.update_exchange_rate("SYP", 15000)
-        repo.update(
-            syp_id,
-            "شركة ليرة",
-            28000,
-            "incoming",
-            "2026-06-12",
-            "تعديل بنفس العملة",
-            "SYP",
-            1,
-        )
+        db.update_exchange_rate('SYP', 15000)
+        repo.update(syp_id, "شركة ليرة", 28000, "incoming", "2026-06-12", "تعديل بنفس العملة", "SYP", 1)
         syp_row = assert_one(conn, "SELECT * FROM expenses WHERE id=?", (syp_id,))
         assert float(syp_row["exchange_rate_to_usd"]) == 14000.0
         assert abs(float(syp_row["amount_base"]) - 2.0) < 1e-9
@@ -109,34 +96,22 @@ def main() -> int:
             "2026-06-20",
             "بانتظار الدفع",
         )
-        rows = conn.execute(
-            "SELECT * FROM expenses WHERE company_name=?", ("شركة اختبار",)
-        ).fetchall()
+        rows = conn.execute("SELECT * FROM expenses WHERE company_name=?", ("شركة اختبار",)).fetchall()
         assert len(rows) == 1, "Updating amount=0 must not create a second expense"
         row = rows[0]
         assert row["id"] == eid
         assert float(row["amount_original"]) == 0.0
         assert row["status"] == "waiting_payment"
-        rem = assert_one(
-            conn,
-            "SELECT * FROM payment_reminders WHERE expense_id=? AND is_done=0",
-            (eid,),
-        )
+        rem = assert_one(conn, "SELECT * FROM payment_reminders WHERE expense_id=? AND is_done=0", (eid,))
         assert rem["reminder_date"] == "2026-06-20"
 
         summary = repo.get_summary()
-        assert abs(float(summary["total_incoming"])) < 1e-9, (
-            "waiting_payment rows must not affect dashboard totals"
-        )
+        assert abs(float(summary["total_incoming"])) < 1e-9, "waiting_payment rows must not affect dashboard totals"
 
         repo.delete(eid, 1)
-        count = conn.execute(
-            "SELECT COUNT(*) AS c FROM expenses WHERE id=?", (eid,)
-        ).fetchone()["c"]
+        count = conn.execute("SELECT COUNT(*) AS c FROM expenses WHERE id=?", (eid,)).fetchone()["c"]
         assert count == 0, "Deleted expense must disappear from the database"
-        rem_count = conn.execute(
-            "SELECT COUNT(*) AS c FROM payment_reminders WHERE expense_id=?", (eid,)
-        ).fetchone()["c"]
+        rem_count = conn.execute("SELECT COUNT(*) AS c FROM payment_reminders WHERE expense_id=?", (eid,)).fetchone()["c"]
         assert rem_count == 0, "Deleting expense must delete its reminders"
 
         try:

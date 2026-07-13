@@ -2,12 +2,11 @@
 """Static guard against Android blank-white dialog routes.
 
 The APK pins Flet 0.28.x. On this runtime, native dialog routes and
-overlay-managed AlertDialogs can leave a blank white surface above the app after
+unremoved overlay/native dialog routes can leave a blank white surface above the app after
 login/save/edit/delete. The route disappears only when the user presses Android
 Back. The app must therefore keep AlertDialog on the legacy page.dialog pointer
 and keep show_dialog/pop_dialog/page.close out of dialog close paths.
 """
-
 from __future__ import annotations
 
 from pathlib import Path
@@ -20,8 +19,8 @@ main = (ROOT / "main.py").read_text(encoding="utf-8")
 app_layout = (ROOT / "views" / "app_layout.py").read_text(encoding="utf-8")
 
 # Strip comments/docstrings roughly enough for a static guard, then check calls.
-code_only = re.sub(r'""".*?"""', "", compat, flags=re.S)
-code_only = re.sub(r"'''.*?'''", "", code_only, flags=re.S)
+code_only = re.sub(r'""".*?"""', '', compat, flags=re.S)
+code_only = re.sub(r"'''.*?'''", '', code_only, flags=re.S)
 code_only = "\n".join(line.split("#", 1)[0] for line in code_only.splitlines())
 
 required = [
@@ -29,31 +28,17 @@ required = [
     ("close_control helper exists", "def close_control" in compat),
     ("alert dialog helper exists", "def _is_alert_dialog" in compat),
     ("alert dialog uses page.dialog pointer", "page.dialog = control" in compat),
-    (
-        "alert dialog branch removes overlay attachment",
-        "_remove_from_overlay(page, control)" in compat,
-    ),
-    (
-        "non-alert dialog may still use overlay helper",
-        "_ensure_overlay_contains(page, control)" in compat,
-    ),
+    ("alert dialog branch uses overlay for Android rendering", "_ensure_overlay_contains(page, control)" in compat),
+    ("close branch removes overlay attachment", "_remove_from_overlay(page, control)" in compat),
+    ("non-alert dialog may still use overlay helper", "_ensure_overlay_contains(page, control)" in compat),
     ("open path sets control.open true", "control.open = True" in compat),
     ("close path sets control.open false", "control.open = False" in compat),
     ("native show_dialog is not called", ".show_dialog(" not in code_only),
     ("native pop_dialog is not called", ".pop_dialog(" not in code_only),
-    (
-        "native page.close is not used for dialog close",
-        ".close(control" not in code_only,
-    ),
+    ("native page.close is not used for dialog close", ".close(control" not in code_only),
     ("clear_transient_ui helper exists", "def clear_transient_ui" in compat),
-    (
-        "main cleans transient ui before rebuilding main shell",
-        "clear_transient_ui(page, clear_fab=True)" in main,
-    ),
-    (
-        "app layout cleans transient ui before page switch",
-        "clear_transient_ui(self._page, clear_fab=True)" in app_layout,
-    ),
+    ("main cleans transient ui before rebuilding main shell", "clear_transient_ui(page, clear_fab=True)" in main),
+    ("app layout cleans transient ui before page switch", "clear_transient_ui(self._page, clear_fab=True)" in app_layout),
 ]
 
 missing = [name for name, ok in required if not ok]

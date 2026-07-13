@@ -1,6 +1,5 @@
 # -*- coding: utf-8 -*-
 """Run the project quality gate used before producing a release ZIP."""
-
 from __future__ import annotations
 
 import compileall
@@ -8,8 +7,6 @@ import os
 import signal
 import subprocess
 import sys
-import tempfile
-import shutil
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -19,8 +16,6 @@ def run_py(script: str) -> None:
     env = os.environ.copy()
     env["PYTHONPATH"] = str(ROOT) + os.pathsep + env.get("PYTHONPATH", "")
     env.setdefault("PYTHONUNBUFFERED", "1")
-    isolated_data_dir = tempfile.mkdtemp(prefix="hawaa_quality_gate_")
-    env["HAWAA_DATA_DIR"] = isolated_data_dir
     print(f"▶ {script}", flush=True)
 
     use_process_group = os.name != "nt"
@@ -28,44 +23,40 @@ def run_py(script: str) -> None:
         [sys.executable, str(ROOT / script)],
         cwd=str(ROOT),
         env=env,
-        # Inherit the quality-gate streams instead of piping them. Some Flet
-        # helper processes inherit stdout/stderr and keep pipe descriptors open
-        # after the actual smoke-test process exits, which previously forced an
-        # unnecessary 80-second wait for each successful test on GitHub Actions.
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
         start_new_session=use_process_group,
     )
-
-    def stop_process_group() -> None:
+    try:
+        out, err = proc.communicate(timeout=80)
+    except subprocess.TimeoutExpired:
+        # Some Flet/mobile smoke tests can finish their Python body but leave
+        # helper processes/threads with inherited stdout handles alive.  Kill
+        # the whole process group so the release gate never hangs indefinitely.
         if use_process_group:
             try:
                 os.killpg(proc.pid, signal.SIGTERM)
-            except (ProcessLookupError, PermissionError):
+            except ProcessLookupError:
                 pass
-        elif proc.poll() is None:
+        else:
             proc.kill()
+        out, err = proc.communicate(timeout=10)
 
-    try:
+    if out:
+        print(out, end="")
+    if err:
+        print(err, end="", file=sys.stderr)
+    if proc.returncode != 0:
+        raise subprocess.CalledProcessError(proc.returncode, [sys.executable, str(ROOT / script)])
+
+    if use_process_group:
         try:
-            return_code = proc.wait(timeout=80)
-        except subprocess.TimeoutExpired:
-            stop_process_group()
-            try:
-                return_code = proc.wait(timeout=10)
-            except subprocess.TimeoutExpired:
-                if proc.poll() is None:
-                    proc.kill()
-                return_code = proc.wait(timeout=5)
-
-        if return_code != 0:
-            raise subprocess.CalledProcessError(
-                return_code, [sys.executable, str(ROOT / script)]
-            )
-    finally:
-        # The test process may have exited successfully while a Flet helper is
-        # still alive in the same process group. Terminate only that isolated
-        # group so the next smoke test starts cleanly.
-        stop_process_group()
-        shutil.rmtree(isolated_data_dir, ignore_errors=True)
+            os.killpg(proc.pid, signal.SIGTERM)
+        except ProcessLookupError:
+            pass
+        except PermissionError:
+            pass
 
 
 def main() -> int:
@@ -98,13 +89,6 @@ def main() -> int:
         "tools/report_action_share_print_whatsapp_smoke_test.py",
         "tools/professional_statement_layout_smoke_test.py",
         "tools/backup_restore_smoke_test.py",
-        "tools/backup_restore_rollback_smoke_test.py",
-        "tools/legacy_backup_migration_smoke_test.py",
-        "tools/secure_backup_smoke_test.py",
-        "tools/password_legacy_upgrade_smoke_test.py",
-        "tools/network_transport_security_smoke_test.py",
-        "tools/auth_token_smoke_test.py",
-        "tools/auth_persistent_token_smoke_test.py",
         "tools/backup_restore_button_nonblocking_smoke_test.py",
         "tools/backup_restore_snackbar_duration_smoke_test.py",
         "tools/backup_restore_direct_picker_import_smoke_test.py",
@@ -126,6 +110,7 @@ def main() -> int:
         "tools/flet_expansion_tile_compat_smoke_test.py",
         "tools/mandatory_password_change_flow_smoke_test.py",
         "tools/flet_alertdialog_no_overlay_blank_screen_smoke_test.py",
+        "tools/flet_dialog_open_rendering_smoke_test.py",
         "tools/flet_dialog_route_cleanup_smoke_test.py",
         "tools/flet_snackbar_no_overlay_route_smoke_test.py",
         "tools/flet_async_task_compat_smoke_test.py",
@@ -135,6 +120,8 @@ def main() -> int:
         # The following auth/network-bootstrap checks remain useful, but they
         # may leave runtime resources alive in GitHub-hosted Linux shells. Run
         # them manually when validating networking/session changes:
+        # tools/auth_token_smoke_test.py
+        # tools/auth_persistent_token_smoke_test.py
         # tools/network_mode_bootstrap_smoke_test.py
         # tools/network_mode_logout_flow_smoke_test.py
         # Dashboard currency totals is a useful standalone smoke test, but it

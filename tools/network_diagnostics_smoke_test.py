@@ -3,14 +3,9 @@ from __future__ import annotations
 
 
 def main() -> int:
-    from services.network_diagnostics_service import (
-        classify_connection_error,
-        build_diagnostic_steps,
-    )
+    from services.network_diagnostics_service import classify_connection_error, build_diagnostic_steps
 
-    h1 = classify_connection_error(
-        "http://192.168.43.132:8000", "Network is unreachable"
-    )
+    h1 = classify_connection_error("http://192.168.43.132:8000", "Network is unreachable")
     assert "الشبكة" in h1.title
     assert h1.technical
     steps = build_diagnostic_steps("http://192.168.43.132:8000")

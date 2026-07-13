@@ -10,7 +10,6 @@ Policy:
   fallback when Android permissions allow it, then show a manual export dialog
   with the final path and open/copy actions.
 """
-
 from __future__ import annotations
 
 import asyncio
@@ -65,9 +64,7 @@ def guess_mime(path: str) -> str:
     return "application/octet-stream"
 
 
-def build_statement_message(
-    company_name: str, path: str, *, report_type: str = "كشف حساب"
-) -> str:
+def build_statement_message(company_name: str, path: str, *, report_type: str = "كشف حساب") -> str:
     """Build a short caption for file shares.
 
     Keep this text short.  If native Android sharing fails and the runtime falls
@@ -90,9 +87,7 @@ def _share_status_ok(result) -> bool:
     """Interpret Flet ShareResult without binding to a single Flet version."""
     status = getattr(result, "status", None)
     text = str(status or result or "").lower()
-    return any(
-        token in text for token in ("success", "dismiss", "completed", "shared", "ok")
-    ) or bool(result)
+    return any(token in text for token in ("success", "dismiss", "completed", "shared", "ok")) or bool(result)
 
 
 def _path_to_share_file(ft, path: str):
@@ -124,9 +119,7 @@ def _public_download_roots() -> list[str]:
     roots: list[str] = []
     for candidate in (
         os.environ.get("PUBLIC_DOWNLOADS"),
-        os.path.join(os.environ.get("EXTERNAL_STORAGE", ""), "Download")
-        if os.environ.get("EXTERNAL_STORAGE")
-        else "",
+        os.path.join(os.environ.get("EXTERNAL_STORAGE", ""), "Download") if os.environ.get("EXTERNAL_STORAGE") else "",
         "/storage/emulated/0/Download",
         "/sdcard/Download",
     ):
@@ -160,6 +153,7 @@ def _call_maybe_async(value):
     if asyncio.iscoroutine(value):
         return value
     return None
+
 
 
 def _load_jnius_runtime():
@@ -220,9 +214,7 @@ def _content_values_put(values, key: str, value):
         pass
 
 
-def _android_insert_file_into_downloads(
-    path: str, *, display_name: str | None = None, mime: str | None = None
-):
+def _android_insert_file_into_downloads(path: str, *, display_name: str | None = None, mime: str | None = None):
     """Copy a private/internal file into MediaStore and return a content:// Uri.
 
     This is the key Android fix for WhatsApp/share/print.  WhatsApp cannot read
@@ -246,9 +238,7 @@ def _android_insert_file_into_downloads(
         _content_values_put(values, MediaStore.MediaColumns.MIME_TYPE, mime)
         sdk = _android_sdk_int()
         if sdk >= 29:
-            _content_values_put(
-                values, MediaStore.MediaColumns.RELATIVE_PATH, "Download/Hawaa"
-            )
+            _content_values_put(values, MediaStore.MediaColumns.RELATIVE_PATH, "Download/Hawaa")
             _content_values_put(values, MediaStore.MediaColumns.IS_PENDING, 1)
             collection = MediaStore.Downloads.EXTERNAL_CONTENT_URI
         else:
@@ -305,6 +295,7 @@ def _android_file_uri(path: str):
         return None
 
 
+
 def _android_copy_to_cache_for_share(path: str) -> tuple[str | None, str]:
     """Copy a report into Android app cache for WhatsApp-only sharing.
 
@@ -324,11 +315,7 @@ def _android_copy_to_cache_for_share(path: str) -> tuple[str | None, str]:
         except Exception:
             cache_root = None
     if not cache_root:
-        cache_root = (
-            os.environ.get("FLET_APP_STORAGE_TEMP")
-            or os.environ.get("TMPDIR")
-            or os.path.dirname(path)
-        )
+        cache_root = os.environ.get("FLET_APP_STORAGE_TEMP") or os.environ.get("TMPDIR") or os.path.dirname(path)
     try:
         target_dir = os.path.join(cache_root, "hawaa_whatsapp_share")
         os.makedirs(target_dir, exist_ok=True)
@@ -342,10 +329,7 @@ def _android_copy_to_cache_for_share(path: str) -> tuple[str | None, str]:
                         pass
         except Exception:
             pass
-        target = os.path.join(
-            target_dir,
-            os.path.basename(path) or f"hawaa_export_{int(time.time())}.html",
-        )
+        target = os.path.join(target_dir, os.path.basename(path) or f"hawaa_export_{int(time.time())}.html")
         shutil.copy2(path, target)
         if os.path.exists(target) and os.path.getsize(target) > 0:
             return target, "ok"
@@ -391,10 +375,7 @@ def _android_fileprovider_uri(path: str):
             f"{package_name}.flutter.share_provider",
         ]
         providers = []
-        for cls_name in (
-            "androidx.core.content.FileProvider",
-            "android.support.v4.content.FileProvider",
-        ):
+        for cls_name in ("androidx.core.content.FileProvider", "android.support.v4.content.FileProvider"):
             try:
                 providers.append(autoclass(cls_name))
             except Exception:
@@ -427,16 +408,14 @@ def _android_cache_uri_for_whatsapp(path: str):
         return uri, cache_path, f"cache_file_uri:{provider_status}"
     return None, cache_path, f"cache uri failed:{provider_status}"
 
-
-def _android_start_send_intent(
-    uri, *, mime: str, text: str, title: str, open_whatsapp: bool = False
-) -> tuple[bool, str]:
+def _android_start_send_intent(uri, *, mime: str, text: str, title: str, open_whatsapp: bool = False) -> tuple[bool, str]:
     autoclass, _cast = _load_jnius_runtime()
     context = _android_context()
     if autoclass is None or context is None or uri is None:
         return False, "android intent runtime unavailable"
     try:
         Intent = autoclass("android.content.Intent")
+        ActivityNotFoundException = autoclass("android.content.ActivityNotFoundException")
     except Exception as exc:
         return False, str(exc)
 
@@ -444,11 +423,7 @@ def _android_start_send_intent(
         intent = Intent(Intent.ACTION_SEND)
         # WhatsApp must receive a pure document stream.  If EXTRA_TEXT is added,
         # several WhatsApp builds send the text only and silently drop the file.
-        intent.setType(
-            "application/octet-stream"
-            if open_whatsapp
-            else (mime or "application/octet-stream")
-        )
+        intent.setType("application/octet-stream" if open_whatsapp else (mime or "application/octet-stream"))
         if text and not open_whatsapp:
             intent.putExtra(Intent.EXTRA_TEXT, text)
         if title:
@@ -469,9 +444,7 @@ def _android_start_send_intent(
         if package_name:
             intent.setPackage(package_name)
             try:
-                context.grantUriPermission(
-                    package_name, uri, Intent.FLAG_GRANT_READ_URI_PERMISSION
-                )
+                context.grantUriPermission(package_name, uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
             except Exception:
                 pass
         return intent
@@ -481,9 +454,9 @@ def _android_start_send_intent(
             try:
                 context.startActivity(build_intent(package_name))
                 return True, package_name
-            except Exception:
-                # Try business/chooser next. Do not fail the whole operation.
-                pass
+            except Exception as exc:
+                # Try business/chooser next.  Do not fail the whole operation.
+                last = str(exc)
         try:
             chooser = Intent.createChooser(build_intent(None), title or "مشاركة ملف")
             chooser.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
@@ -501,85 +474,48 @@ def _android_start_send_intent(
         return False, str(exc)
 
 
-async def _try_android_native_share(
-    path: str, text: str, title: str, *, open_whatsapp: bool = False
-) -> ShareResultInfo:
+async def _try_android_native_share(path: str, text: str, title: str, *, open_whatsapp: bool = False) -> ShareResultInfo:
     """Android-native ACTION_SEND fallback with a real file attachment.
 
     This runs before Flet's ``ft.Share``/page APIs because the user's APK line
     does not expose ft.Share, and URL-based WhatsApp fallback sends text only.
     """
     if not path or not os.path.exists(path):
-        return ShareResultInfo(
-            False, "android_native_missing", "الملف غير موجود", path=path or ""
-        )
+        return ShareResultInfo(False, "android_native_missing", "الملف غير موجود", path=path or "")
     if _android_context() is None:
-        return ShareResultInfo(
-            False, "android_native_unavailable", "Android runtime غير متاح", path=path
-        )
+        return ShareResultInfo(False, "android_native_unavailable", "Android runtime غير متاح", path=path)
     mime = guess_mime(path)
     if open_whatsapp:
         uri, cache_path, status = _android_cache_uri_for_whatsapp(path)
         if uri is not None:
-            ok, raw = _android_start_send_intent(
-                uri, mime=mime, text="", title=title, open_whatsapp=True
-            )
+            ok, raw = _android_start_send_intent(uri, mime=mime, text="", title=title, open_whatsapp=True)
             if ok:
-                return ShareResultInfo(
-                    True,
-                    "android_cache_whatsapp",
-                    "تم فتح واتساب مع ملف الكشف من الكاش",
-                    raw,
-                    path=cache_path or path,
-                )
+                return ShareResultInfo(True, "android_cache_whatsapp", "تم فتح واتساب مع ملف الكشف من الكاش", raw, path=cache_path or path)
         # If cache-only fails, continue to MediaStore fallback but still without
         # EXTRA_TEXT so WhatsApp cannot degrade to text-only.
         cache_status = status
     else:
         cache_status = ""
 
-    uri, status = _android_insert_file_into_downloads(
-        path, display_name=os.path.basename(path), mime=mime
-    )
+    uri, status = _android_insert_file_into_downloads(path, display_name=os.path.basename(path), mime=mime)
     if uri is None:
         public_path = copy_to_public_downloads(path) or path
         uri = _android_file_uri(public_path)
         if uri is None:
-            return ShareResultInfo(
-                False,
-                "android_native_uri_failed",
-                f"{cache_status}; {status}".strip("; "),
-                path=public_path,
-            )
+            return ShareResultInfo(False, "android_native_uri_failed", f"{cache_status}; {status}".strip('; '), path=public_path)
         final_path = public_path
     else:
         final_path = path
-    ok, raw = _android_start_send_intent(
-        uri,
-        mime=mime,
-        text=("" if open_whatsapp else text),
-        title=title,
-        open_whatsapp=open_whatsapp,
-    )
+    ok, raw = _android_start_send_intent(uri, mime=mime, text=("" if open_whatsapp else text), title=title, open_whatsapp=open_whatsapp)
     if ok:
-        return ShareResultInfo(
-            True,
-            "android_native_whatsapp" if open_whatsapp else "android_native_share",
-            "تم فتح نافذة المشاركة مع الملف المرفق",
-            raw,
-            path=final_path,
-        )
+        return ShareResultInfo(True, "android_native_whatsapp" if open_whatsapp else "android_native_share", "تم فتح نافذة المشاركة مع الملف المرفق", raw, path=final_path)
     return ShareResultInfo(False, "android_native_intent_failed", raw, path=final_path)
 
 
-async def _try_page_share_api(
-    page, path: str, text: str, title: str
-) -> ShareResultInfo:
+async def _try_page_share_api(page, path: str, text: str, title: str) -> ShareResultInfo:
     """Try dynamic page-level share methods used by some Flet runtimes."""
     if page is None:
-        return ShareResultInfo(
-            False, "page_share_missing", "لا توجد صفحة فعالة", path=path
-        )
+        return ShareResultInfo(False, "page_share_missing", "لا توجد صفحة فعالة", path=path)
     attempts = []
     for name in ("share_files", "share"):
         method = getattr(page, name, None)
@@ -597,9 +533,7 @@ async def _try_page_share_api(
                 maybe = method(**kwargs)
                 if asyncio.iscoroutine(maybe):
                     await maybe
-                return ShareResultInfo(
-                    True, name, "تم فتح نافذة المشاركة", str(maybe), path=path
-                )
+                return ShareResultInfo(True, name, "تم فتح نافذة المشاركة", str(maybe), path=path)
             except TypeError as exc:
                 last_error = str(exc)
                 continue
@@ -609,15 +543,7 @@ async def _try_page_share_api(
     return ShareResultInfo(False, "page_share_unavailable", last_error, path=path)
 
 
-def _show_manual_export_dialog(
-    page,
-    path: str,
-    *,
-    title: str,
-    text: str = "",
-    open_whatsapp: bool = False,
-    phone: Optional[str] = None,
-) -> bool:
+def _show_manual_export_dialog(page, path: str, *, title: str, text: str = "", open_whatsapp: bool = False, phone: Optional[str] = None) -> bool:
     """Show a non-fatal manual export dialog when native sharing is unavailable."""
     if page is None:
         return False
@@ -631,15 +557,12 @@ def _show_manual_export_dialog(
         "تم إنشاء الملف، لكن نسخة Flet داخل هذا APK لا توفر خدمة مشاركة ملفات مباشرة.\n"
         "استعمل الأزرار التالية، أو افتح المسار يدويًا من مدير الملفات إذا كان داخل Downloads/Hawaa."
     )
-    path_text = ft.Text(
-        path, selectable=True, size=11, color=ft.Colors.GREY_800, rtl=False
-    )
+    path_text = ft.Text(path, selectable=True, size=11, color=ft.Colors.GREY_800, rtl=False)
     dlg = None
 
     def _snack(msg: str, is_error: bool = False):
         try:
             from views.flet_compat import show_snackbar
-
             show_snackbar(page, msg, is_error=is_error, duration=3500)
         except Exception:
             pass
@@ -670,9 +593,7 @@ def _show_manual_export_dialog(
         try:
             launcher = getattr(page, "launch_url", None)
             if callable(launcher):
-                launcher(
-                    whatsapp_url((text or "") + "\n" + os.path.basename(path), phone)
-                )
+                launcher(whatsapp_url((text or "") + "\n" + os.path.basename(path), phone))
                 _snack("تم فتح واتساب للنص فقط")
             else:
                 _snack("فتح واتساب غير مدعوم", True)
@@ -693,16 +614,12 @@ def _show_manual_export_dialog(
             title=ft.Text(title or "ملف جاهز"),
             content=ft.Container(
                 width=420,
-                content=ft.Column(
-                    [
-                        ft.Text(message, size=12),
-                        ft.Divider(),
-                        ft.Text("المسار:", size=12, weight=ft.FontWeight.BOLD),
-                        path_text,
-                    ],
-                    tight=True,
-                    spacing=8,
-                ),
+                content=ft.Column([
+                    ft.Text(message, size=12),
+                    ft.Divider(),
+                    ft.Text("المسار:", size=12, weight=ft.FontWeight.BOLD),
+                    path_text,
+                ], tight=True, spacing=8),
             ),
             actions=actions,
         )
@@ -729,9 +646,7 @@ async def share_file_async(
 
     # 1) Android-native ACTION_SEND with a real content:// file attachment.
     # This is the most reliable path for the APK runtime when ft.Share is absent.
-    android_share = await _try_android_native_share(
-        path, text, title, open_whatsapp=open_whatsapp
-    )
+    android_share = await _try_android_native_share(path, text, title, open_whatsapp=open_whatsapp)
     if android_share.ok:
         return android_share
     if android_share.message:
@@ -740,21 +655,12 @@ async def share_file_async(
     # 2) Modern Flet service, only when available in the actual runtime.
     try:
         import flet as ft  # type: ignore
-
         share_cls = getattr(ft, "Share", None)
         if share_cls is not None and hasattr(share_cls, "share_files"):
             share = share_cls()
             share_file = _path_to_share_file(ft, path)
-            result = await share.share_files(
-                [share_file], title=title, text=text or None, subject=title
-            )
-            return ShareResultInfo(
-                _share_status_ok(result),
-                "flet_share",
-                "تم فتح نافذة المشاركة",
-                str(getattr(result, "status", result)),
-                path=path,
-            )
+            result = await share.share_files([share_file], title=title, text=text or None, subject=title)
+            return ShareResultInfo(_share_status_ok(result), "flet_share", "تم فتح نافذة المشاركة", str(getattr(result, "status", result)), path=path)
         errors.append("خدمة ft.Share غير موجودة في نسخة Flet الحالية")
     except Exception as exc:
         errors.append(str(exc))
@@ -775,86 +681,35 @@ async def share_file_async(
     # sharing failed, show the manual dialog and let the user explicitly choose
     # "واتساب نص فقط" if they still want a text message.
     if open_whatsapp:
-        errors.append(
-            "تم تعطيل fallback واتساب النصي التلقائي حتى لا تُرسل رسالة بلا ملف"
-        )
+        errors.append("تم تعطيل fallback واتساب النصي التلقائي حتى لا تُرسل رسالة بلا ملف")
 
     # 6) Manual non-crashing export dialog.
-    if _show_manual_export_dialog(
-        page,
-        final_path,
-        title=title,
-        text=text,
-        open_whatsapp=open_whatsapp,
-        phone=phone,
-    ):
+    if _show_manual_export_dialog(page, final_path, title=title, text=text, open_whatsapp=open_whatsapp, phone=phone):
         if public_path:
-            return ShareResultInfo(
-                True,
-                "manual_public_downloads",
-                "تم إنشاء الملف ونسخه إلى Downloads/Hawaa",
-                "; ".join(errors),
-                path=final_path,
-            )
-        return ShareResultInfo(
-            True,
-            "manual_internal_path",
-            "تم إنشاء الملف. افتح نافذة التفاصيل لنسخ المسار أو محاولة فتحه",
-            "; ".join(errors),
-            path=final_path,
-        )
+            return ShareResultInfo(True, "manual_public_downloads", "تم إنشاء الملف ونسخه إلى Downloads/Hawaa", "; ".join(errors), path=final_path)
+        return ShareResultInfo(True, "manual_internal_path", "تم إنشاء الملف. افتح نافذة التفاصيل لنسخ المسار أو محاولة فتحه", "; ".join(errors), path=final_path)
 
     # Last fallback: try opening the file URI directly. Do not expose the old
     # ft.Share AttributeError to the user as a red failure.
     try:
         if hasattr(page, "launch_url"):
             page.launch_url(file_uri(final_path))
-            return ShareResultInfo(
-                True,
-                "file_uri",
-                "تم إنشاء الملف ومحاولة فتحه",
-                "; ".join(errors),
-                path=final_path,
-            )
+            return ShareResultInfo(True, "file_uri", "تم إنشاء الملف ومحاولة فتحه", "; ".join(errors), path=final_path)
     except Exception as exc:
         errors.append(str(exc))
 
-    return ShareResultInfo(
-        False,
-        "none",
-        "تم إنشاء الملف لكن تعذر فتح نافذة مشاركة في نسخة Flet الحالية",
-        "; ".join(errors),
-        path=final_path,
-    )
+    return ShareResultInfo(False, "none", "تم إنشاء الملف لكن تعذر فتح نافذة مشاركة في نسخة Flet الحالية", "; ".join(errors), path=final_path)
 
 
-def share_file(
-    page,
-    path: str,
-    text: str = "",
-    *,
-    phone: Optional[str] = None,
-    open_whatsapp: bool = True,
-) -> bool:
+def share_file(page, path: str, text: str = "", *, phone: Optional[str] = None, open_whatsapp: bool = True) -> bool:
     """Compatibility wrapper for older synchronous callers."""
     try:
         from views.flet_compat import run_async_task
-
-        run_async_task(
-            page,
-            share_file_async,
-            page,
-            path,
-            text,
-            phone=phone,
-            open_whatsapp=open_whatsapp,
-        )
+        run_async_task(page, share_file_async, page, path, text, phone=phone, open_whatsapp=open_whatsapp)
         return True
     except Exception:
         try:
-            coro = share_file_async(
-                page, path, text, phone=phone, open_whatsapp=open_whatsapp
-            )
+            coro = share_file_async(page, path, text, phone=phone, open_whatsapp=open_whatsapp)
             try:
                 loop = asyncio.get_running_loop()
                 if loop.is_running():
@@ -867,9 +722,7 @@ def share_file(
             return False
 
 
-async def share_text_to_whatsapp_async(
-    page, text: str, phone: Optional[str] = None
-) -> ShareResultInfo:
+async def share_text_to_whatsapp_async(page, text: str, phone: Optional[str] = None) -> ShareResultInfo:
     try:
         if hasattr(page, "launch_url"):
             page.launch_url(whatsapp_url(text, phone))
@@ -882,7 +735,6 @@ async def share_text_to_whatsapp_async(
 def share_text_to_whatsapp(page, text: str, phone: Optional[str] = None) -> bool:
     try:
         from views.flet_compat import run_async_task
-
         run_async_task(page, share_text_to_whatsapp_async, page, text, phone)
         return True
     except Exception:

@@ -7,7 +7,6 @@ Flutter client rejects it at runtime with ``Unknown control: FilePicker``.  Keep
 all service controls behind helpers in this module instead of appending them
 directly from views.
 """
-
 from __future__ import annotations
 
 import asyncio
@@ -31,11 +30,7 @@ def _resolve_alignment(lower_name: str, upper_name: str, x: float, y: float):
     """
     try:
         alignment_module = getattr(ft, "alignment", None)
-        value = (
-            getattr(alignment_module, lower_name, None)
-            if alignment_module is not None
-            else None
-        )
+        value = getattr(alignment_module, lower_name, None) if alignment_module is not None else None
         if value is not None:
             return value
     except Exception:
@@ -181,6 +176,47 @@ def _ensure_overlay_contains(page, control) -> None:
         pass
 
 
+def _install_dialog_dismiss_cleanup(page, control) -> None:
+    """Ensure Android modal surfaces are purged when a dialog is dismissed.
+
+    Some Flet builds call ``on_dismiss`` when the user taps outside a dialog or
+    presses Android Back.  Wrap that callback so our app-managed stack/overlay is
+    also cleaned.  The explicit close buttons still call ``close_control``.
+    """
+    if page is None or control is None:
+        return
+    try:
+        if getattr(control, "_hawaa_dismiss_cleanup_installed", False):
+            return
+        original = getattr(control, "on_dismiss", None)
+
+        def _cleanup(ev=None):
+            try:
+                if callable(original):
+                    original(ev)
+            finally:
+                try:
+                    control.open = False
+                except Exception:
+                    pass
+                _remove_from_stack(page, control)
+                _remove_from_overlay(page, control)
+                try:
+                    if getattr(page, "dialog", None) is control:
+                        page.dialog = None
+                except Exception:
+                    pass
+                try:
+                    page.update()
+                except Exception:
+                    pass
+
+        control.on_dismiss = _cleanup
+        control._hawaa_dismiss_cleanup_installed = True
+    except Exception:
+        pass
+
+
 def _set_page_dialog_pointer(page, control) -> None:
     """Best-effort legacy dialog pointer for Flet 0.28.x.
 
@@ -188,10 +224,11 @@ def _set_page_dialog_pointer(page, control) -> None:
     used on Android in this project.  That route path is what produced the
     persistent blank white surface that disappeared only after Android Back.
 
-    AlertDialog is deliberately *not* appended to ``page.overlay``.  On some
-    Android Flet builds, overlay-managed AlertDialog controls leave a hidden
-    modal surface after close.  The stable old-Flet path is ``page.dialog = dlg``
-    plus ``dlg.open = True``.
+    AlertDialog is attached to overlay on Flet 0.28.x because that is the path
+    that actually renders modals in the Android shell.  The prior page.dialog-only
+    route prevented windows from opening.  The blank white surface is avoided by
+    aggressive cleanup on close: clear open, remove from overlay, clear
+    page.dialog, and never call native page.close/pop_dialog/show_dialog.
     """
     try:
         if isinstance(control, ft.AlertDialog):
@@ -204,11 +241,7 @@ def _is_alert_dialog(control) -> bool:
     try:
         return isinstance(control, ft.AlertDialog)
     except Exception:
-        return (
-            control.__class__.__name__.lower() == "alertdialog"
-            if control is not None
-            else False
-        )
+        return control.__class__.__name__.lower() == "alertdialog" if control is not None else False
 
 
 def open_control(page: ft.Page, control):
@@ -227,10 +260,11 @@ def open_control(page: ft.Page, control):
     try:
         if _is_dialog_like(control):
             if _is_alert_dialog(control):
-                # Do not append AlertDialog to overlay.  In the Android APK this
-                # was the remaining cause of the blank white surface left behind
-                # after every modal was closed.
-                _remove_from_overlay(page, control)
+                # Flet 0.28.x Android only renders AlertDialog reliably when it
+                # is also present in page.overlay.  Keep page.dialog as the
+                # legacy pointer, but make close_control remove the dialog from
+                # overlay immediately so no hidden white surface remains.
+                _ensure_overlay_contains(page, control)
                 _set_page_dialog_pointer(page, control)
             else:
                 # DatePicker/TimePicker still need the overlay/service path on
@@ -240,6 +274,8 @@ def open_control(page: ft.Page, control):
                 control.open = True
             except Exception:
                 pass
+            if _is_alert_dialog(control):
+                _install_dialog_dismiss_cleanup(page, control)
             stack = _get_stack(page)
             if control in stack:
                 stack.remove(control)
@@ -287,9 +323,7 @@ def _restore_page_dialog_pointer(page, closed_control=None) -> None:
             try:
                 if item is closed_control:
                     continue
-                if isinstance(item, ft.AlertDialog) and bool(
-                    getattr(item, "open", False)
-                ):
+                if isinstance(item, ft.AlertDialog) and bool(getattr(item, "open", False)):
                     page.dialog = item
                     return
             except Exception:
@@ -325,7 +359,26 @@ def close_control(page: ft.Page, control):
     _remove_from_overlay(page, control)
     _restore_page_dialog_pointer(page, closed_control=control)
     try:
+        if _is_alert_dialog(control) and getattr(page, "dialog", None) is control:
+            page.dialog = None
+    except Exception:
+        pass
+    try:
         page.update()
+    except Exception:
+        pass
+    # Android/Flet can repaint one frame late after modal close.  Schedule a
+    # second best-effort cleanup/update without blocking the event handler.
+    try:
+        def _late_cleanup():
+            try:
+                _remove_from_overlay(page, control)
+                if getattr(page, "dialog", None) is control:
+                    page.dialog = None
+                page.update()
+            except Exception:
+                pass
+        threading.Timer(0.05, _late_cleanup).start()
     except Exception:
         pass
     return None
@@ -423,7 +476,6 @@ def run_async_task(page, async_callable, *args, **kwargs):
     runtime loop. Keep loop/thread fallbacks for desktop tests and older Flet
     shells so callers can use one helper everywhere.
     """
-
     async def _runner():
         if inspect.isawaitable(async_callable):
             return await async_callable
@@ -466,9 +518,7 @@ def run_async_task(page, async_callable, *args, **kwargs):
         loop = asyncio.get_running_loop()
         task = loop.create_task(_runner())
         try:
-            task.add_done_callback(
-                lambda t: t.exception() if not t.cancelled() else None
-            )
+            task.add_done_callback(lambda t: t.exception() if not t.cancelled() else None)
         except Exception:
             pass
         return task
@@ -490,16 +540,12 @@ def run_async_task(page, async_callable, *args, **kwargs):
         except Exception as exc:
             _log_failure("فشل تشغيل المهمة في Flet thread", exc)
 
-    thread = threading.Thread(
-        target=_thread_target, name="hawaa-async-fallback", daemon=True
-    )
+    thread = threading.Thread(target=_thread_target, name="hawaa-async-fallback", daemon=True)
     thread.start()
     return thread
 
 
-def _filter_constructor_kwargs(
-    constructor, kwargs: dict, always_drop: set[str] | None = None
-) -> tuple[dict, dict]:
+def _filter_constructor_kwargs(constructor, kwargs: dict, always_drop: set[str] | None = None) -> tuple[dict, dict]:
     """Return kwargs accepted by a Flet constructor plus rejected kwargs.
 
     Android Flet runtime bindings can lag behind Python examples.  Passing a
@@ -513,9 +559,7 @@ def _filter_constructor_kwargs(
     try:
         signature = inspect.signature(constructor)
         params = signature.parameters
-        has_var_kwargs = any(
-            p.kind == inspect.Parameter.VAR_KEYWORD for p in params.values()
-        )
+        has_var_kwargs = any(p.kind == inspect.Parameter.VAR_KEYWORD for p in params.values())
         allowed = set(params)
     except Exception:
         has_var_kwargs = False
@@ -532,13 +576,9 @@ def _filter_constructor_kwargs(
     return accepted, rejected
 
 
-def _construct_with_keyword_fallback(
-    constructor, kwargs: dict, *, always_drop: set[str] | None = None
-):
+def _construct_with_keyword_fallback(constructor, kwargs: dict, *, always_drop: set[str] | None = None):
     """Construct a Flet control and remove unsupported keyword arguments if needed."""
-    accepted, rejected = _filter_constructor_kwargs(
-        constructor, kwargs, always_drop=always_drop
-    )
+    accepted, rejected = _filter_constructor_kwargs(constructor, kwargs, always_drop=always_drop)
     try:
         control = constructor(**accepted)
     except TypeError as exc:
@@ -583,6 +623,7 @@ def make_floating_action_button(**kwargs):
     )
 
 
+
 def make_expansion_tile(**kwargs):
     """Create ExpansionTile across Flet variants.
 
@@ -613,7 +654,6 @@ def make_expansion_tile(**kwargs):
     except Exception:
         pass
     return tile
-
 
 def make_file_picker(on_result=None):
     """Create FilePicker across Flet versions.
@@ -662,11 +702,7 @@ def _is_file_picker_control(control) -> bool:
     try:
         return isinstance(control, ft.FilePicker)
     except Exception:
-        return (
-            control.__class__.__name__.lower() == "filepicker"
-            if control is not None
-            else False
-        )
+        return control.__class__.__name__.lower() == "filepicker" if control is not None else False
 
 
 def _remember_service_control(page, control) -> None:
@@ -700,9 +736,7 @@ def attach_service_control(page: ft.Page, control):
         return control
 
     attached = False
-    legacy_filepicker = (
-        _is_file_picker_control(control) and _allow_legacy_filepicker_overlay()
-    )
+    legacy_filepicker = _is_file_picker_control(control) and _allow_legacy_filepicker_overlay()
 
     # Flet 0.28.x FilePicker is an overlay service.  Prefer overlay first for
     # that pinned runtime; using a half-supported ``page.services`` path can open
@@ -733,12 +767,7 @@ def attach_service_control(page: ft.Page, control):
     # Flutter client rejects it as an overlay control (red screen:
     # ``Unknown control: FilePicker``).  However Flet 0.28.x is the stable
     # line for this app and requires the legacy overlay path.
-    if (
-        not attached
-        and _is_mobile_page(page)
-        and _is_file_picker_control(control)
-        and not _allow_legacy_filepicker_overlay()
-    ):
+    if not attached and _is_mobile_page(page) and _is_file_picker_control(control) and not _allow_legacy_filepicker_overlay():
         try:
             setattr(control, "_hawaa_service_attached", False)
         except Exception:
@@ -781,7 +810,6 @@ def filepicker_unavailable_message() -> str:
         "استخدم نسخة APK مبنية بـ Flet يدعم FilePicker، أو استخدم مسار النسخة الاحتياطي داخل تخزين التطبيق كحل مؤقت."
     )
 
-
 def make_snackbar(message: str, is_error: bool = False, duration: int | None = 3000):
     """Create a SnackBar across Flet Android/Desktop variants.
 
@@ -816,9 +844,7 @@ def make_snackbar(message: str, is_error: bool = False, duration: int | None = 3
     return snack
 
 
-def show_snackbar(
-    page: ft.Page, message: str, is_error: bool = False, duration: int = 3000
-):
+def show_snackbar(page: ft.Page, message: str, is_error: bool = False, duration: int = 3000):
     """Show a SnackBar without adding it as a modal overlay route.
 
     On the pinned Android runtime, repeatedly appending SnackBar to

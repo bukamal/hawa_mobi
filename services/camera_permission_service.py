@@ -6,7 +6,6 @@ recent Flet builds still need a runtime request before camera controls can open.
 This service uses Flet's PermissionHandler when available and degrades safely
 when the extension/runtime is not bundled.
 """
-
 from __future__ import annotations
 
 import flet as ft
@@ -40,21 +39,15 @@ class CameraPermissionService:
             permission_handler_cls = getattr(ft, "PermissionHandler", None)
             if permission_handler_cls is None:
                 try:
-                    from flet_permission_handler import (
-                        PermissionHandler as permission_handler_cls,
-                    )  # type: ignore
+                    from flet_permission_handler import PermissionHandler as permission_handler_cls  # type: ignore
                 except Exception:
                     permission_handler_cls = None
             if permission_handler_cls is None:
-                return (
-                    True,
-                    "لا تتوفر خدمة طلب صلاحية الكاميرا في نسخة Flet هذه. إذا رفض النظام الكاميرا، فعّلها من إعدادات التطبيق أو استخدم لصق نص الربط.",
-                )
+                return True, "لا تتوفر خدمة طلب صلاحية الكاميرا في نسخة Flet هذه. إذا رفض النظام الكاميرا، فعّلها من إعدادات التطبيق أو استخدم لصق نص الربط."
 
             handler = permission_handler_cls()
             try:
                 from views.flet_compat import attach_service_control
-
                 attach_service_control(page, handler)
             except Exception:
                 pass
@@ -70,15 +63,9 @@ class CameraPermissionService:
                 status = handler.request_permission(perm)
                 status_s = str(status).lower()
                 if "denied" in status_s or "permanent" in status_s:
-                    return (
-                        False,
-                        "تم رفض صلاحية الكاميرا. افتح إعدادات Android > التطبيقات > هوى الشام > الأذونات وفعّل الكاميرا، أو استخدم لصق نص الربط.",
-                    )
+                    return False, "تم رفض صلاحية الكاميرا. افتح إعدادات Android > التطبيقات > هوى الشام > الأذونات وفعّل الكاميرا، أو استخدم لصق نص الربط."
                 return True, "تم طلب صلاحية الكاميرا"
             except Exception as ex:
-                return (
-                    True,
-                    f"تعذر طلب صلاحية الكاميرا مباشرة: {ex}. جرّب المسح، وإن فشل استخدم لصق نص الربط.",
-                )
+                return True, f"تعذر طلب صلاحية الكاميرا مباشرة: {ex}. جرّب المسح، وإن فشل استخدم لصق نص الربط."
         except Exception as ex:
             return True, f"تعذر فحص صلاحية الكاميرا: {ex}. استخدم اللصق كخيار احتياطي."

@@ -4,6 +4,7 @@ from __future__ import annotations
 import os
 import sqlite3
 import tempfile
+from pathlib import Path
 
 
 def main():
@@ -21,23 +22,7 @@ def main():
     conn = db.get_connection()
     conn.execute(
         "INSERT INTO expenses (company_name, amount, amount_base, type, date, notes, currency, created_by, created_at, updated_by, updated_at, amount_original, currency_original, exchange_rate_to_usd, status) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-        (
-            "شركة اختبار الاستيراد",
-            777.0,
-            777.0,
-            "incoming",
-            "2026-07-10",
-            "backup-import-runtime",
-            "USD",
-            1,
-            "now",
-            1,
-            "now",
-            777.0,
-            "USD",
-            1.0,
-            "approved",
-        ),
+        ("شركة اختبار الاستيراد", 777.0, 777.0, "incoming", "2026-07-10", "backup-import-runtime", "USD", 1, "now", 1, "now", 777.0, "USD", 1.0, "approved"),
     )
     conn.commit()
     backup = FileExportService.create_backup_archive()
@@ -60,10 +45,7 @@ def main():
     db_path = get_local_db_path()
     c = sqlite3.connect(db_path)
     try:
-        c.execute(
-            "INSERT OR REPLACE INTO settings (key, value) VALUES (?,?)",
-            ("network/mode", "client"),
-        )
+        c.execute("INSERT OR REPLACE INTO settings (key, value) VALUES (?,?)", ("network/mode", "client"))
         c.commit()
     finally:
         c.close()

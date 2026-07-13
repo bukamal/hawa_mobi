@@ -5,7 +5,6 @@ This layer keeps the old expenses table backward-compatible while adding
 structured fields for travel/passenger/customer workflows. Old rows remain
 normal posted entries; new rows can carry person/service/operation metadata.
 """
-
 from __future__ import annotations
 
 from typing import Any, Dict
@@ -104,34 +103,18 @@ def normalize_service_type(value: Any) -> str:
     return value if value in SERVICE_TYPES else "غير محدد"
 
 
-def normalize_operation_type(
-    value: Any, service_type: Any = None, source_type: Any = None
-) -> str:
+def normalize_operation_type(value: Any, service_type: Any = None, source_type: Any = None) -> str:
     source = clean_text(source_type)
-    if source in {
-        THIRD_PARTY_OPERATION,
-        THIRD_PARTY_REVERSAL_OPERATION,
-        SERVICE_CASE_CLIENT_OPERATION,
-        SERVICE_CASE_SUPPLIER_OPERATION,
-        SERVICE_CASE_REVERSAL_OPERATION,
-    }:
+    if source in {THIRD_PARTY_OPERATION, THIRD_PARTY_REVERSAL_OPERATION, SERVICE_CASE_CLIENT_OPERATION, SERVICE_CASE_SUPPLIER_OPERATION, SERVICE_CASE_REVERSAL_OPERATION}:
         return source
     value = clean_text(value)
     if value in OPERATION_TYPES:
         return value
-    return SERVICE_TO_OPERATION.get(
-        normalize_service_type(service_type), NORMAL_OPERATION
-    )
+    return SERVICE_TO_OPERATION.get(normalize_service_type(service_type), NORMAL_OPERATION)
 
 
 def is_generated_source(source_type: Any) -> bool:
-    return clean_text(source_type) in {
-        THIRD_PARTY_OPERATION,
-        THIRD_PARTY_REVERSAL_OPERATION,
-        SERVICE_CASE_CLIENT_OPERATION,
-        SERVICE_CASE_SUPPLIER_OPERATION,
-        SERVICE_CASE_REVERSAL_OPERATION,
-    }
+    return clean_text(source_type) in {THIRD_PARTY_OPERATION, THIRD_PARTY_REVERSAL_OPERATION, SERVICE_CASE_CLIENT_OPERATION, SERVICE_CASE_SUPPLIER_OPERATION, SERVICE_CASE_REVERSAL_OPERATION}
 
 
 def is_locked_payload(data: Dict[str, Any]) -> int:
@@ -144,9 +127,7 @@ def normalize_expense_metadata(data: Dict[str, Any]) -> Dict[str, Any]:
     out = dict(data)
     person = clean_text(out.get("person_name"))
     service = normalize_service_type(out.get("service_type"))
-    operation = normalize_operation_type(
-        out.get("operation_type"), service, out.get("source_type")
-    )
+    operation = normalize_operation_type(out.get("operation_type"), service, out.get("source_type"))
     out["person_name"] = person
     out["person_name_search"] = normalize_search_text(person)
     out["service_type"] = service
@@ -160,6 +141,4 @@ def normalize_expense_metadata(data: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def operation_label(value: Any) -> str:
-    return OPERATION_LABELS.get(
-        clean_text(value), clean_text(value) or OPERATION_LABELS[NORMAL_OPERATION]
-    )
+    return OPERATION_LABELS.get(clean_text(value), clean_text(value) or OPERATION_LABELS[NORMAL_OPERATION])

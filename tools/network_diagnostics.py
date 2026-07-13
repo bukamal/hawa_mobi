@@ -4,7 +4,6 @@
 Usage:
     python tools/network_diagnostics.py http://192.168.1.100:8000
 """
-
 from __future__ import annotations
 
 import sys
@@ -38,15 +37,9 @@ def main() -> int:
         print("Capabilities:")
         print("  api_contract_version:", caps.get("api_contract_version"))
         print("  currency_contract:", caps.get("currency_contract"))
-        print(
-            "  supports_historic_currency_snapshot:",
-            caps.get("supports_historic_currency_snapshot"),
-        )
+        print("  supports_historic_currency_snapshot:", caps.get("supports_historic_currency_snapshot"))
         print("  supports_amount_base:", caps.get("supports_amount_base"))
-        print(
-            "  supports_exchange_rate_history:",
-            caps.get("supports_exchange_rate_history"),
-        )
+        print("  supports_exchange_rate_history:", caps.get("supports_exchange_rate_history"))
     except Exception as exc:
         print("⚠️ تعذر قراءة تفاصيل الخادم:", exc)
     return 0 if result.ok else 1

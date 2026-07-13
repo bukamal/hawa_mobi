@@ -5,7 +5,6 @@ This script is deliberately conservative: it removes only known runtime/license
 artifacts that must never be committed or packaged with the Android client.
 It does not touch the real activation implementation at auth/activation.py.
 """
-
 from __future__ import annotations
 
 import shutil

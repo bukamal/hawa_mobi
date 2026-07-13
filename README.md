@@ -211,26 +211,3 @@ flet build apk --verbose --clear-cache
 ### Phase 44 note — Flet entrypoint compatibility
 
 The APK pins `flet==0.28.3` for a real Android FilePicker path. This line uses `ft.app(target=main, assets_dir="assets")`, while newer Flet runtimes may expose `ft.run(...)`. `main.py` now uses `run_hawaa_app()` to support both entrypoints. Do not replace it with a direct `ft.run(...)` call unless the APK is rebuilt on a verified newer Flet line with FilePicker working on a real device.
-
-## Phase 75 — Android 1.1.0 security and legacy database migration
-
-الإصدار 1.1.0 يضيف استيرادًا آمنًا ومتوافقًا مع قواعد البيانات القديمة، وترقية تلقائية لكلمات المرور القديمة، ونسخًا احتياطية منزوعة رموز الجلسات، وفرض HTTPS افتراضيًا، وتقليل أذونات Android.
-
-للتفاصيل:
-
-```text
-PHASE75_ANDROID_SECURITY_LEGACY_DATABASE_MIGRATION_FIX.md
-LEGACY_DATABASE_IMPORT_GUIDE_AR.md
-```
-
-للفحص الكامل:
-
-```bash
-PYTHONPATH=. python tools/quality_gate.py
-ruff check .
-bandit -q -r auth database services reports views main.py config.py currency.py
-```
-## Phase 76 — Android 1.1.1 CI/API contract fix
-
-الإصدار 1.1.1 يصلح فشل GitHub Actions عند غياب Flask، ويستبدل فحص علامات الاقتباس الهش بتحليل AST، ويشغّل اختبار Flask الحي في CI بعد تثبيت متطلبات الخادم. لا يغيّر هذا الإصدار مخطط قاعدة البيانات أو صيغة النسخ الاحتياطية، وتبقى قواعد البيانات القديمة متوافقة.
-

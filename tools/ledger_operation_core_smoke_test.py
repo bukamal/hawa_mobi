@@ -27,12 +27,7 @@ eid = repo.add(
     service_type="تذكرة سفر",
     operation_type="ticket",
 )
-row = (
-    DatabaseConnection()
-    .get_connection()
-    .execute("SELECT * FROM expenses WHERE id=?", (eid,))
-    .fetchone()
-)
+row = DatabaseConnection().get_connection().execute("SELECT * FROM expenses WHERE id=?", (eid,)).fetchone()
 assert row is not None
 row = dict(row)
 assert row["person_name"] == "محمد المصري"
@@ -45,12 +40,7 @@ assert any(m["id"] == eid for m in matches), matches
 
 # Old compatible row with no metadata remains valid.
 old_id = repo.add("البتلاء", 100, "outgoing", "2026-07-12", "قيد قديم الشكل", "USD", 1)
-old = dict(
-    DatabaseConnection()
-    .get_connection()
-    .execute("SELECT * FROM expenses WHERE id=?", (old_id,))
-    .fetchone()
-)
+old = dict(DatabaseConnection().get_connection().execute("SELECT * FROM expenses WHERE id=?", (old_id,)).fetchone())
 assert old["operation_type"] == "normal"
 assert old["service_type"] == "غير محدد"
 

@@ -2,26 +2,25 @@
 from __future__ import annotations
 
 import time
-from typing import Dict, Optional
+from typing import Optional, Dict
 
 
-def _scrub_legacy_network_token() -> None:
-    """Remove tokens persisted by older APK releases.
-
-    Network bearer tokens are session credentials and must remain in memory.
-    The helper is deliberately best-effort because logout must never fail merely
-    because the local SQLite file is unavailable.
-    """
+def _persist_network_token(token: str) -> None:
     try:
         from database.connection import _set_local_setting_direct
-
-        _set_local_setting_direct("auth/network_token", "")
+        _set_local_setting_direct('auth/network_token', token or '')
     except Exception:
         pass
 
 
 class UserSession:
-    """Process-memory session state only."""
+    """In-memory session state.
+
+    The APK client deliberately keeps sessions in memory only.  This avoids
+    leaving reusable credentials on the device and gives a predictable boot
+    flow: Splash can restore only a still-valid in-memory session after a soft
+    view rebuild, otherwise it returns to Login.
+    """
 
     _current_user: Optional[Dict] = None
     _auth_token: Optional[str] = None
@@ -31,30 +30,27 @@ class UserSession:
     @classmethod
     def login(cls, user: Dict, ttl_seconds: int | None = None):
         clean_user = dict(user or {})
-        token = (
-            clean_user.pop("_auth_token", None)
-            or clean_user.pop("auth_token", None)
-            or clean_user.pop("token", None)
-        )
-        token_ttl = clean_user.pop("_token_expires_in", None)
+        token = clean_user.pop('_auth_token', None) or clean_user.pop('auth_token', None) or clean_user.pop('token', None)
+        token_ttl = clean_user.pop('_token_expires_in', None)
         cls._current_user = clean_user
-        cls._auth_token = str(token).strip() if token else None
+        cls._auth_token = token
+        if token:
+            _persist_network_token(token)
         cls._login_at = time.time()
-        _scrub_legacy_network_token()
         if ttl_seconds is not None:
-            cls._ttl_seconds = max(60, int(ttl_seconds))
+            cls._ttl_seconds = int(ttl_seconds)
         elif token_ttl is not None:
             try:
-                cls._ttl_seconds = max(60, int(token_ttl))
-            except (TypeError, ValueError):
+                cls._ttl_seconds = int(token_ttl)
+            except Exception:
                 pass
 
     @classmethod
     def logout(cls):
         cls._current_user = None
         cls._auth_token = None
+        _persist_network_token('')
         cls._login_at = 0.0
-        _scrub_legacy_network_token()
 
     @classmethod
     def get_current(cls) -> Optional[Dict]:
@@ -86,24 +82,20 @@ class UserSession:
     @classmethod
     def is_admin(cls) -> bool:
         user = cls.get_current()
-        return bool(user and user.get("role") == "admin")
+        return bool(user and user.get('role') == 'admin')
 
     @classmethod
     def force_password_change(cls) -> bool:
         user = cls.get_current()
-        return bool(user and user.get("force_password_change", 0) == 1)
+        return bool(user and user.get('force_password_change', 0) == 1)
 
     @classmethod
     def snapshot(cls) -> Dict:
         user = cls.get_current()
         return {
-            "authenticated": user is not None,
-            "username": (user or {}).get("username", ""),
-            "role": (user or {}).get("role", ""),
-            "expires_in_seconds": max(
-                0, int(cls._ttl_seconds - (time.time() - cls._login_at))
-            )
-            if user
-            else 0,
-            "has_auth_token": bool(cls._auth_token),
+            'authenticated': user is not None,
+            'username': (user or {}).get('username', ''),
+            'role': (user or {}).get('role', ''),
+            'expires_in_seconds': max(0, int(cls._ttl_seconds - (time.time() - cls._login_at))) if user else 0,
+            'has_auth_token': bool(cls._auth_token),
         }

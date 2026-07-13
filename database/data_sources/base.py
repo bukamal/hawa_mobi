@@ -6,7 +6,6 @@ from the REST server. This module defines the minimal contract used by the
 current repositories. More methods can be moved here incrementally without
 breaking old compatibility methods on DatabaseConnection.
 """
-
 from __future__ import annotations
 
 from typing import Dict, List, Optional, Protocol, Any
