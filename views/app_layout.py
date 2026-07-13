@@ -2,7 +2,7 @@
 import flet as ft
 from views.flet_compat import open_control, close_control, close_all_dialogs, clear_transient_ui, show_snackbar
 from views.ui_runtime import make_status_bar, loading_view, error_view, safe_update
-from views.ui_kit import app_brand, PRIMARY, PRIMARY_SOFT, PAGE_BG, CARD_BG
+from views.ui_kit import app_brand, PRIMARY, PRIMARY_SOFT, PAGE_BG, CARD_BG, TEXT, MUTED, BORDER
 from auth.session import UserSession
 from i18n.translator import translate
 
