@@ -20,7 +20,10 @@ class AppLayout(ft.Column):
         self.nav_bar = self._build_nav_bar()
         self.drawer = self._build_drawer()
 
-        self.controls = [self.status_area, self.content_area, self.nav_bar]
+        # Explicit Android safe-area spacer.  The APK shell can draw edge-to-edge
+        # despite page.window_full_screen=False; keep content below status icons.
+        self.safe_top_spacer = ft.Container(height=28, bgcolor=PAGE_BG)
+        self.controls = [self.safe_top_spacer, self.status_area, self.content_area, self.nav_bar]
         self._page.drawer = self.drawer
         try:
             setattr(self._page, '_hawaa_app_layout', self)
@@ -155,6 +158,52 @@ class AppLayout(ft.Column):
             self.content_area.content = view
         except Exception as ex:
             self.content_area.content = error_view(str(ex), on_retry=lambda e: self.switch_page(page_id))
+        safe_update(self._page)
+
+    def open_company_details(self, company_name, records=None, search_query=None):
+        """Open company ledger details as an internal page instead of AlertDialog.
+
+        Android/Flet 0.28.x can leave a blank white modal surface after closing
+        a large AlertDialog.  Company details is a full workflow and should live
+        inside the normal page tree.
+        """
+        clear_transient_ui(self._page, clear_fab=True)
+        self.current_page_id = 'company_details'
+        try:
+            self._page.floating_action_button = None
+        except Exception:
+            pass
+        self._refresh_status_bar()
+
+        def go_back(e=None):
+            clear_transient_ui(self._page, clear_fab=True)
+            self.switch_page('accounts')
+
+        try:
+            from views.company_details_mobile_view import CompanyDetailsMobileView
+            header = ft.Container(
+                content=ft.Row([
+                    ft.IconButton(icon=ft.Icons.ARROW_FORWARD, tooltip='رجوع', on_click=go_back),
+                    ft.Icon(ft.Icons.BUSINESS, color=PRIMARY, size=24),
+                    ft.Column([
+                        ft.Text(str(company_name), size=19, weight=ft.FontWeight.BOLD, color=ft.Colors.BLACK),
+                        ft.Text('تفاصيل الحساب والقيود والكشوف', size=12, color=ft.Colors.GREY_600),
+                    ], spacing=2, expand=True),
+                ], alignment=ft.MainAxisAlignment.START, vertical_alignment=ft.CrossAxisAlignment.CENTER),
+                bgcolor=CARD_BG,
+                padding=ft.Padding(left=10, right=10, top=8, bottom=8),
+                border=ft.Border(bottom=ft.BorderSide(1, ft.Colors.GREY_200)),
+            )
+            details = CompanyDetailsMobileView(
+                self._page,
+                company_name,
+                records=records,
+                on_changed=lambda: None,
+                search_query=search_query,
+            )
+            self.content_area.content = ft.Column([header, details], expand=True, spacing=0)
+        except Exception as ex:
+            self.content_area.content = error_view(str(ex), on_retry=lambda e: self.open_company_details(company_name, records, search_query))
         safe_update(self._page)
 
     def _change_password(self, e):

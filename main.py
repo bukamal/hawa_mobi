@@ -93,6 +93,15 @@ def main(page: ft.Page):
     page.padding = 0
     page.spacing = 0
     page.bgcolor = "#F6FAF9"
+    # Android: do not intentionally draw under the native status bar.
+    # Some Flet builds still render edge-to-edge, so AppLayout also applies
+    # an explicit top safe spacer.  Keep these assignments defensive because
+    # desktop/web runtimes may not expose the same window attributes.
+    for _attr, _value in (("window_full_screen", False), ("window_frameless", False)):
+        try:
+            setattr(page, _attr, _value)
+        except Exception:
+            pass
 
     repo = SettingsRepository()
     set_language(repo.get('language', 'ar'))

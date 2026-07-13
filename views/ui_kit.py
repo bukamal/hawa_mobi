@@ -279,9 +279,15 @@ def section_label(text, icon=None):
 
 
 def key_value_tile(label, value, color=None, expand=True):
+    # Keep monetary values on a single visual line in RTL screens.  Flet Text
+    # does not expose CSS white-space, so we use LTR isolation marks and one
+    # line.  This prevents screenshots like: `2,878.- / $ 00`.
+    raw = str(value)
+    if '$' in raw or '€' in raw or 'SYP' in raw or 'USD' in raw:
+        raw = '\u2066' + raw + '\u2069'
     return ft.Column([
         ft.Text(label, size=11, color=MUTED),
-        ft.Text(str(value), size=13, color=color, weight=ft.FontWeight.BOLD, text_align=ft.TextAlign.CENTER, max_lines=2, overflow=ft.TextOverflow.ELLIPSIS),
+        ft.Text(raw, size=13, color=color, weight=ft.FontWeight.BOLD, text_align=ft.TextAlign.CENTER, max_lines=1, overflow=ft.TextOverflow.ELLIPSIS),
     ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, expand=expand, spacing=2)
 
 

@@ -248,6 +248,15 @@ class AccountsMobileView(ft.Column):
             self._show_snackbar(f"خطأ في تقرير أرباح الخدمات: {str(ex)}", True)
 
     def _show_details(self, company_name, records, search_query=None):
+        # Company details is a full screen workflow, not a modal dialog.
+        # It contains reports, sharing, editing and a long ledger list; using an
+        # AlertDialog for it on Android/Flet leaves a blank white dialog shell
+        # after close.  Route it through AppLayout instead.
+        layout = getattr(self._page, '_hawaa_app_layout', None)
+        if layout is not None and hasattr(layout, 'open_company_details'):
+            layout.open_company_details(company_name, records=records, search_query=search_query)
+            return
+        # Very old fallback: keep behavior functional if AppLayout is not present.
         from views.company_details_mobile_view import CompanyDetailsMobileView
         dialog = ft.AlertDialog(
             title=ft.Row([ft.Icon(ft.Icons.BUSINESS, color=ft.Colors.INDIGO), ft.Text(company_name, size=18, weight=ft.FontWeight.BOLD, expand=True)]),
