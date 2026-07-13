@@ -143,9 +143,15 @@ def main(page: ft.Page):
             show_main_app()
 
     def show_change_password():
-        from views.dialogs.change_password_dialog import ChangePasswordDialog
-        dialog = ChangePasswordDialog(page=page, on_save=lambda: show_main_app())
-        open_control(page, dialog)
+        # First-login password change is a mandatory navigation state, not an
+        # optional dialog.  Rendering it as a full screen avoids Android/Flet
+        # modal-route leftovers and guarantees Cancel returns to Login.
+        clear_transient_ui(page, clear_fab=True)
+        page.controls.clear()
+        from views.mandatory_password_change_view import MandatoryPasswordChangeView
+        view = MandatoryPasswordChangeView(page=page, on_save=show_main_app, on_cancel=show_login)
+        page.add(view)
+        page.update()
 
     def show_main_app():
         # Expose central hooks for nested views such as settings.

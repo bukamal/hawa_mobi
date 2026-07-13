@@ -21,6 +21,7 @@ class LoginView(ft.Container):
         self.on_login_success = on_login_success
         self.on_exit = on_exit
         self._busy = False
+        self._navigating_after_login = False
         self._failed_attempts = 0
         self._locked_until = 0.0
         self.expand = True
@@ -207,15 +208,20 @@ class LoginView(ft.Container):
             UserSession.login(user)
             set_setting('login/remember_username', 'true' if self.remember.value else 'false')
             set_setting('login/last_username', username if self.remember.value else '')
+            self.error_msg.value = 'تم تسجيل الدخول. جارٍ فتح الواجهة...'
+            self.error_msg.color = SUCCESS
+            self._navigating_after_login = True
             self.on_login_success(user)
         except Exception as exc:
+            self._navigating_after_login = False
             self._record_failure()
             self.error_msg.value = f'فشل تسجيل الدخول: {exc}'
             self.error_msg.color = DANGER
             self.password.value = ''
         finally:
-            self._set_busy(False)
-            try:
-                self._page.update()
-            except Exception:
-                pass
+            if not self._navigating_after_login:
+                self._set_busy(False)
+                try:
+                    self._page.update()
+                except Exception:
+                    pass
