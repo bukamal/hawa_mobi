@@ -8,6 +8,7 @@ The Android runtime rejects layout-only kwargs such as ``margin`` on
 to that helper either.  Margin/layout should be handled by page-level layout,
 not by the FAB constructor.
 """
+
 import ast
 from pathlib import Path
 
@@ -32,13 +33,19 @@ for path in sorted(VIEWS.rglob("*.py")):
             and isinstance(func.value, ast.Name)
             and func.value.id == "ft"
         )
-        helper_fab = isinstance(func, ast.Name) and func.id == "make_floating_action_button"
+        helper_fab = (
+            isinstance(func, ast.Name) and func.id == "make_floating_action_button"
+        )
         has_margin = any(kw.arg == "margin" for kw in node.keywords if kw.arg)
 
         if direct_fab:
-            violations.append(f"{path.relative_to(ROOT)}:{node.lineno}: direct ft.FloatingActionButton")
+            violations.append(
+                f"{path.relative_to(ROOT)}:{node.lineno}: direct ft.FloatingActionButton"
+            )
         if helper_fab and has_margin:
-            violations.append(f"{path.relative_to(ROOT)}:{node.lineno}: margin passed to make_floating_action_button")
+            violations.append(
+                f"{path.relative_to(ROOT)}:{node.lineno}: margin passed to make_floating_action_button"
+            )
 
 if violations:
     raise SystemExit("FAB compatibility violations:\n" + "\n".join(violations))

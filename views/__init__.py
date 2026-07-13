@@ -10,14 +10,14 @@ from .audit_log_mobile_view import AuditLogMobileView
 from .settings_mobile_view import SettingsMobileView
 
 __all__ = [
-    'AppLayout',
-    'SplashView',
-    'LoginView',
-    'ActivationView',
-    'DashboardMobileView',
-    'AccountsMobileView',
-    'CompanyDetailsMobileView',
-    'UsersMobileView',
-    'AuditLogMobileView',
-    'SettingsMobileView'
+    "AppLayout",
+    "SplashView",
+    "LoginView",
+    "ActivationView",
+    "DashboardMobileView",
+    "AccountsMobileView",
+    "CompanyDetailsMobileView",
+    "UsersMobileView",
+    "AuditLogMobileView",
+    "SettingsMobileView",
 ]

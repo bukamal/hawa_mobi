@@ -1,18 +1,38 @@
 # -*- coding: utf-8 -*-
 import flet as ft
-from views.flet_compat import open_control, close_control, make_file_picker, attach_service_control, service_control_attached, filepicker_unavailable_message, run_async_task, make_expansion_tile, clear_transient_ui
-from views.ui_kit import page_header, data_card, show_snackbar, empty_state, info_banner, responsive_wrap
+from views.flet_compat import (
+    open_control,
+    close_control,
+    make_file_picker,
+    attach_service_control,
+    service_control_attached,
+    filepicker_unavailable_message,
+    run_async_task,
+    make_expansion_tile,
+    clear_transient_ui,
+)
+from views.ui_kit import (
+    page_header,
+    data_card,
+    show_snackbar,
+    info_banner,
+    responsive_wrap,
+)
 from database import SettingsRepository
 from currency import currency
-from i18n.translator import translate, set_language, language_code_from_label, language_label, is_rtl
+from i18n.translator import (
+    translate,
+    set_language,
+    language_code_from_label,
+    language_label,
+    is_rtl,
+)
 from config import get_company_info, save_company_info, default_company_info
 from database.connection import DatabaseConnection
 from views.ui_runtime import network_status_chip
-import datetime
 import os
-import shutil
-import csv
 import asyncio
+
 
 class SettingsMobileView(ft.Column):
     def __init__(self, page):
@@ -29,7 +49,11 @@ class SettingsMobileView(ft.Column):
         self._restore_operation_busy = False
 
         self.controls = [
-            page_header(translate('settings'), ft.Icons.SETTINGS, subtitle="إعدادات النظام، الشبكة، النسخ الاحتياطي والعملات"),
+            page_header(
+                translate("settings"),
+                ft.Icons.SETTINGS,
+                subtitle="إعدادات النظام، الشبكة، النسخ الاحتياطي والعملات",
+            ),
             self._settings_tile("💰 العملات", self._currency_tab(), expanded=True),
             self._settings_tile("💱 أسعار الصرف", self._rates_tab()),
             self._settings_tile("🏢 الشركة", self._company_tab()),
@@ -44,7 +68,12 @@ class SettingsMobileView(ft.Column):
             make_expansion_tile(
                 title=ft.Text(title, size=15, weight=ft.FontWeight.BOLD),
                 expanded=expanded,
-                controls=[ft.Container(content=content, padding=ft.Padding(left=4, right=4, top=6, bottom=4))],
+                controls=[
+                    ft.Container(
+                        content=content,
+                        padding=ft.Padding(left=4, right=4, top=6, bottom=4),
+                    )
+                ],
             ),
             padding=0,
             elevation=1,
@@ -72,45 +101,61 @@ class SettingsMobileView(ft.Column):
         self.base_curr = ft.Dropdown(
             label="العملة الأساسية",
             value=currency.get_base_currency(),
-            options=[ft.dropdown.Option(c) for c in ["USD","SAR","SYP","EUR","GBP","AED","QAR","KWD","OMR"]],
-            width=field_width
+            options=[
+                ft.dropdown.Option(c)
+                for c in ["USD", "SAR", "SYP", "EUR", "GBP", "AED", "QAR", "KWD", "OMR"]
+            ],
+            width=field_width,
         )
         self.display_curr = ft.Dropdown(
             label="العملة المعروضة",
             value=currency.get_display_currency(),
-            options=[ft.dropdown.Option(c) for c in ["USD","SAR","SYP","EUR","GBP","AED","QAR","KWD","OMR"]],
-            width=field_width
+            options=[
+                ft.dropdown.Option(c)
+                for c in ["USD", "SAR", "SYP", "EUR", "GBP", "AED", "QAR", "KWD", "OMR"]
+            ],
+            width=field_width,
         )
         self.decimals = ft.Slider(
             label="الخانات العشرية: {value}",
-            min=0, max=2, divisions=2,
-            value=int(self.repo.get('currency_decimals','2')),
-            width=field_width
+            min=0,
+            max=2,
+            divisions=2,
+            value=int(self.repo.get("currency_decimals", "2")),
+            width=field_width,
         )
         self.format_dropdown = ft.Dropdown(
             label="تنسيق الأرقام",
-            value="غربية" if self.repo.get('number_format','western')=='western' else "شرقية",
+            value="غربية"
+            if self.repo.get("number_format", "western") == "western"
+            else "شرقية",
             options=[ft.dropdown.Option("غربية"), ft.dropdown.Option("شرقية")],
-            width=field_width
+            width=field_width,
         )
         self.abbreviate = ft.Checkbox(
-            label="اختصار الأعداد الكبيرة",
-            value=currency.abbreviate_numbers()
+            label="اختصار الأعداد الكبيرة", value=currency.abbreviate_numbers()
         )
         save_btn = ft.FilledButton(
             content=ft.Text("حفظ"),
             bgcolor=ft.Colors.INDIGO,
             color=ft.Colors.WHITE,
-            on_click=self._save_currency
+            on_click=self._save_currency,
         )
-        return ft.Column([
-            self.base_curr, self.display_curr, self.decimals,
-            self.format_dropdown, self.abbreviate, save_btn
-        ], spacing=15)
+        return ft.Column(
+            [
+                self.base_curr,
+                self.display_curr,
+                self.decimals,
+                self.format_dropdown,
+                self.abbreviate,
+                save_btn,
+            ],
+            spacing=15,
+        )
 
     def _save_currency(self, e):
         previous_display = currency.get_display_currency()
-        fmt = 'western' if self.format_dropdown.value == 'غربية' else 'arabic'
+        fmt = "western" if self.format_dropdown.value == "غربية" else "arabic"
         currency.save_runtime_settings(
             base_currency=self.base_curr.value,
             display_currency=self.display_curr.value,
@@ -120,10 +165,12 @@ class SettingsMobileView(ft.Column):
         )
         new_display = currency.get_display_currency()
         if new_display != previous_display:
-            self._show_snackbar(f"تم تطبيق عملة العرض فوراً: {new_display}", is_error=False)
+            self._show_snackbar(
+                f"تم تطبيق عملة العرض فوراً: {new_display}", is_error=False
+            )
         else:
             self._show_snackbar("تم حفظ إعدادات العملة", is_error=False)
-        refresh = getattr(self._page, '_hawaa_refresh_current_page', None)
+        refresh = getattr(self._page, "_hawaa_refresh_current_page", None)
         if callable(refresh):
             refresh()
         else:
@@ -133,19 +180,23 @@ class SettingsMobileView(ft.Column):
         self.rates_list = ft.Column(spacing=10, scroll=ft.ScrollMode.AUTO, expand=True)
         refresh_btn = ft.FilledButton(
             content=ft.Row([ft.Icon(ft.Icons.REFRESH), ft.Text("تحديث من الإنترنت")]),
-            on_click=self._fetch_online_rates
+            on_click=self._fetch_online_rates,
         )
         save_all_btn = ft.FilledButton(
             content=ft.Text("حفظ جميع الأسعار", weight=ft.FontWeight.BOLD),
             bgcolor=ft.Colors.INDIGO,
             color=ft.Colors.WHITE,
-            on_click=self._save_all_rates
+            on_click=self._save_all_rates,
         )
         self._load_rates_cards()
-        return ft.Column([
-            ft.Container(content=self.rates_list, expand=True),
-            ft.Row([refresh_btn, save_all_btn], spacing=10)
-        ], spacing=15, expand=True)
+        return ft.Column(
+            [
+                ft.Container(content=self.rates_list, expand=True),
+                ft.Row([refresh_btn, save_all_btn], spacing=10),
+            ],
+            spacing=15,
+            expand=True,
+        )
 
     def _load_rates_cards(self):
         try:
@@ -154,21 +205,37 @@ class SettingsMobileView(ft.Column):
                 self.rates_list.controls = [
                     ft.Card(
                         content=ft.Container(
-                            content=ft.Column([
-                                ft.Icon(ft.Icons.WARNING, size=40, color=ft.Colors.ORANGE),
-                                ft.Text("لا توجد أسعار صرف في قاعدة البيانات", size=14, weight=ft.FontWeight.BOLD),
-                                ft.Text("يمكنك إضافة أسعار يدوياً أو تحديثها من الإنترنت", size=12, color=ft.Colors.GREY_600),
-                                ft.FilledButton(
-                                    content=ft.Text("إضافة أسعار افتراضية"),
-                                    on_click=self._insert_default_rates,
-                                    bgcolor=ft.Colors.INDIGO,
-                                    color=ft.Colors.WHITE
-                                )
-                            ], alignment=ft.MainAxisAlignment.CENTER, horizontal_alignment=ft.CrossAxisAlignment.CENTER),
-                            padding=20
+                            content=ft.Column(
+                                [
+                                    ft.Icon(
+                                        ft.Icons.WARNING,
+                                        size=40,
+                                        color=ft.Colors.ORANGE,
+                                    ),
+                                    ft.Text(
+                                        "لا توجد أسعار صرف في قاعدة البيانات",
+                                        size=14,
+                                        weight=ft.FontWeight.BOLD,
+                                    ),
+                                    ft.Text(
+                                        "يمكنك إضافة أسعار يدوياً أو تحديثها من الإنترنت",
+                                        size=12,
+                                        color=ft.Colors.GREY_600,
+                                    ),
+                                    ft.FilledButton(
+                                        content=ft.Text("إضافة أسعار افتراضية"),
+                                        on_click=self._insert_default_rates,
+                                        bgcolor=ft.Colors.INDIGO,
+                                        color=ft.Colors.WHITE,
+                                    ),
+                                ],
+                                alignment=ft.MainAxisAlignment.CENTER,
+                                horizontal_alignment=ft.CrossAxisAlignment.CENTER,
+                            ),
+                            padding=20,
                         ),
                         elevation=1,
-                        margin=ft.Margin(left=20, right=20, top=10, bottom=10)
+                        margin=ft.Margin(left=20, right=20, top=10, bottom=10),
                     )
                 ]
                 self._page.update()
@@ -176,26 +243,36 @@ class SettingsMobileView(ft.Column):
             cards = []
             self.rate_fields = {}
             for r in rates:
-                code = r['currency_code']
+                code = r["currency_code"]
                 rate_field = ft.TextField(
                     value=f"{r['rate_to_usd']:.4f}",
                     width=120,
                     text_align=ft.TextAlign.CENTER,
-                    keyboard_type=ft.KeyboardType.NUMBER
+                    keyboard_type=ft.KeyboardType.NUMBER,
                 )
                 self.rate_fields[code] = rate_field
-                updated_at = r['updated_at'][:19] if r['updated_at'] else 'غير محدد'
+                updated_at = r["updated_at"][:19] if r["updated_at"] else "غير محدد"
                 card = ft.Card(
                     content=ft.Container(
-                        content=ft.Row([
-                            ft.Text(code, size=16, weight=ft.FontWeight.BOLD, width=60),
-                            ft.Container(content=rate_field, width=130),
-                            ft.Text(updated_at, size=11, color=ft.Colors.GREY_500, expand=True)
-                        ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
-                        padding=12
+                        content=ft.Row(
+                            [
+                                ft.Text(
+                                    code, size=16, weight=ft.FontWeight.BOLD, width=60
+                                ),
+                                ft.Container(content=rate_field, width=130),
+                                ft.Text(
+                                    updated_at,
+                                    size=11,
+                                    color=ft.Colors.GREY_500,
+                                    expand=True,
+                                ),
+                            ],
+                            alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
+                        ),
+                        padding=12,
                     ),
                     elevation=1,
-                    margin=ft.Margin(left=5, right=5, top=3, bottom=3)
+                    margin=ft.Margin(left=5, right=5, top=3, bottom=3),
                 )
                 cards.append(card)
             self.rates_list.controls = cards
@@ -204,15 +281,23 @@ class SettingsMobileView(ft.Column):
             self.rates_list.controls = [
                 ft.Card(
                     content=ft.Container(
-                        content=ft.Column([
-                            ft.Icon(ft.Icons.ERROR, size=40, color=ft.Colors.RED),
-                            ft.Text("حدث خطأ أثناء تحميل أسعار الصرف", size=14, weight=ft.FontWeight.BOLD),
-                            ft.Text(str(e), size=12, color=ft.Colors.RED),
-                        ], alignment=ft.MainAxisAlignment.CENTER, horizontal_alignment=ft.CrossAxisAlignment.CENTER),
-                        padding=20
+                        content=ft.Column(
+                            [
+                                ft.Icon(ft.Icons.ERROR, size=40, color=ft.Colors.RED),
+                                ft.Text(
+                                    "حدث خطأ أثناء تحميل أسعار الصرف",
+                                    size=14,
+                                    weight=ft.FontWeight.BOLD,
+                                ),
+                                ft.Text(str(e), size=12, color=ft.Colors.RED),
+                            ],
+                            alignment=ft.MainAxisAlignment.CENTER,
+                            horizontal_alignment=ft.CrossAxisAlignment.CENTER,
+                        ),
+                        padding=20,
                     ),
                     elevation=1,
-                    margin=ft.Margin(left=20, right=20, top=10, bottom=10)
+                    margin=ft.Margin(left=20, right=20, top=10, bottom=10),
                 )
             ]
             self._page.update()
@@ -220,11 +305,17 @@ class SettingsMobileView(ft.Column):
     def _insert_default_rates(self, e):
         try:
             default_rates = [
-                ('USD', 1.0), ('SAR', 3.75), ('SYP', 14000.0), ('EUR', 0.92),
-                ('GBP', 0.79), ('AED', 3.67), ('QAR', 3.64), ('KWD', 0.31), ('OMR', 0.38)
+                ("USD", 1.0),
+                ("SAR", 3.75),
+                ("SYP", 14000.0),
+                ("EUR", 0.92),
+                ("GBP", 0.79),
+                ("AED", 3.67),
+                ("QAR", 3.64),
+                ("KWD", 0.31),
+                ("OMR", 0.38),
             ]
             db = DatabaseConnection()
-            now = datetime.datetime.now().isoformat()
             for code, rate in default_rates:
                 db.update_exchange_rate(code, rate)
             self._show_snackbar("تم إضافة الأسعار الافتراضية", is_error=False)
@@ -238,12 +329,14 @@ class SettingsMobileView(ft.Column):
                 try:
                     rate = float(field.value)
                     currency.update_rate(code, rate)
-                except:
+                except (TypeError, ValueError):
                     pass
             currency.invalidate_cache()
-            self._show_snackbar("تم حفظ جميع الأسعار وتحديث العرض الحالي", is_error=False)
+            self._show_snackbar(
+                "تم حفظ جميع الأسعار وتحديث العرض الحالي", is_error=False
+            )
             self._load_rates_cards()
-            refresh = getattr(self._page, '_hawaa_refresh_current_page', None)
+            refresh = getattr(self._page, "_hawaa_refresh_current_page", None)
             if callable(refresh):
                 refresh()
         except Exception as ex:
@@ -251,11 +344,14 @@ class SettingsMobileView(ft.Column):
 
     def _fetch_online_rates(self, e):
         import requests
+
         try:
-            resp = requests.get("https://api.exchangerate-api.com/v4/latest/USD", timeout=10)
+            resp = requests.get(
+                "https://api.exchangerate-api.com/v4/latest/USD", timeout=10
+            )
             if resp.status_code == 200:
                 data = resp.json()
-                rates = data.get('rates', {})
+                rates = data.get("rates", {})
                 for code, field in self.rate_fields.items():
                     if code in rates:
                         field.value = f"{rates[code]:.4f}"
@@ -268,64 +364,134 @@ class SettingsMobileView(ft.Column):
 
     def _company_tab(self):
         info = get_company_info()
-        self.company_name = ft.TextField(label="اسم الشركة", value=info.get('name',''), width=350)
-        self.company_address = ft.TextField(label="العنوان", value=info.get('address',''), width=350)
-        self.company_phone = ft.TextField(label="الهاتف", value=info.get('phone',''), width=350)
-        self.company_email = ft.TextField(label="البريد الإلكتروني", value=info.get('email',''), width=350)
-        self.company_logo = ft.TextField(label="مسار الشعار داخل التطبيق", value=info.get('logo_path',''), width=350, read_only=True)
-        self.logo_preview = ft.Container(content=self._logo_preview_control(info.get('logo_path','')), padding=8, border_radius=14, bgcolor=ft.Colors.GREY_100)
-        logo_btn = ft.FilledButton(content=ft.Row([ft.Icon(ft.Icons.IMAGE), ft.Text("اختيار شعار")]), on_click=self._browse_logo)
-        remove_logo_btn = ft.OutlinedButton(content=ft.Row([ft.Icon(ft.Icons.RESTART_ALT), ft.Text("إعادة الشعار الافتراضي")]), on_click=self._remove_company_logo)
-        reset_defaults_btn = ft.OutlinedButton(content=ft.Row([ft.Icon(ft.Icons.SETTINGS_BACKUP_RESTORE), ft.Text("إعادة القيم الافتراضية")]), on_click=self._reset_company_defaults)
-        save_btn = ft.FilledButton(content=ft.Text("حفظ"), bgcolor=ft.Colors.INDIGO, color=ft.Colors.WHITE, on_click=self._save_company)
-        return ft.Column([
-            self.company_name,
-            self.company_address,
-            self.company_phone,
-            self.company_email,
-            info_banner("يتم نسخ الشعار إلى تخزين التطبيق وإدخاله داخل تقارير HTML كصورة Base64 حتى يظهر عند الطباعة والمشاركة.", icon=ft.Icons.IMAGE),
-            self.logo_preview,
-            self.company_logo,
-            responsive_wrap([logo_btn, remove_logo_btn, reset_defaults_btn, save_btn], spacing=10),
-        ], spacing=15)
+        self.company_name = ft.TextField(
+            label="اسم الشركة", value=info.get("name", ""), width=350
+        )
+        self.company_address = ft.TextField(
+            label="العنوان", value=info.get("address", ""), width=350
+        )
+        self.company_phone = ft.TextField(
+            label="الهاتف", value=info.get("phone", ""), width=350
+        )
+        self.company_email = ft.TextField(
+            label="البريد الإلكتروني", value=info.get("email", ""), width=350
+        )
+        self.company_logo = ft.TextField(
+            label="مسار الشعار داخل التطبيق",
+            value=info.get("logo_path", ""),
+            width=350,
+            read_only=True,
+        )
+        self.logo_preview = ft.Container(
+            content=self._logo_preview_control(info.get("logo_path", "")),
+            padding=8,
+            border_radius=14,
+            bgcolor=ft.Colors.GREY_100,
+        )
+        logo_btn = ft.FilledButton(
+            content=ft.Row([ft.Icon(ft.Icons.IMAGE), ft.Text("اختيار شعار")]),
+            on_click=self._browse_logo,
+        )
+        remove_logo_btn = ft.OutlinedButton(
+            content=ft.Row(
+                [ft.Icon(ft.Icons.RESTART_ALT), ft.Text("إعادة الشعار الافتراضي")]
+            ),
+            on_click=self._remove_company_logo,
+        )
+        reset_defaults_btn = ft.OutlinedButton(
+            content=ft.Row(
+                [
+                    ft.Icon(ft.Icons.SETTINGS_BACKUP_RESTORE),
+                    ft.Text("إعادة القيم الافتراضية"),
+                ]
+            ),
+            on_click=self._reset_company_defaults,
+        )
+        save_btn = ft.FilledButton(
+            content=ft.Text("حفظ"),
+            bgcolor=ft.Colors.INDIGO,
+            color=ft.Colors.WHITE,
+            on_click=self._save_company,
+        )
+        return ft.Column(
+            [
+                self.company_name,
+                self.company_address,
+                self.company_phone,
+                self.company_email,
+                info_banner(
+                    "يتم نسخ الشعار إلى تخزين التطبيق وإدخاله داخل تقارير HTML كصورة Base64 حتى يظهر عند الطباعة والمشاركة.",
+                    icon=ft.Icons.IMAGE,
+                ),
+                self.logo_preview,
+                self.company_logo,
+                responsive_wrap(
+                    [logo_btn, remove_logo_btn, reset_defaults_btn, save_btn],
+                    spacing=10,
+                ),
+            ],
+            spacing=15,
+        )
 
     def _logo_preview_control(self, path: str):
         try:
             from services.company_logo_service import image_to_base64
+
             b64 = image_to_base64(path or "")
             if b64:
-                return ft.Row([
-                    ft.Image(src_base64=b64, width=86, height=86, fit="contain"),
-                    ft.Column([
-                        ft.Text("شعار التقارير والطباعة", size=13, weight=ft.FontWeight.BOLD),
-                        ft.Text("سيظهر في كشف الحساب والطباعة عند تفعيل إظهار الشعار.", size=11, color=ft.Colors.GREY_600),
-                    ], spacing=3, expand=True),
-                ], alignment=ft.MainAxisAlignment.START, vertical_alignment=ft.CrossAxisAlignment.CENTER)
+                return ft.Row(
+                    [
+                        ft.Image(src_base64=b64, width=86, height=86, fit="contain"),
+                        ft.Column(
+                            [
+                                ft.Text(
+                                    "شعار التقارير والطباعة",
+                                    size=13,
+                                    weight=ft.FontWeight.BOLD,
+                                ),
+                                ft.Text(
+                                    "سيظهر في كشف الحساب والطباعة عند تفعيل إظهار الشعار.",
+                                    size=11,
+                                    color=ft.Colors.GREY_600,
+                                ),
+                            ],
+                            spacing=3,
+                            expand=True,
+                        ),
+                    ],
+                    alignment=ft.MainAxisAlignment.START,
+                    vertical_alignment=ft.CrossAxisAlignment.CENTER,
+                )
         except Exception:
             pass
-        return ft.Row([
-            ft.Icon(ft.Icons.IMAGE_NOT_SUPPORTED, size=38, color=ft.Colors.GREY_500),
-            ft.Text("تعذر عرض الشعار الافتراضي", size=12, color=ft.Colors.GREY_600),
-        ], alignment=ft.MainAxisAlignment.START)
+        return ft.Row(
+            [
+                ft.Icon(
+                    ft.Icons.IMAGE_NOT_SUPPORTED, size=38, color=ft.Colors.GREY_500
+                ),
+                ft.Text("تعذر عرض الشعار الافتراضي", size=12, color=ft.Colors.GREY_600),
+            ],
+            alignment=ft.MainAxisAlignment.START,
+        )
 
     def _save_company(self, e):
         info = {
-            'name': self.company_name.value,
-            'address': self.company_address.value,
-            'phone': self.company_phone.value,
-            'email': self.company_email.value,
-            'logo_path': self.company_logo.value,
+            "name": self.company_name.value,
+            "address": self.company_address.value,
+            "phone": self.company_phone.value,
+            "email": self.company_email.value,
+            "logo_path": self.company_logo.value,
         }
         save_company_info(info)
         self._show_snackbar("تم حفظ معلومات الشركة", is_error=False)
 
     def _reset_company_defaults(self, e):
         defaults = default_company_info()
-        self.company_name.value = defaults.get('name', '')
-        self.company_address.value = defaults.get('address', '')
-        self.company_phone.value = defaults.get('phone', '')
-        self.company_email.value = defaults.get('email', '')
-        self.company_logo.value = defaults.get('logo_path', '')
+        self.company_name.value = defaults.get("name", "")
+        self.company_address.value = defaults.get("address", "")
+        self.company_phone.value = defaults.get("phone", "")
+        self.company_email.value = defaults.get("email", "")
+        self.company_logo.value = defaults.get("logo_path", "")
         self.logo_preview.content = self._logo_preview_control(self.company_logo.value)
         self._page.update()
         self._show_snackbar("تمت إعادة بيانات الشركة والشعار الافتراضي", False)
@@ -347,16 +513,22 @@ class SettingsMobileView(ft.Column):
 
     def _on_logo_picked(self, e):
         try:
-            files = getattr(e, 'files', None) or []
+            files = getattr(e, "files", None) or []
             if not files:
                 self._show_snackbar("لم يتم اختيار شعار", False)
                 return
             selected = files[0]
-            source_path = getattr(selected, 'path', None) or getattr(selected, 'name', None)
+            source_path = getattr(selected, "path", None) or getattr(
+                selected, "name", None
+            )
             if not source_path or not os.path.exists(source_path):
-                self._show_snackbar("لم يستطع Android إعطاء مسار قابل للقراءة. انسخ الصورة إلى Files ثم أعد المحاولة.", True)
+                self._show_snackbar(
+                    "لم يستطع Android إعطاء مسار قابل للقراءة. انسخ الصورة إلى Files ثم أعد المحاولة.",
+                    True,
+                )
                 return
             from services.company_logo_service import import_logo
+
             stored = import_logo(source_path)
             self.company_logo.value = stored
             self.logo_preview.content = self._logo_preview_control(stored)
@@ -368,99 +540,164 @@ class SettingsMobileView(ft.Column):
     def _remove_company_logo(self, e):
         try:
             from services.company_logo_service import remove_logo
+
             remove_logo(self.company_logo.value)
         except Exception:
             pass
         defaults = default_company_info()
-        self.company_logo.value = defaults.get('logo_path', '')
+        self.company_logo.value = defaults.get("logo_path", "")
         self.logo_preview.content = self._logo_preview_control(self.company_logo.value)
         self._show_snackbar("تمت إعادة الشعار الافتراضي", False)
         self._page.update()
 
-
     def _reports_tab(self):
         from reports.config import get_report_settings
+
         settings = get_report_settings()
-        self.report_header_note = ft.TextField(label="نص الرأس", value=settings.get('header_note', ''), width=350)
-        self.report_footer_note = ft.TextField(label="نص التذييل", value=settings.get('footer_note', ''), width=350, multiline=True, min_lines=2, max_lines=3)
-        self.report_show_logo = ft.Checkbox(label="إظهار شعار الشركة في الطباعة", value=bool(settings.get('show_company_logo', True)))
-        self.report_show_generated_at = ft.Checkbox(label="إظهار تاريخ إنشاء التقرير", value=bool(settings.get('show_generated_at', True)))
+        self.report_header_note = ft.TextField(
+            label="نص الرأس", value=settings.get("header_note", ""), width=350
+        )
+        self.report_footer_note = ft.TextField(
+            label="نص التذييل",
+            value=settings.get("footer_note", ""),
+            width=350,
+            multiline=True,
+            min_lines=2,
+            max_lines=3,
+        )
+        self.report_show_logo = ft.Checkbox(
+            label="إظهار شعار الشركة في الطباعة",
+            value=bool(settings.get("show_company_logo", True)),
+        )
+        self.report_show_generated_at = ft.Checkbox(
+            label="إظهار تاريخ إنشاء التقرير",
+            value=bool(settings.get("show_generated_at", True)),
+        )
         self.report_columns = []
         column_controls = []
-        for col in settings.get('account_statement_columns', []):
-            checkbox = ft.Checkbox(label=str(col.get('label', col.get('key'))), value=bool(col.get('visible', True)))
-            label_field = ft.TextField(label="اسم العمود", value=str(col.get('label', '')), width=180)
-            self.report_columns.append((str(col.get('key')), checkbox, label_field))
-            column_controls.append(ft.Row([checkbox, label_field], spacing=8, wrap=True))
-        save_btn = ft.FilledButton(content=ft.Text("حفظ إعدادات التقارير"), bgcolor=ft.Colors.INDIGO, color=ft.Colors.WHITE, on_click=self._save_reports)
-        return ft.Column([
-            info_banner("ترتيب كشف الحساب الافتراضي: التاريخ، الملاحظات، لنا، له، التراكمي. يمكن إظهار أعمدة إضافية مثل القيمة التاريخية للعملة."),
-            self.report_header_note,
-            self.report_footer_note,
-            self.report_show_logo,
-            self.report_show_generated_at,
-            ft.Text("أعمدة كشف الحساب", size=14, weight=ft.FontWeight.BOLD),
-            ft.Column(column_controls, spacing=4),
-            save_btn,
-        ], spacing=12)
+        for col in settings.get("account_statement_columns", []):
+            checkbox = ft.Checkbox(
+                label=str(col.get("label", col.get("key"))),
+                value=bool(col.get("visible", True)),
+            )
+            label_field = ft.TextField(
+                label="اسم العمود", value=str(col.get("label", "")), width=180
+            )
+            self.report_columns.append((str(col.get("key")), checkbox, label_field))
+            column_controls.append(
+                ft.Row([checkbox, label_field], spacing=8, wrap=True)
+            )
+        save_btn = ft.FilledButton(
+            content=ft.Text("حفظ إعدادات التقارير"),
+            bgcolor=ft.Colors.INDIGO,
+            color=ft.Colors.WHITE,
+            on_click=self._save_reports,
+        )
+        return ft.Column(
+            [
+                info_banner(
+                    "ترتيب كشف الحساب الافتراضي: التاريخ، الملاحظات، لنا، له، التراكمي. يمكن إظهار أعمدة إضافية مثل القيمة التاريخية للعملة."
+                ),
+                self.report_header_note,
+                self.report_footer_note,
+                self.report_show_logo,
+                self.report_show_generated_at,
+                ft.Text("أعمدة كشف الحساب", size=14, weight=ft.FontWeight.BOLD),
+                ft.Column(column_controls, spacing=4),
+                save_btn,
+            ],
+            spacing=12,
+        )
 
     def _save_reports(self, e):
         from reports.config import get_report_settings, save_report_settings
+
         settings = get_report_settings()
-        by_key = {c.get('key'): dict(c) for c in settings.get('account_statement_columns', [])}
-        for key, checkbox, label_field in getattr(self, 'report_columns', []):
+        by_key = {
+            c.get("key"): dict(c) for c in settings.get("account_statement_columns", [])
+        }
+        for key, checkbox, label_field in getattr(self, "report_columns", []):
             if key in by_key:
-                by_key[key]['visible'] = bool(checkbox.value)
-                by_key[key]['label'] = label_field.value or by_key[key].get('label', key)
+                by_key[key]["visible"] = bool(checkbox.value)
+                by_key[key]["label"] = label_field.value or by_key[key].get(
+                    "label", key
+                )
         ordered = []
-        for c in settings.get('account_statement_columns', []):
-            if c.get('key') in by_key:
-                ordered.append(by_key[c.get('key')])
-        save_report_settings({
-            'header_note': self.report_header_note.value,
-            'footer_note': self.report_footer_note.value,
-            'show_company_logo': bool(self.report_show_logo.value),
-            'show_generated_at': bool(self.report_show_generated_at.value),
-            'account_statement_columns': ordered,
-        })
+        for c in settings.get("account_statement_columns", []):
+            if c.get("key") in by_key:
+                ordered.append(by_key[c.get("key")])
+        save_report_settings(
+            {
+                "header_note": self.report_header_note.value,
+                "footer_note": self.report_footer_note.value,
+                "show_company_logo": bool(self.report_show_logo.value),
+                "show_generated_at": bool(self.report_show_generated_at.value),
+                "account_statement_columns": ordered,
+            }
+        )
         self._show_snackbar("تم حفظ إعدادات التقارير والطباعة", False)
 
     def _lang_theme_tab(self):
-        cur_lang = self.repo.get('language','ar')
-        cur_theme = self.repo.get('theme','light')
+        cur_lang = self.repo.get("language", "ar")
+        cur_theme = self.repo.get("theme", "light")
         self.lang_dropdown = ft.Dropdown(
             label="اللغة",
             value=language_label(cur_lang),
-            options=[ft.dropdown.Option("العربية"), ft.dropdown.Option("English"), ft.dropdown.Option("Français")],
-            width=250
+            options=[
+                ft.dropdown.Option("العربية"),
+                ft.dropdown.Option("English"),
+                ft.dropdown.Option("Français"),
+            ],
+            width=250,
         )
         self.theme_dropdown = ft.Dropdown(
             label="المظهر",
-            value="فاتح" if cur_theme=='light' else "داكن",
+            value="فاتح" if cur_theme == "light" else "داكن",
             options=[ft.dropdown.Option("فاتح"), ft.dropdown.Option("داكن")],
-            width=250
+            width=250,
         )
-        lang_btn = ft.FilledButton(content=ft.Text("تغيير اللغة"), bgcolor=ft.Colors.INDIGO, color=ft.Colors.WHITE, on_click=self._save_language)
-        theme_btn = ft.FilledButton(content=ft.Text("تطبيق المظهر"), bgcolor=ft.Colors.INDIGO, color=ft.Colors.WHITE, on_click=self._save_theme)
-        return ft.Column([self.lang_dropdown, lang_btn, ft.Divider(), self.theme_dropdown, theme_btn], spacing=15)
+        lang_btn = ft.FilledButton(
+            content=ft.Text("تغيير اللغة"),
+            bgcolor=ft.Colors.INDIGO,
+            color=ft.Colors.WHITE,
+            on_click=self._save_language,
+        )
+        theme_btn = ft.FilledButton(
+            content=ft.Text("تطبيق المظهر"),
+            bgcolor=ft.Colors.INDIGO,
+            color=ft.Colors.WHITE,
+            on_click=self._save_theme,
+        )
+        return ft.Column(
+            [
+                self.lang_dropdown,
+                lang_btn,
+                ft.Divider(),
+                self.theme_dropdown,
+                theme_btn,
+            ],
+            spacing=15,
+        )
 
     def _save_language(self, e):
         new_lang = language_code_from_label(self.lang_dropdown.value)
-        self.repo.set('language', new_lang)
+        self.repo.set("language", new_lang)
         set_language(new_lang)
         self._page.rtl = is_rtl(new_lang)
-        self._page.title = translate('app_title')
-        rebuild = getattr(self._page, '_hawaa_rebuild_main', None)
+        self._page.title = translate("app_title")
+        rebuild = getattr(self._page, "_hawaa_rebuild_main", None)
         if callable(rebuild):
             rebuild()
         else:
-            self._show_snackbar(translate('language_applied'), is_error=False)
+            self._show_snackbar(translate("language_applied"), is_error=False)
             self._page.update()
 
     def _save_theme(self, e):
-        theme = 'light' if self.theme_dropdown.value == 'فاتح' else 'dark'
-        self.repo.set('theme', theme)
-        self._page.theme_mode = ft.ThemeMode.LIGHT if theme == 'light' else ft.ThemeMode.DARK
+        theme = "light" if self.theme_dropdown.value == "فاتح" else "dark"
+        self.repo.set("theme", theme)
+        self._page.theme_mode = (
+            ft.ThemeMode.LIGHT if theme == "light" else ft.ThemeMode.DARK
+        )
         self._show_snackbar("تم تغيير المظهر", is_error=False)
         self._page.update()
 
@@ -472,23 +709,31 @@ class SettingsMobileView(ft.Column):
             label="وضع التشغيل",
             value="محلي" if current_mode == "local" else "عميل",
             options=[ft.dropdown.Option("محلي"), ft.dropdown.Option("عميل")],
-            width=250
+            width=250,
         )
         self.server_url = ft.TextField(
             label="عنوان الخادم (للعميل)",
             value=db.server_url,
             width=350,
-            hint_text="http://192.168.1.100:8000"
+            hint_text="https://server.example أو http://192.168.1.100:8000",
+        )
+        from services.network_service import NetworkService
+
+        self.allow_insecure_http = ft.Checkbox(
+            label="السماح مؤقتًا بـ HTTP داخل الشبكة المحلية الخاصة فقط",
+            value=NetworkService.insecure_http_enabled(),
         )
         self.network_test_btn = ft.FilledButton(
-            content=ft.Row([ft.Icon(ft.Icons.NETWORK_CHECK), ft.Text("اختبار الاتصال")]),
-            on_click=self._test_connection
+            content=ft.Row(
+                [ft.Icon(ft.Icons.NETWORK_CHECK), ft.Text("اختبار الاتصال")]
+            ),
+            on_click=self._test_connection,
         )
         self.network_save_btn = ft.FilledButton(
             content=ft.Text("حفظ"),
             bgcolor=ft.Colors.INDIGO,
             color=ft.Colors.WHITE,
-            on_click=self._save_network
+            on_click=self._save_network,
         )
         self.qr_pair_btn = ft.OutlinedButton(
             content=ft.Row([ft.Icon(ft.Icons.QR_CODE_SCANNER), ft.Text("ربط عبر QR")]),
@@ -496,28 +741,62 @@ class SettingsMobileView(ft.Column):
         )
         self.network_diag = ft.Column(spacing=6)
         self.network_diag_btn = ft.OutlinedButton(
-            content=ft.Row([ft.Icon(ft.Icons.MEDICAL_INFORMATION_OUTLINED), ft.Text("تشخيص الشبكة")]),
+            content=ft.Row(
+                [
+                    ft.Icon(ft.Icons.MEDICAL_INFORMATION_OUTLINED),
+                    ft.Text("تشخيص الشبكة"),
+                ]
+            ),
             on_click=self._show_network_diagnostics,
         )
-        return ft.Column([
-            ft.Container(
-                content=ft.Row([
-                    ft.Text("الحالة الحالية", size=13, weight=ft.FontWeight.BOLD, expand=True),
-                    network_status_chip(),
-                ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
-                bgcolor=ft.Colors.WHITE,
-                border_radius=12,
-                padding=12,
-            ),
-            info_banner("نسخة APK تعمل كمحلي أو عميل فقط. شغّل الخادم من مجلد server/ على جهاز آخر.", icon=ft.Icons.PHONE_ANDROID),
-            self.mode_dropdown,
-            self.server_url,
-            ft.Text("في وضع العميل استخدم IP جهاز الخادم داخل الشبكة، مثل http://192.168.1.100:8000، وليس localhost.", size=11, color=ft.Colors.GREY_600),
-            info_banner("الأفضل للربط: افتح Windows > الإعدادات > الشبكة > ربط Android، ثم امسح QR أو الصق نص QR هنا. الربط لا يسجّل الدخول؛ ستحتاج اسم المستخدم وكلمة المرور بعده.", icon=ft.Icons.QR_CODE),
-            responsive_wrap([self.network_test_btn, self.network_diag_btn, self.network_save_btn, self.qr_pair_btn], spacing=10),
-            self.network_diag,
-        ], spacing=15)
-
+        return ft.Column(
+            [
+                ft.Container(
+                    content=ft.Row(
+                        [
+                            ft.Text(
+                                "الحالة الحالية",
+                                size=13,
+                                weight=ft.FontWeight.BOLD,
+                                expand=True,
+                            ),
+                            network_status_chip(),
+                        ],
+                        alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
+                    ),
+                    bgcolor=ft.Colors.WHITE,
+                    border_radius=12,
+                    padding=12,
+                ),
+                info_banner(
+                    "نسخة APK تعمل كمحلي أو عميل فقط. شغّل الخادم من مجلد server/ على جهاز آخر.",
+                    icon=ft.Icons.PHONE_ANDROID,
+                ),
+                self.mode_dropdown,
+                self.server_url,
+                self.allow_insecure_http,
+                ft.Text(
+                    "HTTPS هو الوضع الآمن. يمكن تفعيل HTTP فقط لعنوان IP خاص داخل شبكة محلية موثوقة، ولا يُسمح به لخادم عام.",
+                    size=11,
+                    color=ft.Colors.GREY_600,
+                ),
+                info_banner(
+                    "الأفضل للربط: افتح Windows > الإعدادات > الشبكة > ربط Android، ثم امسح QR أو الصق نص QR هنا. الربط لا يسجّل الدخول؛ ستحتاج اسم المستخدم وكلمة المرور بعده.",
+                    icon=ft.Icons.QR_CODE,
+                ),
+                responsive_wrap(
+                    [
+                        self.network_test_btn,
+                        self.network_diag_btn,
+                        self.network_save_btn,
+                        self.qr_pair_btn,
+                    ],
+                    spacing=10,
+                ),
+                self.network_diag,
+            ],
+            spacing=15,
+        )
 
     def _open_qr_pairing_dialog(self, e):
         from views.dialogs.qr_pairing_dialog import open_qr_pairing_dialog
@@ -525,7 +804,7 @@ class SettingsMobileView(ft.Column):
         def on_success(result):
             self.server_url.value = result.server_url
             self.mode_dropdown.value = "عميل"
-            logout_hook = getattr(self._page, '_hawaa_logout', None)
+            logout_hook = getattr(self._page, "_hawaa_logout", None)
             if callable(logout_hook):
                 logout_hook()
 
@@ -533,39 +812,81 @@ class SettingsMobileView(ft.Column):
 
     def _normalize_server_url(self):
         from services.network_service import NetworkService
-        return NetworkService.normalize_server_url(self.server_url.value or "")
+
+        return NetworkService.normalize_server_url(
+            self.server_url.value or "",
+            allow_insecure_http=bool(
+                getattr(self, "allow_insecure_http", None)
+                and self.allow_insecure_http.value
+            ),
+        )
 
     def _is_forbidden_client_url(self, url: str) -> bool:
         try:
             from services.network_service import NetworkService
-            NetworkService.normalize_server_url(url)
+
+            NetworkService.normalize_server_url(
+                url,
+                allow_insecure_http=bool(
+                    getattr(self, "allow_insecure_http", None)
+                    and self.allow_insecure_http.value
+                ),
+            )
             return False
         except ValueError:
             return True
 
-    def _render_network_diagnostics(self, title: str, message: str, steps=None, technical: str = ""):
+    def _render_network_diagnostics(
+        self, title: str, message: str, steps=None, technical: str = ""
+    ):
         steps = list(steps or [])
         controls = [
-            ft.Row([ft.Icon(ft.Icons.INFO_OUTLINE, color=ft.Colors.BLUE_700), ft.Text(title, weight=ft.FontWeight.BOLD, expand=True)]),
+            ft.Row(
+                [
+                    ft.Icon(ft.Icons.INFO_OUTLINE, color=ft.Colors.BLUE_700),
+                    ft.Text(title, weight=ft.FontWeight.BOLD, expand=True),
+                ]
+            ),
             ft.Text(message, size=12, color=ft.Colors.GREY_800),
         ]
         if steps:
             controls.append(ft.Text("خطوات الفحص:", size=12, weight=ft.FontWeight.BOLD))
-            controls.extend([ft.Text(f"• {x}", size=11, color=ft.Colors.GREY_700) for x in steps])
+            controls.extend(
+                [ft.Text(f"• {x}", size=11, color=ft.Colors.GREY_700) for x in steps]
+            )
         if technical:
-            controls.append(ft.Text("تفاصيل تقنية:", size=11, weight=ft.FontWeight.BOLD, color=ft.Colors.GREY_600))
-            controls.append(ft.Container(
-                content=ft.Text(technical, size=10, selectable=True, color=ft.Colors.GREY_700),
-                bgcolor=ft.Colors.GREY_100,
-                border_radius=10,
-                padding=8,
-            ))
-        self.network_diag.controls = [ft.Container(content=ft.Column(controls, spacing=5), bgcolor=ft.Colors.BLUE_50, border_radius=14, padding=12)]
+            controls.append(
+                ft.Text(
+                    "تفاصيل تقنية:",
+                    size=11,
+                    weight=ft.FontWeight.BOLD,
+                    color=ft.Colors.GREY_600,
+                )
+            )
+            controls.append(
+                ft.Container(
+                    content=ft.Text(
+                        technical, size=10, selectable=True, color=ft.Colors.GREY_700
+                    ),
+                    bgcolor=ft.Colors.GREY_100,
+                    border_radius=10,
+                    padding=8,
+                )
+            )
+        self.network_diag.controls = [
+            ft.Container(
+                content=ft.Column(controls, spacing=5),
+                bgcolor=ft.Colors.BLUE_50,
+                border_radius=14,
+                padding=12,
+            )
+        ]
         self._page.update()
 
     def _show_network_diagnostics(self, e=None):
         try:
             from services.network_diagnostics_service import build_diagnostic_steps
+
             url = self._normalize_server_url()
             self._render_network_diagnostics(
                 "تشخيص الاتصال",
@@ -577,50 +898,97 @@ class SettingsMobileView(ft.Column):
 
     def _test_connection(self, e):
         try:
-            if hasattr(self, 'network_test_btn'):
+            if hasattr(self, "network_test_btn"):
                 self.network_test_btn.disabled = True
-                self.network_test_btn.content = ft.Row([ft.ProgressRing(width=16, height=16), ft.Text("جاري الاختبار")])
+                self.network_test_btn.content = ft.Row(
+                    [ft.ProgressRing(width=16, height=16), ft.Text("جاري الاختبار")]
+                )
                 self._page.update()
             from services.network_service import NetworkService
             from services.network_diagnostics_service import build_diagnostic_steps
-            result = NetworkService.check_connection(self.server_url.value or "")
-            self._show_snackbar(("✅ " if result.ok else "❌ ") + result.message, is_error=not result.ok)
+
+            result = NetworkService.check_connection(
+                self.server_url.value or "",
+                allow_insecure_http=bool(
+                    getattr(self, "allow_insecure_http", None)
+                    and self.allow_insecure_http.value
+                ),
+            )
+            self._show_snackbar(
+                ("✅ " if result.ok else "❌ ") + result.message, is_error=not result.ok
+            )
             if result.ok:
-                self.network_diag.controls = [ft.Container(content=ft.Text(result.message, size=12, color=ft.Colors.GREEN_800), bgcolor=ft.Colors.GREEN_50, border_radius=12, padding=10)]
+                self.network_diag.controls = [
+                    ft.Container(
+                        content=ft.Text(
+                            result.message, size=12, color=ft.Colors.GREEN_800
+                        ),
+                        bgcolor=ft.Colors.GREEN_50,
+                        border_radius=12,
+                        padding=10,
+                    )
+                ]
                 self._page.update()
             else:
-                self._render_network_diagnostics("فشل الاتصال", result.message, build_diagnostic_steps(result.server_url or self.server_url.value or ""))
+                self._render_network_diagnostics(
+                    "فشل الاتصال",
+                    result.message,
+                    build_diagnostic_steps(
+                        result.server_url or self.server_url.value or ""
+                    ),
+                )
         except Exception as ex:
-            from services.network_diagnostics_service import classify_connection_error, build_diagnostic_steps
+            from services.network_diagnostics_service import (
+                classify_connection_error,
+                build_diagnostic_steps,
+            )
+
             url = self.server_url.value or ""
             hint = classify_connection_error(url, ex)
             self._show_snackbar(f"❌ {hint.title}", True)
-            self._render_network_diagnostics(hint.title, hint.message, build_diagnostic_steps(url), hint.technical)
+            self._render_network_diagnostics(
+                hint.title, hint.message, build_diagnostic_steps(url), hint.technical
+            )
         finally:
-            if hasattr(self, 'network_test_btn'):
+            if hasattr(self, "network_test_btn"):
                 self.network_test_btn.disabled = False
-                self.network_test_btn.content = ft.Row([ft.Icon(ft.Icons.NETWORK_CHECK), ft.Text("اختبار الاتصال")])
+                self.network_test_btn.content = ft.Row(
+                    [ft.Icon(ft.Icons.NETWORK_CHECK), ft.Text("اختبار الاتصال")]
+                )
                 self._page.update()
 
     def _save_network(self, e):
         mode_map = {"محلي": "local", "عميل": "client"}
         new_mode = mode_map.get(self.mode_dropdown.value, "local")
         try:
-            if hasattr(self, 'network_save_btn'):
+            if hasattr(self, "network_save_btn"):
                 self.network_save_btn.disabled = True
-                self.network_save_btn.content = ft.Row([ft.ProgressRing(width=16, height=16), ft.Text("جاري الحفظ")])
+                self.network_save_btn.content = ft.Row(
+                    [ft.ProgressRing(width=16, height=16), ft.Text("جاري الحفظ")]
+                )
                 self._page.update()
             from services.network_service import NetworkService
+
             old_mode = DatabaseConnection().mode
-            NetworkService.save_mode(new_mode, self.server_url.value or "")
+            NetworkService.save_mode(
+                new_mode,
+                self.server_url.value or "",
+                allow_insecure_http=bool(
+                    getattr(self, "allow_insecure_http", None)
+                    and self.allow_insecure_http.value
+                ),
+            )
             if old_mode != new_mode:
-                self._show_snackbar("تم حفظ وضع الشبكة. يجب تسجيل الدخول من جديد.", is_error=False)
+                self._show_snackbar(
+                    "تم حفظ وضع الشبكة. يجب تسجيل الدخول من جديد.", is_error=False
+                )
                 try:
                     from views.flet_compat import close_all_dialogs
+
                     close_all_dialogs(self._page)
                 except Exception:
                     pass
-                logout_hook = getattr(self._page, '_hawaa_logout', None)
+                logout_hook = getattr(self._page, "_hawaa_logout", None)
                 if callable(logout_hook):
                     logout_hook()
                 return
@@ -628,84 +996,116 @@ class SettingsMobileView(ft.Column):
         except Exception as ex:
             self._show_snackbar(f"❌ {str(ex)}", True)
         finally:
-            if hasattr(self, 'network_save_btn'):
+            if hasattr(self, "network_save_btn"):
                 self.network_save_btn.disabled = False
                 self.network_save_btn.content = ft.Text("حفظ")
                 self._page.update()
 
     def _backup_tab(self):
         backup_btn = ft.FilledButton(
-            content=ft.Row([ft.Icon(ft.Icons.BACKUP), ft.Text("إنشاء ومشاركة نسخة احتياطية")]),
+            content=ft.Row(
+                [ft.Icon(ft.Icons.BACKUP), ft.Text("إنشاء ومشاركة نسخة احتياطية")]
+            ),
             bgcolor=ft.Colors.GREEN,
             color=ft.Colors.WHITE,
-            on_click=self._perform_backup
+            on_click=self._perform_backup,
         )
         export_btn = ft.FilledButton(
-            content=ft.Row([ft.Icon(ft.Icons.IOS_SHARE), ft.Text("تصدير CSV ومشاركته")]),
-            on_click=self._export_csv
+            content=ft.Row(
+                [ft.Icon(ft.Icons.IOS_SHARE), ft.Text("تصدير CSV ومشاركته")]
+            ),
+            on_click=self._export_csv,
         )
         import_btn = ft.OutlinedButton(
-            content=ft.Row([ft.Icon(ft.Icons.RESTORE), ft.Text("استيراد نسخة احتياطية خارجية")]),
-            on_click=self._pick_backup_to_restore
+            content=ft.Row(
+                [ft.Icon(ft.Icons.RESTORE), ft.Text("استيراد نسخة احتياطية خارجية")]
+            ),
+            on_click=self._pick_backup_to_restore,
         )
         import_latest_btn = ft.OutlinedButton(
-            content=ft.Row([ft.Icon(ft.Icons.RESTORE), ft.Text("استيراد آخر نسخة محفوظة داخليًا")]),
-            on_click=self._restore_latest_internal_backup
+            content=ft.Row(
+                [ft.Icon(ft.Icons.RESTORE), ft.Text("استيراد آخر نسخة محفوظة داخليًا")]
+            ),
+            on_click=self._restore_latest_internal_backup,
         )
         import_download_btn = ft.OutlinedButton(
-            content=ft.Row([ft.Icon(ft.Icons.FOLDER_OPEN), ft.Text("استيراد من Download/Hawaa")]),
-            on_click=self._restore_from_public_downloads
+            content=ft.Row(
+                [ft.Icon(ft.Icons.FOLDER_OPEN), ft.Text("استيراد من Download/Hawaa")]
+            ),
+            on_click=self._restore_from_public_downloads,
         )
         restore_diag_btn = ft.TextButton(
-            content=ft.Row([ft.Icon(ft.Icons.BUG_REPORT_OUTLINED), ft.Text("تشخيص الاستيراد")]),
-            on_click=self._show_restore_diagnostics
+            content=ft.Row(
+                [ft.Icon(ft.Icons.BUG_REPORT_OUTLINED), ft.Text("تشخيص الاستيراد")]
+            ),
+            on_click=self._show_restore_diagnostics,
         )
         vacuum_btn = ft.FilledButton(
             content=ft.Row([ft.Icon(ft.Icons.COMPRESS), ft.Text("ضغط قاعدة البيانات")]),
-            on_click=self._vacuum_db
+            on_click=self._vacuum_db,
         )
         reset_btn = ft.FilledButton(
             content=ft.Row([ft.Icon(ft.Icons.WARNING), ft.Text("إعادة تهيئة النظام")]),
             bgcolor=ft.Colors.RED,
             color=ft.Colors.WHITE,
-            on_click=self._reset_db_dialog
+            on_click=self._reset_db_dialog,
         )
-        return ft.Column([
-            info_banner(
-                "استيراد النسخة الخارجية يستخدم منتقي ملفات Android أولًا. إذا لم يرجع المنتقي نتيجة، استخدم زر Download/Hawaa أو افتح التشخيص. لا يتم طلب صلاحيات التخزين داخل زر الاستيراد حتى لا يتجمد الحدث.",
-                icon=ft.Icons.FOLDER_SHARED,
-            ),
-            backup_btn,
-            export_btn,
-            import_btn,
-            import_latest_btn,
-            import_download_btn,
-            restore_diag_btn,
-            vacuum_btn,
-            ft.Divider(),
-            ft.Text("⚠️ إعادة التهيئة تحذف جميع البيانات نهائياً", color=ft.Colors.RED, size=12),
-            reset_btn
-        ], spacing=15)
+        return ft.Column(
+            [
+                info_banner(
+                    "استيراد النسخة الخارجية يستخدم منتقي ملفات Android أولًا. إذا لم يرجع المنتقي نتيجة، استخدم زر Download/Hawaa أو افتح التشخيص. لا يتم طلب صلاحيات التخزين داخل زر الاستيراد حتى لا يتجمد الحدث.",
+                    icon=ft.Icons.FOLDER_SHARED,
+                ),
+                info_banner(
+                    "تنبيه أمني: النسخة الاحتياطية تحتوي البيانات المحاسبية وحسابات المستخدمين وتجزئات كلمات المرور، لكنها لا تحتوي رمز جلسة الشبكة. خزّنها في مكان موثوق ولا تشاركها دون ضرورة.",
+                    icon=ft.Icons.SECURITY,
+                ),
+                backup_btn,
+                export_btn,
+                import_btn,
+                import_latest_btn,
+                import_download_btn,
+                restore_diag_btn,
+                vacuum_btn,
+                ft.Divider(),
+                ft.Text(
+                    "⚠️ إعادة التهيئة تحذف جميع البيانات نهائياً",
+                    color=ft.Colors.RED,
+                    size=12,
+                ),
+                reset_btn,
+            ],
+            spacing=15,
+        )
 
     async def _perform_backup(self, e):
         try:
             from services.file_export_service import FileExportService
+
             backup_path = FileExportService.create_backup_archive()
             result = await FileExportService.share_file_async(
                 self._page,
                 backup_path,
-                "نسخة احتياطية من نظام هوى الشام. احتفظ بها في مكان آمن.",
+                "نسخة احتياطية من نظام هوى الشام. تحتوي بيانات محاسبية وحسابات مستخدمين؛ احتفظ بها في مكان آمن ولا تشاركها دون ضرورة.",
                 open_whatsapp=False,
                 title="مشاركة نسخة احتياطية",
             )
-            self._show_snackbar(result.message if result.ok else result.message or f"تم إنشاء النسخة الاحتياطية: {backup_path}", is_error=not result.ok)
+            self._show_snackbar(
+                result.message
+                if result.ok
+                else result.message or f"تم إنشاء النسخة الاحتياطية: {backup_path}",
+                is_error=not result.ok,
+            )
         except Exception as ex:
             self._show_snackbar(f"فشل النسخ الاحتياطي: {str(ex)}", True)
 
     async def _export_csv(self, e):
         try:
             from services.file_export_service import FileExportService
-            export_path = FileExportService.create_csv_archive(['expenses', 'users', 'audit_log'])
+
+            export_path = FileExportService.create_csv_archive(
+                ["expenses", "users", "audit_log"]
+            )
             result = await FileExportService.share_file_async(
                 self._page,
                 export_path,
@@ -713,7 +1113,12 @@ class SettingsMobileView(ft.Column):
                 open_whatsapp=False,
                 title="مشاركة تصدير CSV",
             )
-            self._show_snackbar(result.message if result.ok else result.message or f"تم إنشاء ملف CSV: {export_path}", is_error=not result.ok)
+            self._show_snackbar(
+                result.message
+                if result.ok
+                else result.message or f"تم إنشاء ملف CSV: {export_path}",
+                is_error=not result.ok,
+            )
         except Exception as ex:
             self._show_snackbar(f"فشل التصدير: {str(ex)}", True)
 
@@ -730,19 +1135,27 @@ class SettingsMobileView(ft.Column):
         try:
             from database.connection import DatabaseConnection
             from services.file_export_service import FileExportService
+
             if DatabaseConnection().is_remote():
-                self._show_snackbar("أنت في وضع العميل. الاستعادة تتم من نسخة Windows فقط. غيّر الوضع إلى محلي لاستعادة نسخة داخل الهاتف.", True)
+                self._show_snackbar(
+                    "أنت في وضع العميل. الاستعادة تتم من نسخة Windows فقط. غيّر الوضع إلى محلي لاستعادة نسخة داخل الهاتف.",
+                    True,
+                )
                 return
 
             self._restore_picker_result_seen = False
-            self._show_snackbar("جاري فتح اختيار النسخة الاحتياطية...", False, duration=1800)
+            self._show_snackbar(
+                "جاري فتح اختيار النسخة الاحتياطية...", False, duration=1800
+            )
             FileExportService.log_restore_event("restore picker button tapped")
 
             self._restore_file_picker = make_file_picker(self._on_restore_backup_picked)
             picker = self._restore_file_picker
             attach_service_control(self._page, picker)
             if not service_control_attached(picker):
-                FileExportService.log_restore_event("restore picker not attached; opening fallback dialog")
+                FileExportService.log_restore_event(
+                    "restore picker not attached; opening fallback dialog"
+                )
                 self._open_restore_fallback_dialog(filepicker_unavailable_message())
                 return
 
@@ -757,7 +1170,10 @@ class SettingsMobileView(ft.Column):
                 pass
             try:
                 import datetime as _dt
-                self._restore_picker_opened_at = _dt.datetime.now().isoformat(timespec="seconds")
+
+                self._restore_picker_opened_at = _dt.datetime.now().isoformat(
+                    timespec="seconds"
+                )
             except Exception:
                 self._restore_picker_opened_at = "started"
 
@@ -768,14 +1184,19 @@ class SettingsMobileView(ft.Column):
             run_async_task(self._page, self._restore_picker_watchdog)
 
             try:
-                FileExportService.log_restore_event("opening native picker with_data=True")
+                FileExportService.log_restore_event(
+                    "opening native picker with_data=True"
+                )
                 picker.pick_files(with_data=True, **pick_kwargs)
             except TypeError:
-                FileExportService.log_restore_event("with_data unsupported; opening picker without bytes")
+                FileExportService.log_restore_event(
+                    "with_data unsupported; opening picker without bytes"
+                )
                 picker.pick_files(**pick_kwargs)
         except Exception as ex:
             try:
                 from services.file_export_service import FileExportService
+
                 FileExportService.log_restore_event(f"restore picker open failed: {ex}")
             except Exception:
                 pass
@@ -787,7 +1208,10 @@ class SettingsMobileView(ft.Column):
             if bool(getattr(self, "_restore_picker_result_seen", False)):
                 return
             from services.file_export_service import FileExportService
-            FileExportService.log_restore_event("restore picker watchdog: no on_result after timeout")
+
+            FileExportService.log_restore_event(
+                "restore picker watchdog: no on_result after timeout"
+            )
             self._open_restore_fallback_dialog(
                 "تم فتح منتقي الملفات، لكن لم يرجع أي نتيجة إلى التطبيق خلال المهلة. "
                 "هذا يعني أن المشكلة في callback الخاص بـ Flet/Android وليس في قاعدة البيانات. "
@@ -808,27 +1232,40 @@ class SettingsMobileView(ft.Column):
         this can make the button look unresponsive.  Now the button immediately
         shows feedback, then scans in a task/thread.
         """
-        self._show_snackbar("جاري البحث عن نسخ في Download/Hawaa...", False, duration=2000)
+        self._show_snackbar(
+            "جاري البحث عن نسخ في Download/Hawaa...", False, duration=2000
+        )
         run_async_task(self._page, self._restore_from_public_downloads_async)
 
     async def _restore_from_public_downloads_async(self):
         try:
             from database.connection import DatabaseConnection
+
             if DatabaseConnection().is_remote():
-                self._show_snackbar("أنت في وضع العميل. الاستعادة تتم من نسخة Windows فقط. غيّر الوضع إلى محلي أولاً.", True)
+                self._show_snackbar(
+                    "أنت في وضع العميل. الاستعادة تتم من نسخة Windows فقط. غيّر الوضع إلى محلي أولاً.",
+                    True,
+                )
                 return
             from services.file_export_service import FileExportService
+
             FileExportService.log_restore_event("scan external downloads requested")
 
             # Do the filesystem walk/ZIP validation away from the UI callback.
             try:
-                found = await asyncio.to_thread(FileExportService.find_external_backup_archives, 8, validate=True)
+                found = await asyncio.to_thread(
+                    FileExportService.find_external_backup_archives, 8, validate=True
+                )
             except AttributeError:
-                found = FileExportService.find_external_backup_archives(limit=8, validate=True)
+                found = FileExportService.find_external_backup_archives(
+                    limit=8, validate=True
+                )
 
             if not found:
                 log_path = FileExportService.restore_log_path()
-                self._show_snackbar("لم أجد نسخة صالحة في Download/Hawaa أو Download.", True)
+                self._show_snackbar(
+                    "لم أجد نسخة صالحة في Download/Hawaa أو Download.", True
+                )
                 self._open_restore_fallback_dialog(
                     "لم يتم العثور على ZIP/DB صالح في المجلدات العامة. "
                     "انقل النسخة إلى Download/Hawaa ثم اضغط زر: استيراد من Download/Hawaa.\n\n"
@@ -836,13 +1273,23 @@ class SettingsMobileView(ft.Column):
                 )
                 return
             controls = [
-                info_banner("اختر النسخة الخارجية التي تريد استعادتها. سيتم عرض تأكيد قبل الاستيراد.", icon=ft.Icons.FOLDER_OPEN)
+                info_banner(
+                    "اختر النسخة الخارجية التي تريد استعادتها. سيتم عرض تأكيد قبل الاستيراد.",
+                    icon=ft.Icons.FOLDER_OPEN,
+                )
             ]
             dlg = ft.AlertDialog(
                 modal=True,
                 title=ft.Text("نسخ خارجية تم العثور عليها", weight=ft.FontWeight.BOLD),
-                content=ft.Container(width=460, content=ft.Column(controls, tight=True, spacing=8, scroll=ft.ScrollMode.AUTO)),
-                actions=[ft.TextButton("إغلاق", on_click=lambda ev: self._close_dialog(dlg))],
+                content=ft.Container(
+                    width=460,
+                    content=ft.Column(
+                        controls, tight=True, spacing=8, scroll=ft.ScrollMode.AUTO
+                    ),
+                ),
+                actions=[
+                    ft.TextButton("إغلاق", on_click=lambda ev: self._close_dialog(dlg))
+                ],
             )
             for path in found:
                 try:
@@ -851,15 +1298,26 @@ class SettingsMobileView(ft.Column):
                     label = os.path.basename(path)
                 controls.append(
                     ft.OutlinedButton(
-                        content=ft.Row([ft.Icon(ft.Icons.ARCHIVE_OUTLINED), ft.Text(label, overflow=ft.TextOverflow.ELLIPSIS)], alignment=ft.MainAxisAlignment.START),
-                        on_click=lambda ev, p=path, d=dlg: self._restore_from_fallback_path(p, d),
+                        content=ft.Row(
+                            [
+                                ft.Icon(ft.Icons.ARCHIVE_OUTLINED),
+                                ft.Text(label, overflow=ft.TextOverflow.ELLIPSIS),
+                            ],
+                            alignment=ft.MainAxisAlignment.START,
+                        ),
+                        on_click=lambda ev, p=path, d=dlg: (
+                            self._restore_from_fallback_path(p, d)
+                        ),
                     )
                 )
             open_control(self._page, dlg)
         except Exception as ex:
             try:
                 from services.file_export_service import FileExportService
-                FileExportService.log_restore_event(f"scan external downloads failed: {ex}")
+
+                FileExportService.log_restore_event(
+                    f"scan external downloads failed: {ex}"
+                )
             except Exception:
                 pass
             self._show_snackbar(f"فشل فحص النسخ الخارجية: {ex}", True)
@@ -867,17 +1325,25 @@ class SettingsMobileView(ft.Column):
     def _restore_latest_internal_backup(self, e=None):
         try:
             from database.connection import DatabaseConnection
+
             if DatabaseConnection().is_remote():
-                self._show_snackbar("أنت في وضع العميل. الاستعادة تتم من نسخة Windows فقط. غيّر الوضع إلى محلي لاستعادة نسخة داخل الهاتف.", True)
+                self._show_snackbar(
+                    "أنت في وضع العميل. الاستعادة تتم من نسخة Windows فقط. غيّر الوضع إلى محلي لاستعادة نسخة داخل الهاتف.",
+                    True,
+                )
                 return
             from services.file_export_service import FileExportService
+
             recent = FileExportService.find_recent_backup_archives(limit=1)
             if not recent:
-                self._show_snackbar("لا توجد نسخة محفوظة داخليًا. أنشئ نسخة احتياطية أولًا أو اختر ملف ZIP/DB من منتقي الملفات.", True)
+                self._show_snackbar(
+                    "لا توجد نسخة محفوظة داخليًا. أنشئ نسخة احتياطية أولًا أو اختر ملف ZIP/DB من منتقي الملفات.",
+                    True,
+                )
                 return
             path = recent[0]
             info = FileExportService.inspect_backup_archive(path)
-            counts = info.get('counts', {})
+            counts = info.get("counts", {})
             msg = (
                 "سيتم استيراد آخر نسخة محفوظة داخل التطبيق واستبدال البيانات الحالية. سيتم إنشاء نسخة أمان قبل الاستعادة.\n\n"
                 f"المصدر: {os.path.basename(path)}\n"
@@ -889,18 +1355,25 @@ class SettingsMobileView(ft.Column):
                 content=ft.Text(msg, selectable=True),
                 actions=[
                     ft.TextButton("إلغاء", on_click=lambda ev: self._close_dialog(dlg)),
-                    ft.FilledButton("استيراد الآن", bgcolor=ft.Colors.RED, color=ft.Colors.WHITE, on_click=lambda ev, p=path, d=dlg: self._confirm_restore_backup(p, d)),
+                    ft.FilledButton(
+                        "استيراد الآن",
+                        bgcolor=ft.Colors.RED,
+                        color=ft.Colors.WHITE,
+                        on_click=lambda ev, p=path: self._confirm_restore_backup(
+                            p, dlg
+                        ),
+                    ),
                 ],
             )
             open_control(self._page, dlg)
         except Exception as ex:
             self._show_snackbar(f"تعذر استيراد آخر نسخة محفوظة: {ex}", True)
 
-
     def _open_restore_fallback_dialog(self, reason: str = ""):
         """Fallback restore path when Flet FilePicker is not available on APK."""
         try:
             from services.file_export_service import FileExportService
+
             recent = FileExportService.find_recent_backup_archives(limit=6)
         except Exception:
             recent = []
@@ -916,7 +1389,9 @@ class SettingsMobileView(ft.Column):
         )
         recent_controls = []
         if recent:
-            recent_controls.append(ft.Text("نسخ أنشأها التطبيق مؤخرًا:", size=12, weight=ft.FontWeight.BOLD))
+            recent_controls.append(
+                ft.Text("نسخ أنشأها التطبيق مؤخرًا:", size=12, weight=ft.FontWeight.BOLD)
+            )
             for path in recent:
                 try:
                     label = FileExportService.describe_backup_file(path)
@@ -924,28 +1399,61 @@ class SettingsMobileView(ft.Column):
                     label = os.path.basename(path)
                 recent_controls.append(
                     ft.OutlinedButton(
-                        content=ft.Row([ft.Icon(ft.Icons.ARCHIVE_OUTLINED), ft.Text(label, overflow=ft.TextOverflow.ELLIPSIS)], alignment=ft.MainAxisAlignment.START),
-                        on_click=lambda ev, p=path: self._restore_from_fallback_path(p, dlg),
+                        content=ft.Row(
+                            [
+                                ft.Icon(ft.Icons.ARCHIVE_OUTLINED),
+                                ft.Text(label, overflow=ft.TextOverflow.ELLIPSIS),
+                            ],
+                            alignment=ft.MainAxisAlignment.START,
+                        ),
+                        on_click=lambda ev, p=path: self._restore_from_fallback_path(
+                            p, dlg
+                        ),
                     )
                 )
         else:
-            recent_controls.append(ft.Text("لم يتم العثور على نسخ احتياطية داخل تخزين التطبيق. أنشئ نسخة أولًا أو الصق مسار ملف ZIP/DB يدويًا.", size=11, color=ft.Colors.GREY_700))
+            recent_controls.append(
+                ft.Text(
+                    "لم يتم العثور على نسخ احتياطية داخل تخزين التطبيق. أنشئ نسخة أولًا أو الصق مسار ملف ZIP/DB يدويًا.",
+                    size=11,
+                    color=ft.Colors.GREY_700,
+                )
+            )
 
         dlg = ft.AlertDialog(
             modal=True,
-            title=ft.Text("استيراد نسخة احتياطية بدون FilePicker", weight=ft.FontWeight.BOLD),
+            title=ft.Text(
+                "استيراد نسخة احتياطية بدون FilePicker", weight=ft.FontWeight.BOLD
+            ),
             content=ft.Container(
                 width=430,
-                content=ft.Column([
-                    info_banner("نسخة Flet/Android الحالية لا تدعم منتقي الملفات. يمكنك استيراد آخر نسخة أنشأها التطبيق أو لصق مسار ملف ZIP/DB داخل تخزين التطبيق.", icon=ft.Icons.INFO),
-                    ft.Text(reason or "", size=10, color=ft.Colors.GREY_600, selectable=True),
-                    *recent_controls,
-                    ft.Divider(),
-                    path_field,
-                ], tight=True, spacing=10),
+                content=ft.Column(
+                    [
+                        info_banner(
+                            "نسخة Flet/Android الحالية لا تدعم منتقي الملفات. يمكنك استيراد آخر نسخة أنشأها التطبيق أو لصق مسار ملف ZIP/DB داخل تخزين التطبيق.",
+                            icon=ft.Icons.INFO,
+                        ),
+                        ft.Text(
+                            reason or "",
+                            size=10,
+                            color=ft.Colors.GREY_600,
+                            selectable=True,
+                        ),
+                        *recent_controls,
+                        ft.Divider(),
+                        path_field,
+                    ],
+                    tight=True,
+                    spacing=10,
+                ),
             ),
             actions=[
-                ft.FilledButton("استيراد من المسار", on_click=lambda ev: self._restore_from_fallback_path(path_field.value or "", dlg)),
+                ft.FilledButton(
+                    "استيراد من المسار",
+                    on_click=lambda ev: self._restore_from_fallback_path(
+                        path_field.value or "", dlg
+                    ),
+                ),
                 ft.TextButton("إلغاء", on_click=lambda ev: self._close_dialog(dlg)),
             ],
         )
@@ -983,39 +1491,67 @@ class SettingsMobileView(ft.Column):
             self._show_snackbar("لم يتم تحديد مسار نسخة احتياطية", True)
             return
         if self._restore_operation_busy:
-            self._show_snackbar("توجد عملية استيراد قيد التنفيذ. انتظر حتى تنتهي.", True)
+            self._show_snackbar(
+                "توجد عملية استيراد قيد التنفيذ. انتظر حتى تنتهي.", True
+            )
             return
         self._restore_operation_busy = True
         try:
             from services.file_export_service import FileExportService
-            FileExportService.log_restore_event(f"direct restore requested from {origin}: {path}")
+
+            FileExportService.log_restore_event(
+                f"direct restore requested from {origin}: {path}"
+            )
         except Exception:
             pass
-        self._show_snackbar("تم اختيار النسخة. جاري التحقق والاستيراد الآن...", False, duration=2500)
-        run_async_task(self._page, self._restore_selected_backup_path_async, path, origin)
+        self._show_snackbar(
+            "تم اختيار النسخة. جاري التحقق والاستيراد الآن...", False, duration=2500
+        )
+        run_async_task(
+            self._page, self._restore_selected_backup_path_async, path, origin
+        )
 
-    async def _restore_selected_backup_path_async(self, path: str, origin: str = "unknown"):
+    async def _restore_selected_backup_path_async(
+        self, path: str, origin: str = "unknown"
+    ):
         try:
             from services.file_export_service import FileExportService
             from database.connection import DatabaseConnection
+
             try:
-                FileExportService.log_restore_event(f"restore async start origin={origin} path={path}")
-                inspected = await asyncio.to_thread(FileExportService.inspect_backup_archive, path)
-                FileExportService.log_restore_event(f"restore inspect ok origin={origin} info={inspected}")
-                result = await asyncio.to_thread(FileExportService.restore_backup_archive, path)
+                FileExportService.log_restore_event(
+                    f"restore async start origin={origin} path={path}"
+                )
+                inspected = await asyncio.to_thread(
+                    FileExportService.inspect_backup_archive, path
+                )
+                FileExportService.log_restore_event(
+                    f"restore inspect ok origin={origin} info={inspected}"
+                )
+                result = await asyncio.to_thread(
+                    FileExportService.restore_backup_archive, path
+                )
             except AttributeError:
-                FileExportService.log_restore_event(f"restore async fallback sync origin={origin} path={path}")
+                FileExportService.log_restore_event(
+                    f"restore async fallback sync origin={origin} path={path}"
+                )
                 inspected = FileExportService.inspect_backup_archive(path)
-                FileExportService.log_restore_event(f"restore inspect ok origin={origin} info={inspected}")
+                FileExportService.log_restore_event(
+                    f"restore inspect ok origin={origin} info={inspected}"
+                )
                 result = FileExportService.restore_backup_archive(path)
-            safety = result.get('safety_backup')
-            counts = result.get('verified_counts') or (result.get('inspected') or {}).get('counts', {})
+            safety = result.get("safety_backup")
+            counts = result.get("verified_counts") or (
+                result.get("inspected") or {}
+            ).get("counts", {})
             try:
                 DatabaseConnection.reset_after_restore()
             except Exception:
                 pass
             try:
-                FileExportService.log_restore_event(f"restore ui refresh start counts={counts}")
+                FileExportService.log_restore_event(
+                    f"restore ui refresh start counts={counts}"
+                )
             except Exception:
                 pass
             self._refresh_after_restore()
@@ -1023,7 +1559,10 @@ class SettingsMobileView(ft.Column):
         except Exception as ex:
             try:
                 from services.file_export_service import FileExportService
-                FileExportService.log_restore_event(f"direct restore failed origin={origin} path={path}: {ex}")
+
+                FileExportService.log_restore_event(
+                    f"direct restore failed origin={origin} path={path}: {ex}"
+                )
             except Exception:
                 pass
             self._open_restore_error_dialog(path, ex)
@@ -1033,6 +1572,7 @@ class SettingsMobileView(ft.Column):
     def _open_restore_error_dialog(self, path: str, error: Exception):
         try:
             from services.file_export_service import FileExportService
+
             log_tail = "\n".join(FileExportService.read_restore_log_tail(30))
             log_path = FileExportService.restore_log_path()
         except Exception:
@@ -1048,8 +1588,12 @@ class SettingsMobileView(ft.Column):
         dlg = ft.AlertDialog(
             modal=True,
             title=ft.Text("فشل استيراد النسخة", weight=ft.FontWeight.BOLD),
-            content=ft.Container(width=430, content=ft.Text(msg, selectable=True, size=11)),
-            actions=[ft.TextButton("إغلاق", on_click=lambda ev: self._close_dialog(dlg))],
+            content=ft.Container(
+                width=430, content=ft.Text(msg, selectable=True, size=11)
+            ),
+            actions=[
+                ft.TextButton("إغلاق", on_click=lambda ev: self._close_dialog(dlg))
+            ],
         )
         try:
             open_control(self._page, dlg)
@@ -1071,14 +1615,31 @@ class SettingsMobileView(ft.Column):
             title=ft.Text("اختيار شعار بدون FilePicker", weight=ft.FontWeight.BOLD),
             content=ft.Container(
                 width=420,
-                content=ft.Column([
-                    info_banner("نسخة Flet/Android الحالية لا تدعم منتقي الملفات. انسخ صورة الشعار إلى تخزين التطبيق أو أدخل مسارًا قابلًا للقراءة.", icon=ft.Icons.IMAGE),
-                    ft.Text(reason or "", size=10, color=ft.Colors.GREY_600, selectable=True),
-                    path_field,
-                ], tight=True, spacing=10),
+                content=ft.Column(
+                    [
+                        info_banner(
+                            "نسخة Flet/Android الحالية لا تدعم منتقي الملفات. انسخ صورة الشعار إلى تخزين التطبيق أو أدخل مسارًا قابلًا للقراءة.",
+                            icon=ft.Icons.IMAGE,
+                        ),
+                        ft.Text(
+                            reason or "",
+                            size=10,
+                            color=ft.Colors.GREY_600,
+                            selectable=True,
+                        ),
+                        path_field,
+                    ],
+                    tight=True,
+                    spacing=10,
+                ),
             ),
             actions=[
-                ft.FilledButton("استخدام هذا الشعار", on_click=lambda ev: self._import_logo_from_path(path_field.value or "", dlg)),
+                ft.FilledButton(
+                    "استخدام هذا الشعار",
+                    on_click=lambda ev: self._import_logo_from_path(
+                        path_field.value or "", dlg
+                    ),
+                ),
                 ft.TextButton("إلغاء", on_click=lambda ev: self._close_dialog(dlg)),
             ],
         )
@@ -1093,6 +1654,7 @@ class SettingsMobileView(ft.Column):
             if dialog is not None:
                 self._close_dialog(dialog)
             from services.company_logo_service import import_logo
+
             stored = import_logo(source_path)
             self.company_logo.value = stored
             self.logo_preview.content = self._logo_preview_control(stored)
@@ -1104,13 +1666,16 @@ class SettingsMobileView(ft.Column):
     def _on_restore_backup_picked(self, e):
         try:
             self._restore_picker_result_seen = True
-            self._show_snackbar("تم استلام الملف من Android، جاري فحص النسخة...", False, duration=1800)
+            self._show_snackbar(
+                "تم استلام الملف من Android، جاري فحص النسخة...", False, duration=1800
+            )
             from services.file_export_service import FileExportService
+
             try:
                 FileExportService.log_restore_event("on_result received: " + str(e))
             except Exception:
                 pass
-            files = getattr(e, 'files', None) or []
+            files = getattr(e, "files", None) or []
             if not files:
                 FileExportService.log_restore_event("on_result without files")
                 self._show_snackbar("لم يتم اختيار ملف", False)
@@ -1123,12 +1688,16 @@ class SettingsMobileView(ft.Column):
                 # display name and the file is readable in Download/Hawaa after
                 # storage permission.
                 try:
-                    external = FileExportService.find_external_backup_archives(limit=1, validate=True)
+                    external = FileExportService.find_external_backup_archives(
+                        limit=1, validate=True
+                    )
                 except Exception:
                     external = []
                 if external:
                     path = external[0]
-                    FileExportService.log_restore_event("using external scan fallback: " + path)
+                    FileExportService.log_restore_event(
+                        "using external scan fallback: " + path
+                    )
                 else:
                     self._open_restore_fallback_dialog(
                         "فتح Android منتقي الملفات، لكن Runtime لم يعطِ التطبيق مسارًا ولا bytes قابلة للاستيراد. "
@@ -1143,7 +1712,10 @@ class SettingsMobileView(ft.Column):
         except Exception as ex:
             try:
                 from services.file_export_service import FileExportService
-                FileExportService.log_restore_event(f"restore picker handler failed: {ex}")
+
+                FileExportService.log_restore_event(
+                    f"restore picker handler failed: {ex}"
+                )
             except Exception:
                 pass
             self._open_restore_error_dialog("FilePicker", ex)
@@ -1160,12 +1732,17 @@ class SettingsMobileView(ft.Column):
         try:
             from services.file_export_service import FileExportService
             from database.connection import DatabaseConnection
+
             try:
-                result = await asyncio.to_thread(FileExportService.restore_backup_archive, path)
+                result = await asyncio.to_thread(
+                    FileExportService.restore_backup_archive, path
+                )
             except AttributeError:
                 result = FileExportService.restore_backup_archive(path)
-            safety = result.get('safety_backup')
-            counts = result.get('verified_counts') or (result.get('inspected') or {}).get('counts', {})
+            safety = result.get("safety_backup")
+            counts = result.get("verified_counts") or (
+                result.get("inspected") or {}
+            ).get("counts", {})
             try:
                 DatabaseConnection.reset_after_restore()
             except Exception:
@@ -1175,12 +1752,17 @@ class SettingsMobileView(ft.Column):
         except Exception as ex:
             try:
                 from services.file_export_service import FileExportService
-                FileExportService.log_restore_event(f"restore failed in async confirm: {ex}")
+
+                FileExportService.log_restore_event(
+                    f"restore failed in async confirm: {ex}"
+                )
             except Exception:
                 pass
             self._show_snackbar(f"فشل استيراد النسخة: {ex}", True)
 
-    def _show_restore_success_dialog(self, counts: dict, safety_backup: str | None = None):
+    def _show_restore_success_dialog(
+        self, counts: dict, safety_backup: str | None = None
+    ):
         try:
             msg = (
                 "تم استيراد النسخة الاحتياطية والتحقق من قاعدة البيانات.\n\n"
@@ -1192,10 +1774,17 @@ class SettingsMobileView(ft.Column):
             if safety_backup:
                 msg += f"\n\nتم حفظ نسخة أمان من البيانات السابقة: {os.path.basename(safety_backup)}"
             dlg = ft.AlertDialog(
-                title=ft.Text("تم الاستيراد بنجاح", weight=ft.FontWeight.BOLD, color=ft.Colors.GREEN),
+                title=ft.Text(
+                    "تم الاستيراد بنجاح",
+                    weight=ft.FontWeight.BOLD,
+                    color=ft.Colors.GREEN,
+                ),
                 content=ft.Text(msg, selectable=True),
                 actions=[
-                    ft.FilledButton("فتح حسابات هوى الشام", on_click=lambda ev: self._after_restore_open_accounts(dlg)),
+                    ft.FilledButton(
+                        "فتح حسابات هوى الشام",
+                        on_click=lambda ev: self._after_restore_open_accounts(dlg),
+                    ),
                     ft.TextButton("إغلاق", on_click=lambda ev: self._close_dialog(dlg)),
                 ],
             )
@@ -1209,14 +1798,14 @@ class SettingsMobileView(ft.Column):
         except Exception:
             pass
         try:
-            rebuild = getattr(self._page, '_hawaa_rebuild_main', None)
+            rebuild = getattr(self._page, "_hawaa_rebuild_main", None)
             if callable(rebuild):
                 rebuild()
                 return
         except Exception:
             pass
         try:
-            refresh = getattr(self._page, '_hawaa_refresh_current_page', None)
+            refresh = getattr(self._page, "_hawaa_refresh_current_page", None)
             if callable(refresh):
                 refresh()
         except Exception:
@@ -1228,9 +1817,9 @@ class SettingsMobileView(ft.Column):
         except Exception:
             pass
         try:
-            open_page = getattr(self._page, '_hawaa_open_page', None)
+            open_page = getattr(self._page, "_hawaa_open_page", None)
             if callable(open_page):
-                open_page('accounts')
+                open_page("accounts")
                 return
         except Exception:
             pass
@@ -1239,6 +1828,7 @@ class SettingsMobileView(ft.Column):
     def _show_restore_diagnostics(self, e=None):
         try:
             from services.file_export_service import FileExportService
+
             log_path = FileExportService.restore_log_path()
             try:
                 with open(log_path, "r", encoding="utf-8") as f:
@@ -1260,8 +1850,17 @@ class SettingsMobileView(ft.Column):
             dlg = ft.AlertDialog(
                 modal=True,
                 title=ft.Text("تشخيص الاستيراد", weight=ft.FontWeight.BOLD),
-                content=ft.Container(width=480, height=520, content=ft.Column([ft.Text(msg, selectable=True, size=11)], scroll=ft.ScrollMode.AUTO)),
-                actions=[ft.TextButton("إغلاق", on_click=lambda ev: self._close_dialog(dlg))],
+                content=ft.Container(
+                    width=480,
+                    height=520,
+                    content=ft.Column(
+                        [ft.Text(msg, selectable=True, size=11)],
+                        scroll=ft.ScrollMode.AUTO,
+                    ),
+                ),
+                actions=[
+                    ft.TextButton("إغلاق", on_click=lambda ev: self._close_dialog(dlg))
+                ],
             )
             open_control(self._page, dlg)
         except Exception as ex:
@@ -1270,6 +1869,7 @@ class SettingsMobileView(ft.Column):
     def _vacuum_db(self, e):
         try:
             from database.connection import DatabaseConnection
+
             db = DatabaseConnection()
             if db.is_remote():
                 self._show_snackbar("لا يمكن ضغط قاعدة البيانات في وضع العميل", True)
@@ -1284,13 +1884,16 @@ class SettingsMobileView(ft.Column):
         def confirm_reset(e):
             self._perform_reset()
             self._close_dialog(dlg)
+
         dlg = ft.AlertDialog(
             title=ft.Text("⚠️ تحذير نهائي", color=ft.Colors.RED),
-            content=ft.Text("سيتم حذف جميع القيود والمستخدمين وسجل التدقيق.\nلا يمكن التراجع عن هذا الإجراء.\nهل أنت متأكد؟"),
+            content=ft.Text(
+                "سيتم حذف جميع القيود والمستخدمين وسجل التدقيق.\nلا يمكن التراجع عن هذا الإجراء.\nهل أنت متأكد؟"
+            ),
             actions=[
                 ft.TextButton("نعم", on_click=confirm_reset),
-                ft.TextButton("لا", on_click=lambda e: self._close_dialog(dlg))
-            ]
+                ft.TextButton("لا", on_click=lambda e: self._close_dialog(dlg)),
+            ],
         )
         open_control(self._page, dlg)
 
@@ -1298,6 +1901,7 @@ class SettingsMobileView(ft.Column):
         try:
             from database.migrations import init_database
             from database.connection import DatabaseConnection
+
             db = DatabaseConnection()
             if db.is_remote():
                 self._show_snackbar("لا يمكن إعادة التهيئة في وضع العميل", True)
@@ -1311,7 +1915,9 @@ class SettingsMobileView(ft.Column):
             conn.execute("DROP TABLE IF EXISTS token_blacklist")
             conn.commit()
             init_database()
-            self._show_snackbar("تم إعادة تهيئة النظام بنجاح. يرجى إعادة تشغيل التطبيق.", is_error=False)
+            self._show_snackbar(
+                "تم إعادة تهيئة النظام بنجاح. يرجى إعادة تشغيل التطبيق.", is_error=False
+            )
             run_async_task(self._page, self._restart_app)
         except Exception as ex:
             self._show_snackbar(f"فشل إعادة التهيئة: {str(ex)}", True)

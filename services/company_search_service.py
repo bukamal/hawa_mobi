@@ -5,6 +5,7 @@ The Android UI needs to find companies through the text stored inside their
 ledger entries, not only by company name.  Keep the matching pure-Python so it
 works consistently on Android SQLite, Windows SQLite, and REST payloads.
 """
+
 from __future__ import annotations
 
 import re
@@ -13,18 +14,44 @@ from typing import Any, Dict, Iterable, List
 _ARABIC_DIACRITICS_RE = re.compile(r"[\u0610-\u061A\u064B-\u065F\u0670\u06D6-\u06ED]")
 _WHITESPACE_RE = re.compile(r"\s+")
 
-_DIGIT_MAP = str.maketrans({
-    "٠": "0", "١": "1", "٢": "2", "٣": "3", "٤": "4", "٥": "5", "٦": "6", "٧": "7", "٨": "8", "٩": "9",
-    "۰": "0", "۱": "1", "۲": "2", "۳": "3", "۴": "4", "۵": "5", "۶": "6", "۷": "7", "۸": "8", "۹": "9",
-})
+_DIGIT_MAP = str.maketrans(
+    {
+        "٠": "0",
+        "١": "1",
+        "٢": "2",
+        "٣": "3",
+        "٤": "4",
+        "٥": "5",
+        "٦": "6",
+        "٧": "7",
+        "٨": "8",
+        "٩": "9",
+        "۰": "0",
+        "۱": "1",
+        "۲": "2",
+        "۳": "3",
+        "۴": "4",
+        "۵": "5",
+        "۶": "6",
+        "۷": "7",
+        "۸": "8",
+        "۹": "9",
+    }
+)
 
-_ARABIC_CHAR_MAP = str.maketrans({
-    "أ": "ا", "إ": "ا", "آ": "ا", "ٱ": "ا",
-    "ى": "ي", "ئ": "ي",
-    "ؤ": "و",
-    "ة": "ه",
-    "ـ": "",
-})
+_ARABIC_CHAR_MAP = str.maketrans(
+    {
+        "أ": "ا",
+        "إ": "ا",
+        "آ": "ا",
+        "ٱ": "ا",
+        "ى": "ي",
+        "ئ": "ي",
+        "ؤ": "و",
+        "ة": "ه",
+        "ـ": "",
+    }
+)
 
 FIELD_LABELS = {
     "company_name": "اسم الشركة",
@@ -146,17 +173,30 @@ def enrich_expense_match(row: Dict[str, Any], query: str) -> Dict[str, Any] | No
     return out
 
 
-def search_expense_rows(rows: Iterable[Dict[str, Any]], query: str, limit: int = 100) -> List[Dict[str, Any]]:
+def search_expense_rows(
+    rows: Iterable[Dict[str, Any]], query: str, limit: int = 100
+) -> List[Dict[str, Any]]:
     results: List[Dict[str, Any]] = []
     seen = set()
     for row in rows:
         match = enrich_expense_match(dict(row), query)
         if not match:
             continue
-        key = (match.get("entry_id"), match.get("company_name"), tuple(match.get("matched_fields") or []))
+        key = (
+            match.get("entry_id"),
+            match.get("company_name"),
+            tuple(match.get("matched_fields") or []),
+        )
         if key in seen:
             continue
         seen.add(key)
         results.append(match)
-    results.sort(key=lambda r: (int(r.get("score") or 0), str(r.get("date") or ""), int(r.get("entry_id") or 0)), reverse=True)
+    results.sort(
+        key=lambda r: (
+            int(r.get("score") or 0),
+            str(r.get("date") or ""),
+            int(r.get("entry_id") or 0),
+        ),
+        reverse=True,
+    )
     return results[: max(1, int(limit or 100))]

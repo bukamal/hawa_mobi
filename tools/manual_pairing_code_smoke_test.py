@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """Smoke-test short-code mobile pairing without requiring a live Windows server."""
+
 from __future__ import annotations
 
 import services.pairing_service as ps
@@ -48,7 +49,11 @@ def main() -> int:
     original = ps.RestClient
     ps.RestClient = FakeRestClient
     try:
-        result = ps.MobilePairingService.pair_with_code("127.0.0.1:8000", "482-913")
+        result = ps.MobilePairingService.pair_with_code(
+            "http://127.0.0.1:8000",
+            "482-913",
+            allow_insecure_http=True,
+        )
         assert result.ok is True
         assert result.server_url == "http://127.0.0.1:8000"
         assert result.currency_contract == ps.CURRENCY_CONTRACT_VERSION

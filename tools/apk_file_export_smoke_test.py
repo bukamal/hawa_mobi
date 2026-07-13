@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 """Smoke test for APK-safe export/share path policy."""
+
 from __future__ import annotations
 
 import os
@@ -24,7 +25,9 @@ def assert_no_hardcoded_export_paths() -> None:
         text = path.read_text(encoding="utf-8")
         for token in forbidden:
             if token in text:
-                raise AssertionError(f"Hard-coded export path remains in {path}: {token}")
+                raise AssertionError(
+                    f"Hard-coded export path remains in {path}: {token}"
+                )
 
 
 def assert_report_dir_uses_export_service() -> None:

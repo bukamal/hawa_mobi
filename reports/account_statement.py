@@ -6,6 +6,7 @@ The reconciliation template is deliberately mobile-first: it avoids wide tables,
 keeps money/phone/email/reference text LTR-isolated, and hides internal supplier
 profit/cost context.
 """
+
 from __future__ import annotations
 
 import csv
@@ -41,11 +42,16 @@ def _ltr(value) -> str:
 
 
 def _visible_columns(settings: Dict[str, object]) -> List[Dict[str, object]]:
-    return [c for c in settings.get("account_statement_columns", []) if c.get("visible", True)]
+    return [
+        c
+        for c in settings.get("account_statement_columns", [])
+        if c.get("visible", True)
+    ]
 
 
 def _report_dir() -> str:
     from services.file_export_service import FileExportService
+
     return FileExportService.export_dir("reports", temporary=True)
 
 
@@ -66,18 +72,24 @@ def _short_ref(ref: object) -> str:
 
 
 def _full_ref(record: Dict) -> str:
-    return str(record.get("source_ref") or record.get("reference") or record.get("id") or "").strip()
+    return str(
+        record.get("source_ref") or record.get("reference") or record.get("id") or ""
+    ).strip()
 
 
 def _print_description(record: Dict) -> str:
     return str(record.get("print_description") or record.get("notes") or "").strip()
 
 
-def _statement_meta(record_or_row: Dict, *, include_full_ref: bool = False) -> List[str]:
+def _statement_meta(
+    record_or_row: Dict, *, include_full_ref: bool = False
+) -> List[str]:
     meta: List[str] = []
     person = str(record_or_row.get("person_name") or "").strip()
     service = str(record_or_row.get("service_type") or "").strip()
-    ref = str(record_or_row.get("reference") or record_or_row.get("source_ref") or "").strip()
+    ref = str(
+        record_or_row.get("reference") or record_or_row.get("source_ref") or ""
+    ).strip()
     historical = str(record_or_row.get("historical_currency_value") or "").strip()
     currency_code = str(record_or_row.get("currency") or "").strip()
     if person:
@@ -96,9 +108,17 @@ def _statement_meta(record_or_row: Dict, *, include_full_ref: bool = False) -> L
     return meta
 
 
-def _header_html(info: Dict, *, company_name: str, statement_kind: str, settings: Dict) -> str:
-    logo_uri = image_to_data_uri(info.get("logo_path") or "") if settings.get("show_company_logo", True) else None
-    logo_html = f"<img src='{logo_uri}' class='company-logo' alt='logo'>" if logo_uri else ""
+def _header_html(
+    info: Dict, *, company_name: str, statement_kind: str, settings: Dict
+) -> str:
+    logo_uri = (
+        image_to_data_uri(info.get("logo_path") or "")
+        if settings.get("show_company_logo", True)
+        else None
+    )
+    logo_html = (
+        f"<img src='{logo_uri}' class='company-logo' alt='logo'>" if logo_uri else ""
+    )
     address = _safe(info.get("address") or "")
     phone = _ltr(info.get("phone") or "")
     email = _ltr(info.get("email") or "")
@@ -118,7 +138,7 @@ def _header_html(info: Dict, *, company_name: str, statement_kind: str, settings
   <div class="account-badge">{_safe(company_name)}</div>
   <div class="brand-block">
     <div class="brand-text">
-      <h1>{_safe(info.get('name'))}</h1>
+      <h1>{_safe(info.get("name"))}</h1>
       <div class="contact-line">{contact}</div>
       <div class="statement-kind">{_safe(statement_kind)}</div>
     </div>
@@ -133,7 +153,7 @@ def _base_css(*, compact: bool) -> str:
 @page {{ size:A4; margin:12mm; }}
 * {{ box-sizing:border-box; }}
 body {{ margin:0; background:#f8fafc; color:#111827; direction:rtl; font-family:Tahoma,Arial,system-ui,sans-serif; }}
-.sheet {{ max-width:{'820px' if compact else '980px'}; margin:0 auto; padding:18px; background:#fff; }}
+.sheet {{ max-width:{"820px" if compact else "980px"}; margin:0 auto; padding:18px; background:#fff; }}
 .report-header {{ border-bottom:3px solid #1e3a8a; padding-bottom:14px; margin-bottom:18px; position:relative; }}
 .brand-block {{ display:flex; align-items:center; justify-content:center; gap:18px; text-align:center; }}
 .brand-text h1 {{ margin:0; color:#1e3a8a; font-size:28px; line-height:1.35; }}
@@ -167,19 +187,25 @@ body {{ margin:0; background:#f8fafc; color:#111827; direction:rtl; font-family:
 """
 
 
-def build_rows(records: Iterable[Dict], display_currency: str | None = None) -> Tuple[List[Dict[str, str]], Dict[str, float]]:
+def build_rows(
+    records: Iterable[Dict], display_currency: str | None = None
+) -> Tuple[List[Dict[str, str]], Dict[str, float]]:
     display_currency = display_currency or currency.get_display_currency()
     rows: List[Dict[str, str]] = []
     running_usd = 0.0
     total_debit_usd = 0.0
     total_credit_usd = 0.0
 
-    sorted_records = sorted(list(records), key=lambda r: (str(r.get("date", "")), int(r.get("id") or 0)))
+    sorted_records = sorted(
+        list(records), key=lambda r: (str(r.get("date", "")), int(r.get("id") or 0))
+    )
     for r in sorted_records:
         is_waiting = r.get("status") == "waiting_payment"
         amount_usd = float(r.get("amount") or r.get("amount_base") or 0)
         amount_original = float(r.get("amount_original", amount_usd) or 0)
-        currency_original = r.get("currency_original") or r.get("currency") or display_currency
+        currency_original = (
+            r.get("currency_original") or r.get("currency") or display_currency
+        )
         type_val = r.get("type")
 
         debit = ""
@@ -204,23 +230,28 @@ def build_rows(records: Iterable[Dict], display_currency: str | None = None) -> 
                 historical = str(exchange_rate)
 
         reference = _full_ref(r)
-        rows.append({
-            "date": str(r.get("date", "")),
-            "notes": str(r.get("notes") or ""),
-            "description": _print_description(r) or str(r.get("notes") or ""),
-            "reference": reference,
-            "short_reference": _short_ref(reference),
-            "debit": debit,
-            "credit": credit,
-            "running_balance": _money(currency.convert(running_usd, "USD", display_currency), display_currency),
-            "currency": str(currency_original),
-            "historical_currency_value": historical,
-            "status": "بانتظار الدفع" if is_waiting else "معتمد",
-            "due_date": str(r.get("payment_due_date") or ""),
-            "person_name": str(r.get("person_name") or ""),
-            "service_type": str(r.get("service_type") or ""),
-            "operation_type": str(r.get("operation_type") or ""),
-        })
+        rows.append(
+            {
+                "date": str(r.get("date", "")),
+                "notes": str(r.get("notes") or ""),
+                "description": _print_description(r) or str(r.get("notes") or ""),
+                "reference": reference,
+                "short_reference": _short_ref(reference),
+                "debit": debit,
+                "credit": credit,
+                "running_balance": _money(
+                    currency.convert(running_usd, "USD", display_currency),
+                    display_currency,
+                ),
+                "currency": str(currency_original),
+                "historical_currency_value": historical,
+                "status": "بانتظار الدفع" if is_waiting else "معتمد",
+                "due_date": str(r.get("payment_due_date") or ""),
+                "person_name": str(r.get("person_name") or ""),
+                "service_type": str(r.get("service_type") or ""),
+                "operation_type": str(r.get("operation_type") or ""),
+            }
+        )
 
     return rows, {
         "total_debit_usd": total_debit_usd,
@@ -229,14 +260,26 @@ def build_rows(records: Iterable[Dict], display_currency: str | None = None) -> 
     }
 
 
-def _summary_values(totals: Dict[str, float], display_currency: str) -> Tuple[str, str, str]:
-    total_debit = _money(currency.convert(totals["total_debit_usd"], "USD", display_currency), display_currency)
-    total_credit = _money(currency.convert(totals["total_credit_usd"], "USD", display_currency), display_currency)
-    net = _money(currency.convert(totals["net_usd"], "USD", display_currency), display_currency)
+def _summary_values(
+    totals: Dict[str, float], display_currency: str
+) -> Tuple[str, str, str]:
+    total_debit = _money(
+        currency.convert(totals["total_debit_usd"], "USD", display_currency),
+        display_currency,
+    )
+    total_credit = _money(
+        currency.convert(totals["total_credit_usd"], "USD", display_currency),
+        display_currency,
+    )
+    net = _money(
+        currency.convert(totals["net_usd"], "USD", display_currency), display_currency
+    )
     return total_debit, total_credit, net
 
 
-def export_account_statement_html(company_name: str, records: Iterable[Dict], output_path: str | None = None) -> str:
+def export_account_statement_html(
+    company_name: str, records: Iterable[Dict], output_path: str | None = None
+) -> str:
     """Detailed printable statement.
 
     The detailed layout is still table-based, but it is constrained to five
@@ -252,7 +295,9 @@ def export_account_statement_html(company_name: str, records: Iterable[Dict], ou
 
     filename = f"account_statement_{company_name}_{_dt.datetime.now().strftime('%Y%m%d_%H%M%S')}.html"
     output_path = output_path or os.path.join(_report_dir(), _safe_filename(filename))
-    footer_note = _safe(settings.get("footer_note", "هذا الكشف صادر آلياً من نظام هوى الشام."))
+    footer_note = _safe(
+        settings.get("footer_note", "هذا الكشف صادر آلياً من نظام هوى الشام.")
+    )
 
     body_rows = []
     for row in rows:
@@ -286,18 +331,20 @@ def export_account_statement_html(company_name: str, records: Iterable[Dict], ou
 .statement-meta span {{ background:#f3f4f6; border-radius:999px; padding:2px 7px; }}
 @media (max-width:640px) {{ .detailed-table th,.detailed-table td {{ font-size:11px; padding:7px 5px; }} .date-cell {{ width:66px; }} }}
 </style></head><body><div class="sheet">
-{_header_html(info, company_name=company_name, statement_kind='كشف حساب تفصيلي', settings=settings)}
-<div class="title"><h2>كشف حساب شركة</h2><div class="account-line">الحساب: {_safe(company_name)}</div><div class="meta">{'تاريخ الإنشاء: ' + _ltr(generated_at) if settings.get('show_generated_at', True) else ''} | العملة: {_ltr(display_currency)}</div></div>
-<div class="summary"><div class="metric"><small>لنا</small><strong>{_money_span(total_debit,'debit')}</strong></div><div class="metric"><small>له</small><strong>{_money_span(total_credit,'credit')}</strong></div><div class="metric"><small>الصافي التراكمي</small><strong>{_money_span(net,'balance')}</strong></div></div>
-<table class="detailed-table"><thead><tr><th>التاريخ</th><th>البيان</th><th>لنا</th><th>له</th><th>التراكمي</th></tr></thead><tbody>{''.join(body_rows)}</tbody></table>
-<div class="footer"><span>{footer_note}</span><span>{_safe(info.get('name'))}</span></div>
+{_header_html(info, company_name=company_name, statement_kind="كشف حساب تفصيلي", settings=settings)}
+<div class="title"><h2>كشف حساب شركة</h2><div class="account-line">الحساب: {_safe(company_name)}</div><div class="meta">{"تاريخ الإنشاء: " + _ltr(generated_at) if settings.get("show_generated_at", True) else ""} | العملة: {_ltr(display_currency)}</div></div>
+<div class="summary"><div class="metric"><small>لنا</small><strong>{_money_span(total_debit, "debit")}</strong></div><div class="metric"><small>له</small><strong>{_money_span(total_credit, "credit")}</strong></div><div class="metric"><small>الصافي التراكمي</small><strong>{_money_span(net, "balance")}</strong></div></div>
+<table class="detailed-table"><thead><tr><th>التاريخ</th><th>البيان</th><th>لنا</th><th>له</th><th>التراكمي</th></tr></thead><tbody>{"".join(body_rows)}</tbody></table>
+<div class="footer"><span>{footer_note}</span><span>{_safe(info.get("name"))}</span></div>
 </div></body></html>"""
     with open(output_path, "w", encoding="utf-8") as f:
         f.write(doc)
     return output_path
 
 
-def export_account_statement_csv(company_name: str, records: Iterable[Dict], output_path: str | None = None) -> str:
+def export_account_statement_csv(
+    company_name: str, records: Iterable[Dict], output_path: str | None = None
+) -> str:
     settings = get_report_settings()
     rows, _ = build_rows(records, currency.get_display_currency())
     cols = _visible_columns(settings)
@@ -312,7 +359,9 @@ def export_account_statement_csv(company_name: str, records: Iterable[Dict], out
 
 
 def _statement_balance_label(net_usd: float, display_currency: str) -> str:
-    value = _money(abs(currency.convert(net_usd, "USD", display_currency)), display_currency)
+    value = _money(
+        abs(currency.convert(net_usd, "USD", display_currency)), display_currency
+    )
     if net_usd > 0:
         return f"الرصيد النهائي لصالح {get_company_info().get('name')}: {value}"
     if net_usd < 0:
@@ -320,18 +369,24 @@ def _statement_balance_label(net_usd: float, display_currency: str) -> str:
     return "الرصيد النهائي: مطابق / لا يوجد رصيد"
 
 
-def build_reconciliation_rows(records: Iterable[Dict], display_currency: str | None = None) -> Tuple[List[Dict[str, str]], Dict[str, float]]:
+def build_reconciliation_rows(
+    records: Iterable[Dict], display_currency: str | None = None
+) -> Tuple[List[Dict[str, str]], Dict[str, float]]:
     display_currency = display_currency or currency.get_display_currency()
     rows: List[Dict[str, str]] = []
     running_usd = 0.0
     total_debit_usd = 0.0
     total_credit_usd = 0.0
-    for r in sorted(list(records), key=lambda x: (str(x.get("date", "")), int(x.get("id") or 0))):
+    for r in sorted(
+        list(records), key=lambda x: (str(x.get("date", "")), int(x.get("id") or 0))
+    ):
         if r.get("status") == "waiting_payment":
             continue
         amount_usd = float(r.get("amount") or r.get("amount_base") or 0)
         amount_original = float(r.get("amount_original", amount_usd) or 0)
-        currency_original = r.get("currency_original") or r.get("currency") or display_currency
+        currency_original = (
+            r.get("currency_original") or r.get("currency") or display_currency
+        )
         reference = _full_ref(r)
         debit = credit = ""
         if r.get("type") == "incoming":
@@ -342,21 +397,37 @@ def build_reconciliation_rows(records: Iterable[Dict], display_currency: str | N
             credit = _money(amount_original, currency_original)
             running_usd -= amount_usd
             total_credit_usd += amount_usd
-        rows.append({
-            "date": str(r.get("date") or ""),
-            "reference": reference,
-            "short_reference": _short_ref(reference),
-            "description": _print_description(r),
-            "person_name": str(r.get("person_name") or ""),
-            "service_type": str(r.get("service_type") or ""),
-            "debit": debit,
-            "credit": credit,
-            "running_balance": _money(currency.convert(running_usd, "USD", display_currency), display_currency),
-        })
-    return rows, {"total_debit_usd": total_debit_usd, "total_credit_usd": total_credit_usd, "net_usd": total_debit_usd - total_credit_usd}
+        rows.append(
+            {
+                "date": str(r.get("date") or ""),
+                "reference": reference,
+                "short_reference": _short_ref(reference),
+                "description": _print_description(r),
+                "person_name": str(r.get("person_name") or ""),
+                "service_type": str(r.get("service_type") or ""),
+                "debit": debit,
+                "credit": credit,
+                "running_balance": _money(
+                    currency.convert(running_usd, "USD", display_currency),
+                    display_currency,
+                ),
+            }
+        )
+    return rows, {
+        "total_debit_usd": total_debit_usd,
+        "total_credit_usd": total_credit_usd,
+        "net_usd": total_debit_usd - total_credit_usd,
+    }
 
 
-def export_reconciliation_statement_html(company_name: str, records: Iterable[Dict], output_path: str | None = None, *, show_person: bool = True, show_service: bool = True) -> str:
+def export_reconciliation_statement_html(
+    company_name: str,
+    records: Iterable[Dict],
+    output_path: str | None = None,
+    *,
+    show_person: bool = True,
+    show_service: bool = True,
+) -> str:
     """External-facing mobile-first statement for company reconciliation."""
     settings = get_report_settings()
     info = get_company_info()
@@ -380,13 +451,13 @@ def export_reconciliation_statement_html(company_name: str, records: Iterable[Di
         meta_html = "".join(f"<span>{_safe(x)}</span>" for x in meta_parts)
         movement_cards.append(f"""
 <section class="movement">
-  <div class="movement-head"><span class="idx">#{i}</span><span class="date">{_ltr(row['date'])}</span></div>
-  <div class="movement-desc">{_safe(row.get('description') or 'حركة حساب')}</div>
+  <div class="movement-head"><span class="idx">#{i}</span><span class="date">{_ltr(row["date"])}</span></div>
+  <div class="movement-desc">{_safe(row.get("description") or "حركة حساب")}</div>
   <div class="movement-meta">{meta_html}</div>
   <div class="movement-money">
-    <div><small>لنا</small><strong>{_money_span(row['debit'], 'debit')}</strong></div>
-    <div><small>له</small><strong>{_money_span(row['credit'], 'credit')}</strong></div>
-    <div><small>الرصيد</small><strong>{_money_span(row['running_balance'], 'balance')}</strong></div>
+    <div><small>لنا</small><strong>{_money_span(row["debit"], "debit")}</strong></div>
+    <div><small>له</small><strong>{_money_span(row["credit"], "credit")}</strong></div>
+    <div><small>الرصيد</small><strong>{_money_span(row["running_balance"], "balance")}</strong></div>
   </div>
 </section>
 """)
@@ -412,19 +483,21 @@ def export_reconciliation_statement_html(company_name: str, records: Iterable[Di
 .movement-money strong {{ font-size:14px; }}
 @media (max-width:640px) {{ .movement-money {{ grid-template-columns:1fr; }} .movement-desc {{ font-size:14px; }} }}
 </style></head><body><div class="sheet">
-{_header_html(info, company_name=company_name, statement_kind='كشف حساب للمطابقة', settings=settings)}
+{_header_html(info, company_name=company_name, statement_kind="كشف حساب للمطابقة", settings=settings)}
 <div class="title"><h2>كشف حساب للمطابقة</h2><div class="account-line">الحساب: {_safe(company_name)}</div><div class="meta">تاريخ الإنشاء: {_ltr(generated_at)} | العملة المعروضة: {_ltr(display_currency)}</div></div>
 <div class="note">لنا = مبالغ مستحقة لنا على الحساب. له = مبالغ مستحقة للحساب علينا أو مدفوعة منه. هذا الكشف مخصص للمطابقة ولا يُعد مخالصة نهائية إلا بعد التأكيد.</div>
-<div class="summary"><div class="metric"><small>لنا</small><strong>{_money_span(total_debit,'debit')}</strong></div><div class="metric"><small>له</small><strong>{_money_span(total_credit,'credit')}</strong></div><div class="metric final-metric"><small>النتيجة</small><strong>{_safe(net_label)}</strong></div></div>
-<div class="movements">{''.join(movement_cards)}</div>
-<div class="footer"><span>يرجى مراجعة الكشف وإبلاغنا بأي اختلاف خلال 48 ساعة.</span><span>{_safe(info.get('name'))}</span></div>
+<div class="summary"><div class="metric"><small>لنا</small><strong>{_money_span(total_debit, "debit")}</strong></div><div class="metric"><small>له</small><strong>{_money_span(total_credit, "credit")}</strong></div><div class="metric final-metric"><small>النتيجة</small><strong>{_safe(net_label)}</strong></div></div>
+<div class="movements">{"".join(movement_cards)}</div>
+<div class="footer"><span>يرجى مراجعة الكشف وإبلاغنا بأي اختلاف خلال 48 ساعة.</span><span>{_safe(info.get("name"))}</span></div>
 </div></body></html>"""
     with open(output_path, "w", encoding="utf-8") as f:
         f.write(doc)
     return output_path
 
 
-def export_service_profit_report_html(cases: Iterable[Dict], output_path: str | None = None) -> str:
+def export_service_profit_report_html(
+    cases: Iterable[Dict], output_path: str | None = None
+) -> str:
     info = get_company_info()
     display_currency = currency.get_display_currency()
     rows = []
@@ -437,22 +510,31 @@ def export_service_profit_report_html(cases: Iterable[Dict], output_path: str | 
         component_summary = c.get("components_summary") or ""
         if not component_summary and c.get("components"):
             try:
-                component_summary = " ؛ ".join(f"{x.get('service_type')} / {x.get('supplier_company_name') or '-'}" for x in c.get("components") or [])
+                component_summary = " ؛ ".join(
+                    f"{x.get('service_type')} / {x.get('supplier_company_name') or '-'}"
+                    for x in c.get("components") or []
+                )
             except Exception:
                 component_summary = ""
-        service_cell = (str(c.get("service_type") or "") + (f"<br><small>{_safe(component_summary)}</small>" if component_summary else ""))
+        service_cell = str(c.get("service_type") or "") + (
+            f"<br><small>{_safe(component_summary)}</small>"
+            if component_summary
+            else ""
+        )
         rows.append(
             f"<tr><td>{_ltr(c.get('date'))}</td><td>{_ltr(c.get('reference'))}</td><td>{_safe(c.get('person_name'))}</td>"
             f"<td>{_safe(c.get('client_company_name'))}</td><td>{_safe(c.get('supplier_company_name'))}</td><td>{service_cell}</td>"
-            f"<td>{_money_span(_money(currency.convert(sale,'USD',display_currency),display_currency),'debit')}</td>"
-            f"<td>{_money_span(_money(currency.convert(cost,'USD',display_currency),display_currency),'credit')}</td>"
-            f"<td>{_money_span(_money(currency.convert(profit,'USD',display_currency),display_currency),'balance')}</td><td>{_safe(c.get('status'))}</td></tr>"
+            f"<td>{_money_span(_money(currency.convert(sale, 'USD', display_currency), display_currency), 'debit')}</td>"
+            f"<td>{_money_span(_money(currency.convert(cost, 'USD', display_currency), display_currency), 'credit')}</td>"
+            f"<td>{_money_span(_money(currency.convert(profit, 'USD', display_currency), display_currency), 'balance')}</td><td>{_safe(c.get('status'))}</td></tr>"
         )
     if not rows:
         rows.append("<tr><td colspan='10' class='empty'>لا توجد ملفات خدمات</td></tr>")
-    filename = f"service_profit_report_{_dt.datetime.now().strftime('%Y%m%d_%H%M%S')}.html"
+    filename = (
+        f"service_profit_report_{_dt.datetime.now().strftime('%Y%m%d_%H%M%S')}.html"
+    )
     output_path = output_path or os.path.join(_report_dir(), filename)
-    doc = f"""<!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>تقرير أرباح الخدمات</title><style>{_base_css(compact=False)}table{{width:100%;border-collapse:collapse}}th{{background:#1e3a8a;color:#fff;padding:8px;border:1px solid #1e3a8a}}td{{border:1px solid #d1d5db;padding:7px;font-size:12px;vertical-align:top}}.summary-box{{background:#eff6ff;border:1px solid #bfdbfe;border-radius:12px;padding:12px;margin:12px 0}}</style></head><body><div class="sheet">{_header_html(info, company_name='داخلي', statement_kind='تقرير أرباح الخدمات', settings={'show_company_logo': True})}<div class="title"><h2>تقرير أرباح الخدمات الداخلي</h2></div><div class="summary-box">إجمالي الربح: <strong>{_money_span(_money(currency.convert(total_profit,'USD',display_currency),display_currency),'balance')}</strong></div><table><thead><tr><th>التاريخ</th><th>المرجع</th><th>الزبون</th><th>العميل</th><th>المورد</th><th>الخدمة</th><th>البيع</th><th>التكلفة</th><th>الربح</th><th>الحالة</th></tr></thead><tbody>{''.join(rows)}</tbody></table></div></body></html>"""
+    doc = f"""<!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>تقرير أرباح الخدمات</title><style>{_base_css(compact=False)}table{{width:100%;border-collapse:collapse}}th{{background:#1e3a8a;color:#fff;padding:8px;border:1px solid #1e3a8a}}td{{border:1px solid #d1d5db;padding:7px;font-size:12px;vertical-align:top}}.summary-box{{background:#eff6ff;border:1px solid #bfdbfe;border-radius:12px;padding:12px;margin:12px 0}}</style></head><body><div class="sheet">{_header_html(info, company_name="داخلي", statement_kind="تقرير أرباح الخدمات", settings={"show_company_logo": True})}<div class="title"><h2>تقرير أرباح الخدمات الداخلي</h2></div><div class="summary-box">إجمالي الربح: <strong>{_money_span(_money(currency.convert(total_profit, "USD", display_currency), display_currency), "balance")}</strong></div><table><thead><tr><th>التاريخ</th><th>المرجع</th><th>الزبون</th><th>العميل</th><th>المورد</th><th>الخدمة</th><th>البيع</th><th>التكلفة</th><th>الربح</th><th>الحالة</th></tr></thead><tbody>{"".join(rows)}</tbody></table></div></body></html>"""
     with open(output_path, "w", encoding="utf-8") as f:
         f.write(doc)
     return output_path

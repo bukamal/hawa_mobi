@@ -7,19 +7,24 @@ Design rules:
 - Let Android/iOS/desktop choose the final destination through share/open flows.
 - Keep all report/backup path policy in one place so views do not guess paths.
 """
+
 from __future__ import annotations
 
 import base64
 import csv
 import datetime as _dt
+import json
 import os
 import shutil
 import sqlite3
 import tempfile
 import zipfile
 from pathlib import Path
-from typing import Iterable, Sequence
+from typing import Sequence
 from urllib.parse import unquote, urlparse
+
+MAX_BACKUP_BYTES = 2 * 1024 * 1024 * 1024
+MAX_ARCHIVE_MEMBERS = 256
 
 
 def _app_storage_dir() -> str:
@@ -41,7 +46,9 @@ def _cache_root() -> str:
 
 
 def _safe_filename(name: str) -> str:
-    cleaned = "".join(ch if ch.isalnum() or ch in "._-" else "_" for ch in str(name or "file"))
+    cleaned = "".join(
+        ch if ch.isalnum() or ch in "._-" else "_" for ch in str(name or "file")
+    )
     return cleaned.strip("._ ") or "file"
 
 
@@ -54,72 +61,113 @@ class FileExportService:
 
     @staticmethod
     def export_dir(kind: str = "general", *, temporary: bool = True) -> str:
-        base = _cache_root() if temporary else os.path.join(_app_storage_dir(), "exports")
+        base = (
+            _cache_root() if temporary else os.path.join(_app_storage_dir(), "exports")
+        )
         path = os.path.join(base, _safe_filename(kind))
         os.makedirs(path, exist_ok=True)
         return path
 
     @staticmethod
-    def build_path(filename: str, kind: str = "general", *, temporary: bool = True) -> str:
-        return os.path.join(FileExportService.export_dir(kind, temporary=temporary), _safe_filename(filename))
+    def build_path(
+        filename: str, kind: str = "general", *, temporary: bool = True
+    ) -> str:
+        return os.path.join(
+            FileExportService.export_dir(kind, temporary=temporary),
+            _safe_filename(filename),
+        )
 
     @staticmethod
     def create_backup_archive(db_path: str | None = None) -> str:
-        """Create a ZIP backup in app-owned cache and return its path.
-
-        The result is intended to be shared/saved by the OS picker. It is not
-        silently written to Downloads because that is unreliable on Android 11+.
-        """
+        """Create a consistent, portable backup without session credentials."""
         if db_path is None:
             from database.connection import get_local_db_path
+
             db_path = get_local_db_path()
         if not db_path or not os.path.exists(db_path):
             raise FileNotFoundError("ملف قاعدة البيانات غير موجود")
 
         timestamp = _dt.datetime.now().strftime("%Y%m%d_%H%M%S_%f")
-        zip_path = FileExportService.build_path(f"hawaa_backup_{timestamp}.zip", "backups", temporary=True)
-
-        # SQLite is configured with WAL. Copying hawaa_data.db alone can miss
-        # recently committed changes that still live in the -wal file. Create a
-        # consistent snapshot with SQLite backup API, then zip that snapshot.
-        snapshot_path = FileExportService.build_path(f"hawaa_data_snapshot_{timestamp}.db", "backups_snapshots", temporary=True)
+        zip_path = FileExportService.build_path(
+            f"hawaa_backup_{timestamp}.zip", "backups", temporary=True
+        )
+        snapshot_path = FileExportService.build_path(
+            f"hawaa_data_snapshot_{timestamp}.db", "backups_snapshots", temporary=True
+        )
         src = sqlite3.connect(db_path)
         dst = sqlite3.connect(snapshot_path)
         try:
             try:
                 src.execute("PRAGMA wal_checkpoint(FULL)")
-            except Exception:
+            except sqlite3.DatabaseError:
                 pass
             src.backup(dst)
         finally:
             dst.close()
             src.close()
 
+        snapshot = sqlite3.connect(snapshot_path)
+        try:
+            snapshot.execute(
+                "CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT)"
+            )
+            snapshot.execute("DELETE FROM settings WHERE key='auth/network_token'")
+            snapshot.execute(
+                "INSERT OR REPLACE INTO settings (key,value) VALUES ('network/mode','local')"
+            )
+            snapshot.execute(
+                "INSERT OR REPLACE INTO settings (key,value) VALUES ('network/server_url','')"
+            )
+            snapshot.execute(
+                "INSERT OR REPLACE INTO settings (key,value) VALUES ('network/allow_insecure_http','false')"
+            )
+            snapshot.commit()
+            snapshot.execute("VACUUM")
+        finally:
+            snapshot.close()
+
         with zipfile.ZipFile(zip_path, "w", compression=zipfile.ZIP_DEFLATED) as zf:
             zf.write(snapshot_path, "hawaa_data.db")
             config_path = os.path.join(os.path.dirname(db_path), "config.json")
             if os.path.exists(config_path):
-                zf.write(config_path, "config.json")
-            manifest = (
-                f"created_at={_dt.datetime.now().isoformat()}\n"
-                "format=hawaa-backup-v1\n"
-                "sqlite_snapshot=backup_api\n"
-                "restore_hint=استورد هذا الملف من شاشة النسخ الاحتياطي داخل التطبيق.\n"
+                try:
+                    with open(config_path, "r", encoding="utf-8") as file_obj:
+                        raw_config = json.load(file_obj)
+                    allowed_prefixes = ("company/", "report/")
+                    safe_config = {
+                        str(key): value
+                        for key, value in dict(raw_config or {}).items()
+                        if str(key).startswith(allowed_prefixes)
+                    }
+                    zf.writestr(
+                        "config.json",
+                        json.dumps(safe_config, ensure_ascii=False, indent=2),
+                    )
+                except (OSError, ValueError, TypeError):
+                    pass
+            manifest = {
+                "created_at": _dt.datetime.now(_dt.timezone.utc).isoformat(),
+                "format": "hawaa-backup-v2",
+                "sqlite_snapshot": "backup_api",
+                "credentials_included": False,
+            }
+            zf.writestr(
+                "manifest.json", json.dumps(manifest, ensure_ascii=False, indent=2)
             )
-            zf.writestr("manifest.txt", manifest)
 
-        # Keep a persistent internal copy for APK builds where FilePicker is not
-        # available. Android may clear cache files; the app-owned backups folder
-        # gives the Restore fallback dialog something stable to offer.
         try:
             persistent_dir = os.path.join(_app_storage_dir(), "backups")
             os.makedirs(persistent_dir, exist_ok=True)
-            persistent_path = os.path.join(persistent_dir, os.path.basename(zip_path))
-            shutil.copy2(zip_path, persistent_path)
-        except Exception:
+            shutil.copy2(
+                zip_path, os.path.join(persistent_dir, os.path.basename(zip_path))
+            )
+        except OSError:
+            pass
+        try:
+            os.remove(snapshot_path)
+        except OSError:
             pass
         return zip_path
-
 
     @staticmethod
     def find_recent_backup_archives(limit: int = 10) -> list[str]:
@@ -148,15 +196,21 @@ class FileExportService:
                         found.append(os.path.join(root, name))
             except Exception:
                 continue
-        found = sorted(set(found), key=lambda x: os.path.getmtime(x) if os.path.exists(x) else 0, reverse=True)
+        found = sorted(
+            set(found),
+            key=lambda x: os.path.getmtime(x) if os.path.exists(x) else 0,
+            reverse=True,
+        )
         return found[: max(1, int(limit or 10))]
 
     @staticmethod
     def describe_backup_file(path: str) -> str:
         try:
             size = os.path.getsize(path)
-            mtime = _dt.datetime.fromtimestamp(os.path.getmtime(path)).strftime("%Y-%m-%d %H:%M")
-            return f"{os.path.basename(path)} — {size/1024:.1f} KB — {mtime}"
+            mtime = _dt.datetime.fromtimestamp(os.path.getmtime(path)).strftime(
+                "%Y-%m-%d %H:%M"
+            )
+            return f"{os.path.basename(path)} — {size / 1024:.1f} KB — {mtime}"
         except Exception:
             return os.path.basename(path or "")
 
@@ -170,7 +224,9 @@ class FileExportService:
     def log_restore_event(message: str) -> None:
         try:
             with open(FileExportService.restore_log_path(), "a", encoding="utf-8") as f:
-                f.write(f"[{_dt.datetime.now().isoformat(timespec='seconds')}] {message}\n")
+                f.write(
+                    f"[{_dt.datetime.now().isoformat(timespec='seconds')}] {message}\n"
+                )
         except Exception:
             pass
 
@@ -182,12 +238,14 @@ class FileExportService:
                 return []
             with open(path, "r", encoding="utf-8", errors="replace") as f:
                 data = f.readlines()
-            return [line.rstrip("\n") for line in data[-max(1, int(lines or 40)):]]
+            return [line.rstrip("\n") for line in data[-max(1, int(lines or 40)) :]]
         except Exception:
             return []
 
     @staticmethod
-    def find_external_backup_archives(limit: int = 12, *, validate: bool = True) -> list[str]:
+    def find_external_backup_archives(
+        limit: int = 12, *, validate: bool = True
+    ) -> list[str]:
         """Find readable external backup candidates without FilePicker.
 
         This is the hard Android fallback when the native chooser opens but does
@@ -212,7 +270,9 @@ class FileExportService:
                         try:
                             if entry.is_file():
                                 name = entry.name.lower()
-                                if name.endswith(suffixes) and FileExportService._is_readable_file(entry.path):
+                                if name.endswith(
+                                    suffixes
+                                ) and FileExportService._is_readable_file(entry.path):
                                     candidates.append(entry.path)
                             elif entry.is_dir() and depth < 2:
                                 # Keep the scan bounded; large phone storage
@@ -222,7 +282,11 @@ class FileExportService:
                             continue
             except Exception:
                 continue
-        candidates = sorted(set(candidates), key=lambda x: os.path.getmtime(x) if os.path.exists(x) else 0, reverse=True)
+        candidates = sorted(
+            set(candidates),
+            key=lambda x: os.path.getmtime(x) if os.path.exists(x) else 0,
+            reverse=True,
+        )
         if not validate:
             return candidates[: max(1, int(limit or 12))]
         valid: list[str] = []
@@ -233,7 +297,9 @@ class FileExportService:
                 if len(valid) >= max(1, int(limit or 12)):
                     break
             except Exception as ex:
-                FileExportService.log_restore_event(f"skip invalid external candidate: {path} :: {ex}")
+                FileExportService.log_restore_event(
+                    f"skip invalid external candidate: {path} :: {ex}"
+                )
         return valid
 
     @staticmethod
@@ -246,15 +312,33 @@ class FileExportService:
             raise RuntimeError("لا يمكن تصدير قاعدة البيانات مباشرة في وضع العميل")
         conn = db.get_connection()
         timestamp = _dt.datetime.now().strftime("%Y%m%d_%H%M%S_%f")
-        zip_path = FileExportService.build_path(f"hawaa_csv_export_{timestamp}.zip", "exports", temporary=True)
+        zip_path = FileExportService.build_path(
+            f"hawaa_csv_export_{timestamp}.zip", "exports", temporary=True
+        )
+        export_queries = {
+            "expenses": "SELECT * FROM expenses",
+            "users": "SELECT * FROM users",
+            "audit_log": "SELECT * FROM audit_log",
+            "exchange_rates": "SELECT * FROM exchange_rates",
+            "payment_reminders": "SELECT * FROM payment_reminders",
+            "third_party_payments": "SELECT * FROM third_party_payments",
+            "service_cases": "SELECT * FROM service_cases",
+            "service_case_components": "SELECT * FROM service_case_components",
+        }
         tables = list(tables or ["expenses", "users", "audit_log"])
+        invalid = sorted({str(table) for table in tables} - export_queries.keys())
+        if invalid:
+            raise ValueError("جداول تصدير غير مسموحة: " + ", ".join(invalid))
         with zipfile.ZipFile(zip_path, "w", compression=zipfile.ZIP_DEFLATED) as zf:
             for table in tables:
-                cursor = conn.execute(f"SELECT * FROM {table}")
+                cursor = conn.execute(export_queries[str(table)])
                 rows = cursor.fetchall()
                 if not rows:
                     continue
-                tmp_csv = os.path.join(FileExportService.export_dir("csv_tmp", temporary=True), f"{table}_{timestamp}.csv")
+                tmp_csv = os.path.join(
+                    FileExportService.export_dir("csv_tmp", temporary=True),
+                    f"{table}_{timestamp}.csv",
+                )
                 with open(tmp_csv, "w", encoding="utf-8-sig", newline="") as f:
                     writer = csv.writer(f)
                     writer.writerow([desc[0] for desc in cursor.description])
@@ -264,33 +348,65 @@ class FileExportService:
 
     @staticmethod
     def _validate_sqlite_backup_db(db_path: str) -> dict:
-        """Validate a candidate Hawaa SQLite database before restore."""
+        """Validate current and legacy Hawaa SQLite databases without modifying them."""
         if not db_path or not os.path.exists(db_path):
             raise FileNotFoundError("ملف قاعدة البيانات داخل النسخة غير موجود")
-        conn = sqlite3.connect(db_path)
+        size = os.path.getsize(db_path)
+        if size <= 0 or size > MAX_BACKUP_BYTES:
+            raise ValueError("حجم قاعدة البيانات غير صالح أو يتجاوز الحد الآمن")
+        conn = sqlite3.connect(f"file:{Path(db_path).resolve()}?mode=ro", uri=True)
         try:
             integrity = conn.execute("PRAGMA integrity_check").fetchone()[0]
             if str(integrity).lower() != "ok":
                 raise ValueError(f"فحص سلامة SQLite فشل: {integrity}")
-            rows = conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()
-            tables = {r[0] for r in rows}
-            required = {"users", "expenses", "settings", "exchange_rates"}
-            missing = sorted(required - tables)
-            if missing:
-                raise ValueError("النسخة لا تحتوي الجداول الأساسية: " + ", ".join(missing))
+            tables = {
+                row[0]
+                for row in conn.execute(
+                    "SELECT name FROM sqlite_master WHERE type='table'"
+                ).fetchall()
+            }
+            if "expenses" not in tables:
+                raise ValueError("النسخة لا تحتوي جدول القيود expenses")
+            expense_columns = {
+                row[1] for row in conn.execute("PRAGMA table_info(expenses)").fetchall()
+            }
+            missing_core = sorted(
+                {"company_name", "amount", "type", "date"} - expense_columns
+            )
+            if missing_core:
+                raise ValueError(
+                    "جدول القيود يفتقد أعمدة أساسية: " + ", ".join(missing_core)
+                )
+            current_required = {"users", "expenses", "settings", "exchange_rates"}
+            missing_tables = sorted(current_required - tables)
             schema_version = None
-            try:
-                row = conn.execute("SELECT value FROM settings WHERE key='schema_version'").fetchone()
-                schema_version = row[0] if row else None
-            except Exception:
-                schema_version = None
-            counts = {}
-            for table in ("users", "expenses", "settings"):
+            if "settings" in tables:
                 try:
-                    counts[table] = int(conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0])
-                except Exception:
-                    counts[table] = 0
-            return {"schema_version": schema_version, "tables": sorted(tables), "counts": counts}
+                    row = conn.execute(
+                        "SELECT value FROM settings WHERE key='schema_version'"
+                    ).fetchone()
+                    schema_version = row[0] if row else None
+                except sqlite3.DatabaseError:
+                    schema_version = None
+            count_queries = {
+                "users": "SELECT COUNT(*) FROM users",
+                "expenses": "SELECT COUNT(*) FROM expenses",
+                "settings": "SELECT COUNT(*) FROM settings",
+                "exchange_rates": "SELECT COUNT(*) FROM exchange_rates",
+                "audit_log": "SELECT COUNT(*) FROM audit_log",
+            }
+            counts = {
+                table: int(conn.execute(query).fetchone()[0]) if table in tables else 0
+                for table, query in count_queries.items()
+            }
+            return {
+                "schema_version": schema_version,
+                "tables": sorted(tables),
+                "counts": counts,
+                "legacy": bool(missing_tables or str(schema_version or "") != "23"),
+                "missing_tables": missing_tables,
+                "size_bytes": size,
+            }
         finally:
             conn.close()
 
@@ -308,7 +424,9 @@ class FileExportService:
         package = os.environ.get("ANDROID_PACKAGE") or "com.hawaa"
         for candidate in (
             os.environ.get("PUBLIC_DOWNLOADS"),
-            os.path.join(os.environ.get("EXTERNAL_STORAGE", ""), "Download") if os.environ.get("EXTERNAL_STORAGE") else "",
+            os.path.join(os.environ.get("EXTERNAL_STORAGE", ""), "Download")
+            if os.environ.get("EXTERNAL_STORAGE")
+            else "",
             "/storage/emulated/0/Download/Hawaa",
             "/storage/emulated/0/Download",
             "/storage/emulated/0/Documents/Hawaa",
@@ -336,7 +454,9 @@ class FileExportService:
             return False
 
     @staticmethod
-    def _write_picker_bytes_to_cache(raw_value, *, suggested_name: str = "hawaa_import.zip") -> str | None:
+    def _write_picker_bytes_to_cache(
+        raw_value, *, suggested_name: str = "hawaa_import.zip"
+    ) -> str | None:
         """Materialize FilePickerFile.bytes into an app-readable cache file.
 
         This is the most reliable Android restore path.  Flet's native picker can
@@ -371,7 +491,9 @@ class FileExportService:
             return None
         if not data:
             return None
-        safe_name = _safe_filename(os.path.basename(suggested_name or "hawaa_import.zip"))
+        safe_name = _safe_filename(
+            os.path.basename(suggested_name or "hawaa_import.zip")
+        )
         lower = safe_name.lower()
         if not lower.endswith((".zip", ".db", ".sqlite", ".sqlite3")):
             safe_name += ".zip"
@@ -388,7 +510,9 @@ class FileExportService:
             return None
 
     @staticmethod
-    def _copy_android_content_uri_to_cache(content_uri: str, *, suggested_name: str = "hawaa_import.zip") -> str | None:
+    def _copy_android_content_uri_to_cache(
+        content_uri: str, *, suggested_name: str = "hawaa_import.zip"
+    ) -> str | None:
         """Best-effort copy for Android SAF ``content://`` results.
 
         Some Flet Android builds return a content URI instead of a real path.
@@ -436,11 +560,17 @@ class FileExportService:
             stream = resolver.openInputStream(uri_obj)
             if stream is None:
                 return None
-            safe_name = _safe_filename(os.path.basename(suggested_name or "hawaa_import.zip"))
+            safe_name = _safe_filename(
+                os.path.basename(suggested_name or "hawaa_import.zip")
+            )
             lower = safe_name.lower()
             if not lower.endswith((".zip", ".db", ".sqlite", ".sqlite3")):
                 safe_name += ".zip"
-            target = FileExportService.build_path(f"picked_{_dt.datetime.now().strftime('%Y%m%d_%H%M%S_%f')}_{safe_name}", "picked_imports", temporary=True)
+            target = FileExportService.build_path(
+                f"picked_{_dt.datetime.now().strftime('%Y%m%d_%H%M%S_%f')}_{safe_name}",
+                "picked_imports",
+                temporary=True,
+            )
             buf = jarray("b")(64 * 1024)
             with open(target, "wb") as out:
                 while True:
@@ -466,7 +596,9 @@ class FileExportService:
             return None
 
     @staticmethod
-    def _find_readable_backup_by_name(name: str, *, size: int | None = None) -> str | None:
+    def _find_readable_backup_by_name(
+        name: str, *, size: int | None = None
+    ) -> str | None:
         """Find a picked file by display name in app/Public backup folders."""
         name = os.path.basename(str(name or "").strip())
         if not name:
@@ -483,7 +615,11 @@ class FileExportService:
                 # Then scan one level deep.  Avoid walking the whole phone.
                 for item in os.listdir(root):
                     p = os.path.join(root, item)
-                    if os.path.isfile(p) and item == name and FileExportService._is_readable_file(p):
+                    if (
+                        os.path.isfile(p)
+                        and item == name
+                        and FileExportService._is_readable_file(p)
+                    ):
                         candidates.append(p)
                     elif os.path.isdir(p):
                         try:
@@ -506,7 +642,11 @@ class FileExportService:
                     pass
             if sized:
                 candidates = sized
-        candidates = sorted(set(candidates), key=lambda x: os.path.getmtime(x) if os.path.exists(x) else 0, reverse=True)
+        candidates = sorted(
+            set(candidates),
+            key=lambda x: os.path.getmtime(x) if os.path.exists(x) else 0,
+            reverse=True,
+        )
         return candidates[0] if candidates else None
 
     @staticmethod
@@ -551,7 +691,9 @@ class FileExportService:
             FileExportService.log_restore_event("picker result: None")
             return None
         try:
-            FileExportService.log_restore_event("picker result: " + FileExportService.describe_picker_file(file_obj))
+            FileExportService.log_restore_event(
+                "picker result: " + FileExportService.describe_picker_file(file_obj)
+            )
         except Exception:
             pass
 
@@ -566,10 +708,14 @@ class FileExportService:
                 raw_bytes = None
             materialized = FileExportService._write_picker_bytes_to_cache(
                 raw_bytes,
-                suggested_name=str(getattr(file_obj, "name", None) or "hawaa_import.zip"),
+                suggested_name=str(
+                    getattr(file_obj, "name", None) or "hawaa_import.zip"
+                ),
             )
             if materialized:
-                FileExportService.log_restore_event(f"picker bytes materialized: {materialized}")
+                FileExportService.log_restore_event(
+                    f"picker bytes materialized: {materialized}"
+                )
                 return materialized
 
         for attr in ("path", "src", "uri", "url", "name"):
@@ -603,27 +749,39 @@ class FileExportService:
                 except Exception:
                     value = value[7:]
             if value.startswith("content://"):
-                copied = FileExportService._copy_android_content_uri_to_cache(value, suggested_name=str(display_name or "hawaa_import.zip"))
+                copied = FileExportService._copy_android_content_uri_to_cache(
+                    value, suggested_name=str(display_name or "hawaa_import.zip")
+                )
                 if copied and FileExportService._is_readable_file(copied):
                     FileExportService.log_restore_event(f"content uri copied: {copied}")
                     return copied
                 continue
             if FileExportService._is_readable_file(value):
-                FileExportService.log_restore_event(f"direct readable picker path: {value}")
+                FileExportService.log_restore_event(
+                    f"direct readable picker path: {value}"
+                )
                 return value
 
         # 3: common Android/Flet case: only a display name was returned.
         if display_name:
-            found = FileExportService._find_readable_backup_by_name(str(display_name), size=display_size)
+            found = FileExportService._find_readable_backup_by_name(
+                str(display_name), size=display_size
+            )
             if found:
-                FileExportService.log_restore_event(f"found backup by display name: {found}")
+                FileExportService.log_restore_event(
+                    f"found backup by display name: {found}"
+                )
                 return found
         for _attr, raw in candidates:
             base = os.path.basename(str(raw or ""))
             if base:
-                found = FileExportService._find_readable_backup_by_name(base, size=display_size)
+                found = FileExportService._find_readable_backup_by_name(
+                    base, size=display_size
+                )
                 if found:
-                    FileExportService.log_restore_event(f"found backup by basename: {found}")
+                    FileExportService.log_restore_event(
+                        f"found backup by basename: {found}"
+                    )
                     return found
         FileExportService.log_restore_event("picker result could not be resolved")
         return None
@@ -631,65 +789,95 @@ class FileExportService:
     @staticmethod
     def _count_current_rows() -> dict:
         from database.connection import get_local_db_path
+
         db_path = get_local_db_path()
+        count_queries = {
+            "users": "SELECT COUNT(*) FROM users",
+            "expenses": "SELECT COUNT(*) FROM expenses",
+            "settings": "SELECT COUNT(*) FROM settings",
+            "exchange_rates": "SELECT COUNT(*) FROM exchange_rates",
+            "audit_log": "SELECT COUNT(*) FROM audit_log",
+            "third_party_payments": "SELECT COUNT(*) FROM third_party_payments",
+        }
         counts = {}
         conn = sqlite3.connect(db_path)
         try:
-            for table in ("users", "expenses", "settings", "exchange_rates", "audit_log", "third_party_payments"):
+            for table, query in count_queries.items():
                 try:
-                    counts[table] = int(conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0])
-                except Exception:
+                    counts[table] = int(conn.execute(query).fetchone()[0])
+                except sqlite3.DatabaseError:
                     counts[table] = 0
             return counts
         finally:
             conn.close()
 
     @staticmethod
-    def _extract_valid_sqlite_from_zip(zf: zipfile.ZipFile, tmp_dir: str) -> tuple[str, str]:
-        """Extract the first valid Hawaa SQLite DB from a backup ZIP.
-
-        Older/exported/shared backups are not guaranteed to keep ``hawaa_data.db``
-        at the ZIP root.  Accept a valid SQLite DB anywhere in the archive and
-        prefer the canonical name.  This fixes external backups saved by Files,
-        Drive, WhatsApp, or manually re-zipped folders.
-        """
-        names = [n for n in zf.namelist() if not n.endswith("/")]
-        preferred = [n for n in names if os.path.basename(n).lower() == "hawaa_data.db"]
+    def _extract_valid_sqlite_from_zip(
+        zf: zipfile.ZipFile, tmp_dir: str
+    ) -> tuple[str, str]:
+        """Extract the first valid Hawaa DB while enforcing archive limits."""
+        infos = [info for info in zf.infolist() if not info.is_dir()]
+        if len(infos) > MAX_ARCHIVE_MEMBERS:
+            raise ValueError("ملف ZIP يحتوي عددًا غير منطقي من الملفات")
+        if sum(max(0, info.file_size) for info in infos) > MAX_BACKUP_BYTES:
+            raise ValueError("الحجم المفكوك لملف ZIP يتجاوز الحد الآمن")
+        names = [info.filename for info in infos]
+        preferred = [
+            name for name in names if os.path.basename(name).lower() == "hawaa_data.db"
+        ]
         db_candidates = preferred + [
-            n for n in names
-            if n not in preferred and os.path.basename(n).lower().endswith((".db", ".sqlite", ".sqlite3"))
+            name
+            for name in names
+            if name not in preferred
+            and os.path.basename(name).lower().endswith((".db", ".sqlite", ".sqlite3"))
         ]
         errors: list[str] = []
-        for member in db_candidates:
-            safe_member = _safe_filename(os.path.basename(member))
-            candidate = os.path.join(tmp_dir, f"candidate_{len(errors)}_{safe_member}")
+        for index, member in enumerate(db_candidates):
+            info = zf.getinfo(member)
+            if info.file_size <= 0 or info.file_size > MAX_BACKUP_BYTES:
+                errors.append(f"{member}: حجم غير صالح")
+                continue
+            candidate = os.path.join(
+                tmp_dir, f"candidate_{index}_{_safe_filename(os.path.basename(member))}"
+            )
             try:
                 with zf.open(member) as src, open(candidate, "wb") as dst:
-                    shutil.copyfileobj(src, dst)
+                    shutil.copyfileobj(src, dst, length=1024 * 1024)
                 FileExportService._validate_sqlite_backup_db(candidate)
                 return candidate, member
             except Exception as ex:
                 errors.append(f"{member}: {ex}")
                 try:
                     os.remove(candidate)
-                except Exception:
+                except OSError:
                     pass
-        # One extra tolerant case: a ZIP that contains exactly one nested ZIP.
-        nested_zips = [n for n in names if os.path.basename(n).lower().endswith(".zip")]
+        nested_zips = [
+            name for name in names if os.path.basename(name).lower().endswith(".zip")
+        ]
         for member in nested_zips[:3]:
-            nested_path = os.path.join(tmp_dir, f"nested_{_safe_filename(os.path.basename(member))}")
+            info = zf.getinfo(member)
+            if info.file_size <= 0 or info.file_size > MAX_BACKUP_BYTES:
+                continue
+            nested_path = os.path.join(
+                tmp_dir, f"nested_{_safe_filename(os.path.basename(member))}"
+            )
             try:
                 with zf.open(member) as src, open(nested_path, "wb") as dst:
-                    shutil.copyfileobj(src, dst)
+                    shutil.copyfileobj(src, dst, length=1024 * 1024)
                 with zipfile.ZipFile(nested_path, "r") as nested:
                     nested_tmp = tempfile.mkdtemp(prefix="hawaa_nested_restore_")
                     try:
-                        nested_candidate, nested_member = FileExportService._extract_valid_sqlite_from_zip(nested, nested_tmp)
-                        final_candidate = os.path.join(tmp_dir, f"nested_candidate_{_safe_filename(os.path.basename(nested_candidate))}")
+                        nested_candidate, nested_member = (
+                            FileExportService._extract_valid_sqlite_from_zip(
+                                nested, nested_tmp
+                            )
+                        )
+                        final_candidate = os.path.join(
+                            tmp_dir,
+                            f"nested_candidate_{_safe_filename(os.path.basename(nested_candidate))}",
+                        )
                         shutil.copy2(nested_candidate, final_candidate)
                         return final_candidate, f"{member}!/{nested_member}"
-                    except Exception as ex:
-                        errors.append(f"{member}: {ex}")
                     finally:
                         shutil.rmtree(nested_tmp, ignore_errors=True)
             except Exception as ex:
@@ -698,7 +886,8 @@ class FileExportService:
         extra = " | ".join(errors[:5])
         raise ValueError(
             "ملف ZIP لا يحتوي قاعدة بيانات هوى الشام صالحة. "
-            f"محتوى ZIP: {listed}" + (f". أخطاء الفحص: {extra}" if extra else "")
+            + f"محتوى ZIP: {listed}"
+            + (f". أخطاء الفحص: {extra}" if extra else "")
         )
 
     @staticmethod
@@ -707,10 +896,14 @@ class FileExportService:
         FileExportService.log_restore_event(f"inspect backup start: {backup_path}")
         try:
             if not backup_path or not os.path.exists(backup_path):
-                FileExportService.log_restore_event(f"restore failed: missing path {backup_path}")
+                FileExportService.log_restore_event(
+                    f"restore failed: missing path {backup_path}"
+                )
                 raise FileNotFoundError("ملف النسخة الاحتياطية غير موجود")
             try:
-                FileExportService.log_restore_event(f"inspect backup size={os.path.getsize(backup_path)}")
+                FileExportService.log_restore_event(
+                    f"inspect backup size={os.path.getsize(backup_path)}"
+                )
             except Exception:
                 pass
             ext = os.path.splitext(str(backup_path))[1].lower()
@@ -723,150 +916,270 @@ class FileExportService:
                 raise ValueError("صيغة النسخة غير مدعومة. اختر ملف ZIP أو DB")
             with zipfile.ZipFile(backup_path, "r") as zf:
                 try:
-                    FileExportService.log_restore_event("inspect zip members: " + ", ".join(zf.namelist()[:20]))
+                    FileExportService.log_restore_event(
+                        "inspect zip members: " + ", ".join(zf.namelist()[:20])
+                    )
                 except Exception:
                     pass
                 names = set(zf.namelist())
                 tmp_dir = tempfile.mkdtemp(prefix="hawaa_inspect_")
                 try:
-                    candidate_db, member_name = FileExportService._extract_valid_sqlite_from_zip(zf, tmp_dir)
+                    candidate_db, member_name = (
+                        FileExportService._extract_valid_sqlite_from_zip(zf, tmp_dir)
+                    )
                     info = FileExportService._validate_sqlite_backup_db(candidate_db)
-                    info.update({
-                        "format": "hawaa-backup-zip",
-                        "source": backup_path,
-                        "db_member": member_name,
-                        "has_config": "config.json" in names,
-                    })
-                    FileExportService.log_restore_event(f"inspect backup ok zip: {info}")
+                    info.update(
+                        {
+                            "format": "hawaa-backup-zip",
+                            "source": backup_path,
+                            "db_member": member_name,
+                            "has_config": "config.json" in names,
+                        }
+                    )
+                    FileExportService.log_restore_event(
+                        f"inspect backup ok zip: {info}"
+                    )
                     return info
                 finally:
                     shutil.rmtree(tmp_dir, ignore_errors=True)
         except Exception as ex:
-            FileExportService.log_restore_event(f"inspect backup failed: {backup_path} :: {ex}")
+            FileExportService.log_restore_event(
+                f"inspect backup failed: {backup_path} :: {ex}"
+            )
             raise
 
     @staticmethod
     def restore_backup_archive(backup_path: str) -> dict:
-        """Restore a Hawaa backup ZIP or direct SQLite DB into local Android storage.
-
-        Safety rules:
-        - restore is allowed only in local mode; client mode data belongs to Windows Server.
-        - validate the candidate database before replacing current data.
-        - create a safety backup of current data first.
-        - close SQLite and remove WAL/SHM sidecars before replacing the database.
-        """
+        """Safely restore and migrate a current or legacy Hawaa backup."""
         from database.connection import DatabaseConnection, get_local_db_path
+        from database.migrations import migrate_database_file
 
         db = DatabaseConnection()
         if db.is_remote():
-            raise RuntimeError("أنت في وضع العميل. الاستعادة تتم من نسخة Windows فقط. غيّر الوضع إلى محلي لاستعادة نسخة داخل الهاتف.")
+            raise RuntimeError(
+                "أنت في وضع العميل. غيّر الوضع إلى محلي لاستعادة نسخة داخل الهاتف."
+            )
         if not backup_path or not os.path.exists(backup_path):
-            FileExportService.log_restore_event(f"restore failed: missing path {backup_path}")
             raise FileNotFoundError("ملف النسخة الاحتياطية غير موجود")
+        if os.path.getsize(backup_path) > MAX_BACKUP_BYTES:
+            raise ValueError("ملف النسخة الاحتياطية يتجاوز الحد الآمن")
 
         FileExportService.log_restore_event(f"restore backup start: {backup_path}")
         inspected = FileExportService.inspect_backup_archive(backup_path)
-        safety_backup = None
-        try:
-            safety_backup = FileExportService.create_backup_archive()
-        except Exception:
-            safety_backup = None
-
+        safety_backup = FileExportService.create_backup_archive()
         target_db = get_local_db_path()
         target_dir = os.path.dirname(target_db)
         os.makedirs(target_dir, exist_ok=True)
         tmp_dir = tempfile.mkdtemp(prefix="hawaa_restore_")
+        rollback_db = os.path.join(tmp_dir, "current_before_restore.db")
+        candidate_db = os.path.join(tmp_dir, "candidate.db")
+        config_candidate = None
+        target_config = os.path.join(target_dir, "config.json")
+        rollback_config = os.path.join(tmp_dir, "current_config_before_restore.json")
+        config_existed = os.path.exists(target_config)
+        replaced = False
+        config_replaced = False
         try:
+            if config_existed:
+                shutil.copy2(target_config, rollback_config)
+            if os.path.exists(target_db):
+                src = sqlite3.connect(target_db)
+                dst = sqlite3.connect(rollback_db)
+                try:
+                    src.backup(dst)
+                finally:
+                    dst.close()
+                    src.close()
+
             ext = os.path.splitext(str(backup_path))[1].lower()
-            candidate_db = os.path.join(tmp_dir, "hawaa_data.db")
-            config_candidate = None
             if ext in {".db", ".sqlite", ".sqlite3"}:
                 shutil.copy2(backup_path, candidate_db)
             else:
                 with zipfile.ZipFile(backup_path, "r") as zf:
-                    extracted_db, _member_name = FileExportService._extract_valid_sqlite_from_zip(zf, tmp_dir)
+                    extracted_db, _member_name = (
+                        FileExportService._extract_valid_sqlite_from_zip(zf, tmp_dir)
+                    )
                     shutil.copy2(extracted_db, candidate_db)
-                    if "config.json" in set(zf.namelist()):
-                        zf.extract("config.json", tmp_dir)
-                        config_candidate = os.path.join(tmp_dir, "config.json")
+                    config_names = [
+                        name
+                        for name in zf.namelist()
+                        if os.path.basename(name) == "config.json"
+                    ]
+                    if config_names:
+                        try:
+                            with zf.open(config_names[0]) as file_obj:
+                                raw = file_obj.read(2 * 1024 * 1024 + 1)
+                            if len(raw) > 2 * 1024 * 1024:
+                                raise ValueError(
+                                    "ملف إعدادات النسخة أكبر من الحد المسموح"
+                                )
+                            config_data = json.loads(raw.decode("utf-8"))
+                            if not isinstance(config_data, dict):
+                                raise ValueError("صيغة ملف إعدادات النسخة غير صحيحة")
+                            allowed_prefixes = ("company/", "report/")
+                            safe_config = {
+                                str(key): value
+                                for key, value in config_data.items()
+                                if str(key).startswith(allowed_prefixes)
+                            }
+                            config_candidate = os.path.join(tmp_dir, "config.json")
+                            with open(
+                                config_candidate, "w", encoding="utf-8"
+                            ) as file_obj:
+                                json.dump(
+                                    safe_config, file_obj, ensure_ascii=False, indent=2
+                                )
+                        except (
+                            OSError,
+                            UnicodeDecodeError,
+                            ValueError,
+                            TypeError,
+                        ) as config_exc:
+                            # A malformed optional config must not block recovery
+                            # of a valid accounting database. Log it and restore
+                            # the database without importing those preferences.
+                            FileExportService.log_restore_event(
+                                f"ignored invalid backup config: {config_exc}"
+                            )
+                            config_candidate = None
+
+            migration = migrate_database_file(candidate_db, create_admin_if_empty=True)
             FileExportService._validate_sqlite_backup_db(candidate_db)
 
-            # Preserve device-local bootstrap settings.  A backup copied from a
-            # Windows/client setup may contain network/mode=client; after import
-            # that would make the Android app look at the server and the restored
-            # local data would appear to be missing.
             preserved_settings = {}
             try:
                 local_conn = sqlite3.connect(target_db)
                 try:
-                    for key in ("network/mode", "network/server_url", "auth/network_token"):
-                        row = local_conn.execute("SELECT value FROM settings WHERE key=?", (key,)).fetchone()
+                    for key in ("network/server_url", "network/allow_insecure_http"):
+                        row = local_conn.execute(
+                            "SELECT value FROM settings WHERE key=?", (key,)
+                        ).fetchone()
                         if row is not None:
                             preserved_settings[key] = row[0]
                 finally:
                     local_conn.close()
-            except Exception:
-                pass
+            except sqlite3.DatabaseError:
+                preserved_settings = {}
 
-            # Close singleton connection before replacing and remove sidecars.
-            db.close()
+            candidate_conn = sqlite3.connect(candidate_db)
             try:
-                DatabaseConnection.reset_after_restore()
-            except Exception:
-                pass
+                candidate_conn.execute(
+                    "CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT)"
+                )
+                candidate_conn.execute(
+                    "DELETE FROM settings WHERE key='auth/network_token'"
+                )
+                candidate_conn.execute(
+                    "INSERT OR REPLACE INTO settings (key,value) VALUES ('network/mode','local')"
+                )
+                for key, value in preserved_settings.items():
+                    candidate_conn.execute(
+                        "INSERT OR REPLACE INTO settings (key,value) VALUES (?,?)",
+                        (key, str(value)),
+                    )
+                candidate_conn.commit()
+            finally:
+                candidate_conn.close()
+
+            db.close()
+            DatabaseConnection.reset_after_restore()
             for sidecar in (target_db + "-wal", target_db + "-shm"):
                 try:
-                    if os.path.exists(sidecar):
-                        os.remove(sidecar)
-                except Exception:
+                    os.remove(sidecar)
+                except FileNotFoundError:
                     pass
-
-            restore_tmp = os.path.join(target_dir, f".hawaa_restore_{_dt.datetime.now().strftime('%Y%m%d_%H%M%S_%f')}.db")
+            restore_tmp = os.path.join(
+                target_dir,
+                f".hawaa_restore_{_dt.datetime.now().strftime('%Y%m%d_%H%M%S_%f')}.db",
+            )
             shutil.copy2(candidate_db, restore_tmp)
             os.replace(restore_tmp, target_db)
-            if config_candidate and os.path.exists(config_candidate):
-                shutil.copy2(config_candidate, os.path.join(target_dir, "config.json"))
+            replaced = True
+            if config_candidate:
+                config_tmp = os.path.join(
+                    target_dir,
+                    f".hawaa_config_restore_{_dt.datetime.now().strftime('%Y%m%d_%H%M%S_%f')}.json",
+                )
+                shutil.copy2(config_candidate, config_tmp)
+                os.replace(config_tmp, target_config)
+                config_replaced = True
 
-            # Restore device-local network bootstrap after database replacement.
-            try:
-                local_conn = sqlite3.connect(target_db)
-                try:
-                    local_conn.execute("CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT)")
-                    for key, value in preserved_settings.items():
-                        if key == "network/mode":
-                            # Backup import in the APK is a local-data operation.
-                            value = "local"
-                        local_conn.execute("INSERT OR REPLACE INTO settings (key, value) VALUES (?,?)", (key, str(value)))
-                    if "network/mode" not in preserved_settings:
-                        local_conn.execute("INSERT OR REPLACE INTO settings (key, value) VALUES (?,?)", ("network/mode", "local"))
-                    local_conn.commit()
-                finally:
-                    local_conn.close()
-            except Exception:
-                pass
-
-            # Run migrations/ensure schema on restored DB, then reset all handles
-            # again so UI repositories reopen the migrated restored database.
-            try:
-                from database.migrations import ensure_db
-                ensure_db()
-                DatabaseConnection.reset_after_restore()
-            except Exception:
-                raise
+            migrate_database_file(target_db, create_admin_if_empty=True)
+            DatabaseConnection.reset_after_restore()
             verified_counts = FileExportService._count_current_rows()
-            FileExportService.log_restore_event(f"restore success: {backup_path} -> {target_db} counts={verified_counts}")
-            return {"ok": True, "safety_backup": safety_backup, "restored_db": target_db, "inspected": inspected, "verified_counts": verified_counts}
+            FileExportService.log_restore_event(
+                f"restore success: {backup_path} -> {target_db} counts={verified_counts} migration={migration}"
+            )
+            return {
+                "ok": True,
+                "safety_backup": safety_backup,
+                "restored_db": target_db,
+                "inspected": inspected,
+                "migration": migration,
+                "verified_counts": verified_counts,
+            }
+        except Exception as exc:
+            FileExportService.log_restore_event(
+                f"restore failed, rollback requested: {exc}"
+            )
+            if replaced and os.path.exists(rollback_db):
+                try:
+                    DatabaseConnection.reset_after_restore()
+                    rollback_tmp = os.path.join(target_dir, ".hawaa_db_rollback.db")
+                    shutil.copy2(rollback_db, rollback_tmp)
+                    os.replace(rollback_tmp, target_db)
+                    DatabaseConnection.reset_after_restore()
+                    FileExportService.log_restore_event("database rollback completed")
+                except Exception as rollback_exc:
+                    FileExportService.log_restore_event(
+                        f"database rollback failed: {rollback_exc}"
+                    )
+            if config_replaced:
+                try:
+                    if config_existed and os.path.exists(rollback_config):
+                        config_tmp = os.path.join(
+                            target_dir, ".hawaa_config_rollback.json"
+                        )
+                        shutil.copy2(rollback_config, config_tmp)
+                        os.replace(config_tmp, target_config)
+                    elif os.path.exists(target_config):
+                        os.remove(target_config)
+                    FileExportService.log_restore_event("config rollback completed")
+                except Exception as rollback_exc:
+                    FileExportService.log_restore_event(
+                        f"config rollback failed: {rollback_exc}"
+                    )
+            raise
         finally:
             shutil.rmtree(tmp_dir, ignore_errors=True)
 
     @staticmethod
-    async def share_file_async(page, path: str, text: str = "", *, phone: str | None = None, open_whatsapp: bool = False, title: str = "مشاركة ملف هوى الشام"):
+    async def share_file_async(
+        page,
+        path: str,
+        text: str = "",
+        *,
+        phone: str | None = None,
+        open_whatsapp: bool = False,
+        title: str = "مشاركة ملف هوى الشام",
+    ):
         from reports.share import share_file_async
-        return await share_file_async(page, path, text, phone=phone, open_whatsapp=open_whatsapp, title=title)
+
+        return await share_file_async(
+            page, path, text, phone=phone, open_whatsapp=open_whatsapp, title=title
+        )
 
     @staticmethod
-    def share_file(page, path: str, text: str = "", *, phone: str | None = None, open_whatsapp: bool = False) -> bool:
+    def share_file(
+        page,
+        path: str,
+        text: str = "",
+        *,
+        phone: str | None = None,
+        open_whatsapp: bool = False,
+    ) -> bool:
         from reports.share import share_file
+
         return share_file(page, path, text, phone=phone, open_whatsapp=open_whatsapp)
 
     @staticmethod
@@ -874,8 +1187,19 @@ class FileExportService:
         # Android cannot reliably open private file:// paths from Flet. Use the
         # platform share/open sheet instead. The user can choose browser, Files,
         # printer provider, Drive, WhatsApp, Telegram, etc.
-        return await FileExportService.share_file_async(page, path, f"ملف من نظام هوى الشام: {os.path.basename(path)}", open_whatsapp=False, title=title)
+        return await FileExportService.share_file_async(
+            page,
+            path,
+            f"ملف من نظام هوى الشام: {os.path.basename(path)}",
+            open_whatsapp=False,
+            title=title,
+        )
 
     @staticmethod
     def open_file(page, path: str) -> bool:
-        return FileExportService.share_file(page, path, f"ملف من نظام هوى الشام: {os.path.basename(path)}", open_whatsapp=False)
+        return FileExportService.share_file(
+            page,
+            path,
+            f"ملف من نظام هوى الشام: {os.path.basename(path)}",
+            open_whatsapp=False,
+        )

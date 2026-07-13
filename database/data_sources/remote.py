@@ -42,8 +42,9 @@ class RemoteDataSource:
     def delete_expense(self, expense_id: int) -> None:
         self.rest.delete_expense(int(expense_id))
 
-
-    def search_company_ledger(self, query: str, limit: int = 100) -> List[Dict[str, Any]]:
+    def search_company_ledger(
+        self, query: str, limit: int = 100
+    ) -> List[Dict[str, Any]]:
         return self.rest.search_company_ledger(query, limit=limit)
 
     def get_users(self) -> List[Dict[str, Any]]:

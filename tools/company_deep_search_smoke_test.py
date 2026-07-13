@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import os
 import shutil
-import sqlite3
 import sys
 import tempfile
 
@@ -14,6 +13,7 @@ if ROOT not in sys.path:
 
 def reset_singleton() -> None:
     from database.connection import DatabaseConnection
+
     try:
         DatabaseConnection().close()
     except Exception:
@@ -34,8 +34,18 @@ def main() -> int:
 
         init_database()
         repo = ExpenseRepository()
-        repo.add("شركة النور", 100, "outgoing", "2026-07-10", "تم السداد عن طريق أبو محمد للفاتورة 45", "USD", 1)
-        repo.add("شركة الشام", 500000, "incoming", "2026-07-11", "ملاحظة عادية", "SYP", 1)
+        repo.add(
+            "شركة النور",
+            100,
+            "outgoing",
+            "2026-07-10",
+            "تم السداد عن طريق أبو محمد للفاتورة 45",
+            "USD",
+            1,
+        )
+        repo.add(
+            "شركة الشام", 500000, "incoming", "2026-07-11", "ملاحظة عادية", "SYP", 1
+        )
 
         assert normalize_search_text("أبو محمد") == normalize_search_text("ابو محمد")
         results = repo.search_company_ledger("ابو محمد", limit=10)
@@ -47,14 +57,20 @@ def main() -> int:
         assert results[0].get("amount_original") == 100
 
         by_ref_or_amount = repo.search_company_ledger("500000", limit=10)
-        assert any(r["company_name"] == "شركة الشام" for r in by_ref_or_amount), by_ref_or_amount
+        assert any(r["company_name"] == "شركة الشام" for r in by_ref_or_amount), (
+            by_ref_or_amount
+        )
 
         by_company = repo.search_company_ledger("النور", limit=10)
         assert by_company and by_company[0]["company_name"] == "شركة النور"
 
         # Static UI guard: the Accounts screen must use the deep-search repository method,
         # not only company_name.lower() filtering.
-        with open(os.path.join(ROOT, "views", "accounts_mobile_view.py"), "r", encoding="utf-8") as f:
+        with open(
+            os.path.join(ROOT, "views", "accounts_mobile_view.py"),
+            "r",
+            encoding="utf-8",
+        ) as f:
             ui = f.read()
         assert "search_company_ledger" in ui
         assert "matches_inside_company" in ui

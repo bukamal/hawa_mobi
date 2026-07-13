@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 """Regression guard for Flet Android SQLite/thread startup crashes."""
+
 from __future__ import annotations
 
 import os
@@ -32,8 +33,12 @@ with tempfile.TemporaryDirectory(prefix="hawaa-sqlite-thread-") as tmp:
         try:
             worker_conn = db.get_connection()
             worker_thread = threading.get_ident()
-            row = worker_conn.execute("SELECT value FROM settings WHERE key='language'").fetchone()
-            q.put((True, worker_thread, worker_conn is main_conn, row[0] if row else None))
+            row = worker_conn.execute(
+                "SELECT value FROM settings WHERE key='language'"
+            ).fetchone()
+            q.put(
+                (True, worker_thread, worker_conn is main_conn, row[0] if row else None)
+            )
         except Exception as exc:
             q.put((False, threading.get_ident(), False, repr(exc)))
 
@@ -45,7 +50,9 @@ with tempfile.TemporaryDirectory(prefix="hawaa-sqlite-thread-") as tmp:
     ok, worker_thread, same_connection, value = q.get_nowait()
     assert ok, value
     assert worker_thread != main_thread
-    assert same_connection is False, "DatabaseConnection must not reuse one sqlite connection across threads"
+    assert same_connection is False, (
+        "DatabaseConnection must not reuse one sqlite connection across threads"
+    )
     assert value == "ar"
 
     # Main-thread connection remains usable after the worker used its own handle.

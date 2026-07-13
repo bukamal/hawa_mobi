@@ -1,10 +1,18 @@
 # -*- coding: utf-8 -*-
 import flet as ft
 from views.flet_compat import open_control, close_control
-from views.dialogs.dialog_kit import dialog_title, dialog_body, cancel_button, save_button, show_snackbar, set_button_busy, normalize_text
+from views.dialogs.dialog_kit import (
+    dialog_title,
+    dialog_body,
+    cancel_button,
+    save_button,
+    show_snackbar,
+    set_button_busy,
+    normalize_text,
+)
 from database import UserRepository
-from auth.session import UserSession
 from i18n.translator import translate
+
 
 class UserDialog(ft.AlertDialog):
     def __init__(self, page, on_save=None, user_id=None):
@@ -17,47 +25,46 @@ class UserDialog(ft.AlertDialog):
         dialog_width = min(380, page_width - 40)
 
         self.username = ft.TextField(
-            label=translate('username'),
-            width=dialog_width - 20,
-            disabled=bool(user_id)
+            label=translate("username"), width=dialog_width - 20, disabled=bool(user_id)
         )
         self.fullname = ft.TextField(
-            label=translate('full_name'),
-            width=dialog_width - 20
+            label=translate("full_name"), width=dialog_width - 20
         )
         self.role = ft.Dropdown(
-            label=translate('role'),
-            value=translate('user'),
+            label=translate("role"),
+            value=translate("user"),
             options=[
-                ft.dropdown.Option(translate('admin')),
-                ft.dropdown.Option(translate('user')),
-                ft.dropdown.Option(translate('viewer'))
+                ft.dropdown.Option(translate("admin")),
+                ft.dropdown.Option(translate("user")),
+                ft.dropdown.Option(translate("viewer")),
             ],
-            width=dialog_width - 20
+            width=dialog_width - 20,
         )
         self.password = ft.TextField(
-            label=translate('password'),
+            label=translate("password"),
             password=True,
             can_reveal_password=True,
             width=dialog_width - 20,
-            visible=not user_id
+            visible=not user_id,
         )
         self.confirm_password = ft.TextField(
-            label="تأكيد " + translate('password'),
+            label="تأكيد " + translate("password"),
             password=True,
             can_reveal_password=True,
             width=dialog_width - 20,
-            visible=not user_id
+            visible=not user_id,
         )
         self.change_pwd_btn = ft.TextButton(
-            content=ft.Text(translate('change_password')),
+            content=ft.Text(translate("change_password")),
             on_click=self._change_password,
-            visible=bool(user_id)
+            visible=bool(user_id),
         )
 
         self._saving = False
-        self.save_btn = save_button(translate('save'), self._save)
-        self.title = dialog_title(translate('add') if not user_id else translate('edit'), ft.Icons.PERSON)
+        self.save_btn = save_button(translate("save"), self._save)
+        self.title = dialog_title(
+            translate("add") if not user_id else translate("edit"), ft.Icons.PERSON
+        )
         self.content = dialog_body(
             controls=[
                 self.username,
@@ -65,14 +72,14 @@ class UserDialog(ft.AlertDialog):
                 self.role,
                 self.password,
                 self.confirm_password,
-                self.change_pwd_btn
+                self.change_pwd_btn,
             ],
             spacing=15,
-            width=dialog_width
+            width=dialog_width,
         )
         self.actions = [
-            cancel_button(translate('cancel'), lambda e: self._close()),
-            self.save_btn
+            cancel_button(translate("cancel"), lambda e: self._close()),
+            self.save_btn,
         ]
         self.actions_alignment = ft.MainAxisAlignment.END
         self.inset_padding = 20
@@ -92,10 +99,14 @@ class UserDialog(ft.AlertDialog):
             repo = UserRepository()
             user = repo.get_by_id(self.user_id)
             if user:
-                self.username.value = user['username']
-                self.fullname.value = user['full_name'] or ''
-                role_map = {'admin': translate('admin'), 'user': translate('user'), 'viewer': translate('viewer')}
-                self.role.value = role_map.get(user['role'], translate('user'))
+                self.username.value = user["username"]
+                self.fullname.value = user["full_name"] or ""
+                role_map = {
+                    "admin": translate("admin"),
+                    "user": translate("user"),
+                    "viewer": translate("viewer"),
+                }
+                self.role.value = role_map.get(user["role"], translate("user"))
         except Exception as ex:
             self._show_snackbar(f"خطأ في تحميل البيانات: {str(ex)}", True)
 
@@ -104,14 +115,18 @@ class UserDialog(ft.AlertDialog):
             return
         username = normalize_text(self.username.value)
         full_name = normalize_text(self.fullname.value)
-        role_map = {translate('admin'):'admin', translate('user'):'user', translate('viewer'):'viewer'}
-        role = role_map.get(self.role.value, 'user')
+        role_map = {
+            translate("admin"): "admin",
+            translate("user"): "user",
+            translate("viewer"): "viewer",
+        }
+        role = role_map.get(self.role.value, "user")
         if not username:
             self._show_snackbar("اسم المستخدم مطلوب")
             return
         repo = UserRepository()
         self._saving = True
-        set_button_busy(self.save_btn, True, translate('save'))
+        set_button_busy(self.save_btn, True, translate("save"))
         try:
             self._page.update()
         except Exception:
@@ -138,7 +153,7 @@ class UserDialog(ft.AlertDialog):
             self._show_snackbar(f"خطأ: {str(ex)}", True)
         finally:
             self._saving = False
-            set_button_busy(self.save_btn, False, translate('save'))
+            set_button_busy(self.save_btn, False, translate("save"))
             try:
                 self._page.update()
             except Exception:
@@ -146,5 +161,8 @@ class UserDialog(ft.AlertDialog):
 
     def _change_password(self, e):
         from views.dialogs.change_password_dialog import ChangePasswordDialog
-        dialog = ChangePasswordDialog(page=self._page, user_id=self.user_id, on_save=lambda: None)
+
+        dialog = ChangePasswordDialog(
+            page=self._page, user_id=self.user_id, on_save=lambda: None
+        )
         open_control(self._page, dialog)

@@ -4,7 +4,6 @@ from __future__ import annotations
 import os
 import sqlite3
 import tempfile
-from pathlib import Path
 
 
 def main() -> int:
@@ -22,7 +21,19 @@ def main() -> int:
     conn = db.get_connection()
     conn.execute(
         "INSERT INTO expenses (company_name, amount, amount_base, type, date, notes, currency, amount_original, currency_original, exchange_rate_to_usd, status) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
-        ("شركة الاختبار", 100.0, 100.0, "incoming", "2026-01-01", "قبل النسخ", "USD", 100.0, "USD", 1.0, "approved"),
+        (
+            "شركة الاختبار",
+            100.0,
+            100.0,
+            "incoming",
+            "2026-01-01",
+            "قبل النسخ",
+            "USD",
+            100.0,
+            "USD",
+            1.0,
+            "approved",
+        ),
     )
     conn.commit()
     backup = FileExportService.create_backup_archive()
@@ -43,7 +54,9 @@ def main() -> int:
     try:
         count = conn2.execute("SELECT COUNT(*) FROM expenses").fetchone()[0]
         assert count >= 1, count
-        note = conn2.execute("SELECT notes FROM expenses WHERE company_name='شركة الاختبار'").fetchone()[0]
+        note = conn2.execute(
+            "SELECT notes FROM expenses WHERE company_name='شركة الاختبار'"
+        ).fetchone()[0]
         assert note == "قبل النسخ"
     finally:
         conn2.close()

@@ -4,6 +4,7 @@
 The report layer is intentionally data-driven: screens choose a report type,
 while columns/header/footer are resolved here from app configuration.
 """
+
 from __future__ import annotations
 
 from copy import deepcopy
@@ -23,7 +24,12 @@ ACCOUNT_STATEMENT_DEFAULT_COLUMNS: List[Dict[str, object]] = [
     # Optional business columns. They are kept disabled by default and can be
     # activated later without changing the report engine.
     {"key": "currency", "label": "العملة", "visible": False, "width": "8%"},
-    {"key": "historical_currency_value", "label": "القيمة التاريخية للعملة", "visible": False, "width": "14%"},
+    {
+        "key": "historical_currency_value",
+        "label": "القيمة التاريخية للعملة",
+        "visible": False,
+        "width": "14%",
+    },
     {"key": "status", "label": "الحالة", "visible": False, "width": "10%"},
     {"key": "due_date", "label": "تاريخ الاستحقاق", "visible": False, "width": "12%"},
 ]
@@ -46,7 +52,9 @@ def _merge_columns(saved_columns):
         item = deepcopy(col)
         saved = saved_by_key.get(item["key"])
         if saved:
-            item.update({k: saved[k] for k in ("label", "visible", "width") if k in saved})
+            item.update(
+                {k: saved[k] for k in ("label", "visible", "width") if k in saved}
+            )
         merged.append(item)
     # Preserve valid custom columns appended by future versions/settings.
     known = {c["key"] for c in merged}
@@ -64,8 +72,16 @@ def get_report_settings() -> Dict[str, object]:
     cfg = _load_config()
     raw = cfg.get("reports", {}) if isinstance(cfg.get("reports", {}), dict) else {}
     settings = deepcopy(DEFAULT_REPORT_SETTINGS)
-    settings.update({k: raw[k] for k in settings.keys() if k in raw and k != "account_statement_columns"})
-    settings["account_statement_columns"] = _merge_columns(raw.get("account_statement_columns"))
+    settings.update(
+        {
+            k: raw[k]
+            for k in settings.keys()
+            if k in raw and k != "account_statement_columns"
+        }
+    )
+    settings["account_statement_columns"] = _merge_columns(
+        raw.get("account_statement_columns")
+    )
     return settings
 
 
@@ -73,6 +89,8 @@ def save_report_settings(settings: Dict[str, object]) -> None:
     cfg = _load_config()
     current = get_report_settings()
     current.update(settings or {})
-    current["account_statement_columns"] = _merge_columns(current.get("account_statement_columns"))
+    current["account_statement_columns"] = _merge_columns(
+        current.get("account_statement_columns")
+    )
     cfg["reports"] = current
     _save_config(cfg)

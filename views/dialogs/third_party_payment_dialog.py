@@ -24,7 +24,9 @@ from views.dialogs.dialog_kit import (
 class ThirdPartyPaymentDialog(ft.AlertDialog):
     """Mobile dialog for: شركة سدّدت عني لشركة أخرى."""
 
-    def __init__(self, page, on_save=None, payer_company_name=None, paid_to_company_name=None):
+    def __init__(
+        self, page, on_save=None, payer_company_name=None, paid_to_company_name=None
+    ):
         super().__init__()
         self._page = page
         self.on_save = on_save
@@ -55,7 +57,10 @@ class ThirdPartyPaymentDialog(ft.AlertDialog):
         self.currency_dropdown = ft.Dropdown(
             label=translate("currency"),
             value=currency.get_display_currency(),
-            options=[ft.dropdown.Option(c) for c in ["USD", "SAR", "SYP", "EUR", "GBP", "AED", "QAR", "KWD", "OMR"]],
+            options=[
+                ft.dropdown.Option(c)
+                for c in ["USD", "SAR", "SYP", "EUR", "GBP", "AED", "QAR", "KWD", "OMR"]
+            ],
             width=120,
         )
         self.date_field = ft.TextField(
@@ -72,13 +77,31 @@ class ThirdPartyPaymentDialog(ft.AlertDialog):
             width=dialog_width - 20,
         )
         self.exchange_rate_text = ft.Text("", size=12, color=ft.Colors.GREY_600)
-        self.preview_text = ft.Text("", size=12, color=ft.Colors.INDIGO, weight=ft.FontWeight.BOLD)
+        self.preview_text = ft.Text(
+            "", size=12, color=ft.Colors.INDIGO, weight=ft.FontWeight.BOLD
+        )
         self.preview_box = ft.Container(
-            content=ft.Column([
-                ft.Row([ft.Icon(ft.Icons.SWAP_HORIZ, size=18, color=ft.Colors.INDIGO), ft.Text(translate("preview"), weight=ft.FontWeight.BOLD, size=13)]),
-                self.preview_text,
-                ft.Text("لا يتم لمس الصندوق أو البنك؛ يتم فقط نقل الذمة من شركة إلى شركة.", size=11, color=ft.Colors.GREY_600),
-            ], spacing=6),
+            content=ft.Column(
+                [
+                    ft.Row(
+                        [
+                            ft.Icon(
+                                ft.Icons.SWAP_HORIZ, size=18, color=ft.Colors.INDIGO
+                            ),
+                            ft.Text(
+                                translate("preview"), weight=ft.FontWeight.BOLD, size=13
+                            ),
+                        ]
+                    ),
+                    self.preview_text,
+                    ft.Text(
+                        "لا يتم لمس الصندوق أو البنك؛ يتم فقط نقل الذمة من شركة إلى شركة.",
+                        size=11,
+                        color=ft.Colors.GREY_600,
+                    ),
+                ],
+                spacing=6,
+            ),
             bgcolor=ft.Colors.INDIGO_50,
             border_radius=12,
             padding=10,
@@ -88,10 +111,16 @@ class ThirdPartyPaymentDialog(ft.AlertDialog):
         self.title = dialog_title(translate("third_party_payment"), ft.Icons.SWAP_HORIZ)
         self.content = dialog_body(
             controls=[
-                ft.Text("شركة دفعت عنك لشركة أخرى؛ التطبيق ينشئ قيدين متوازنين تلقائياً.", size=12, color=ft.Colors.GREY_600),
+                ft.Text(
+                    "شركة دفعت عنك لشركة أخرى؛ التطبيق ينشئ قيدين متوازنين تلقائياً.",
+                    size=12,
+                    color=ft.Colors.GREY_600,
+                ),
                 self.payer_field,
                 self.paid_to_field,
-                ft.Row([self.amount_field, self.currency_dropdown], spacing=10, wrap=True),
+                ft.Row(
+                    [self.amount_field, self.currency_dropdown], spacing=10, wrap=True
+                ),
                 ft.Row([self.date_field], spacing=10, wrap=True),
                 ft.Container(content=self.exchange_rate_text, alignment=ALIGN_CENTER),
                 self.preview_box,
@@ -101,7 +130,10 @@ class ThirdPartyPaymentDialog(ft.AlertDialog):
             width=dialog_width - 10,
             height=dialog_height - 105,
         )
-        self.actions = [cancel_button(translate("cancel"), lambda e: self._close()), self.save_btn]
+        self.actions = [
+            cancel_button(translate("cancel"), lambda e: self._close()),
+            self.save_btn,
+        ]
         self.actions_alignment = ft.MainAxisAlignment.END
         self.inset_padding = 18
         self.shape = ft.RoundedRectangleBorder(radius=15)
@@ -120,7 +152,9 @@ class ThirdPartyPaymentDialog(ft.AlertDialog):
 
     def _update_preview(self, e):
         payer = normalize_text(self.payer_field.value) or "الشركة التي سدّدت عني"
-        paid_to = normalize_text(self.paid_to_field.value) or "الشركة التي تم السداد لها"
+        paid_to = (
+            normalize_text(self.paid_to_field.value) or "الشركة التي تم السداد لها"
+        )
         code = self.currency_dropdown.value or currency.get_display_currency()
         try:
             amount = float(str(self.amount_field.value or "0").replace(",", "."))
@@ -174,14 +208,18 @@ class ThirdPartyPaymentDialog(ft.AlertDialog):
                 paid_to_company_name=paid_to,
                 amount=amount,
                 currency_code=self.currency_dropdown.value,
-                date=self.date_field.value or datetime.datetime.now().strftime("%Y-%m-%d"),
+                date=self.date_field.value
+                or datetime.datetime.now().strftime("%Y-%m-%d"),
                 notes=self.notes_field.value or "",
                 user_id=user_id,
             )
             self._close()
             if self.on_save:
                 self.on_save(result)
-            self._show_snackbar(f"{translate('payment_on_behalf_saved')} | {result.get('reference', '')}", False)
+            self._show_snackbar(
+                f"{translate('payment_on_behalf_saved')} | {result.get('reference', '')}",
+                False,
+            )
         except Exception as ex:
             self._show_snackbar(f"فشل الحفظ: {str(ex)}", True)
         finally:

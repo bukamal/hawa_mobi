@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 """Static smoke checks for phase-3 architecture boundaries."""
+
 from __future__ import annotations
 
 import importlib

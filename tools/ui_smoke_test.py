@@ -1,6 +1,8 @@
 # -*- coding: utf-8 -*-
 """Static UI checks for the mobile interface layer."""
+
 from __future__ import annotations
+import sys
 import os
 
 import ast
