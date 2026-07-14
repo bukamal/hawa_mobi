@@ -24,6 +24,12 @@ LAYOUT_COMPACT = "compact_table"
 LAYOUT_CARDS = "cards"
 VALID_LAYOUTS = {LAYOUT_FULL, LAYOUT_COMPACT, LAYOUT_CARDS}
 
+RECONCILIATION_EXPLANATORY_NOTE = (
+    "لنا = مبالغ مستحقة لنا على الحساب. "
+    "له = مبالغ مستحقة للحساب علينا أو مدفوعة منه. "
+    "هذا الكشف مخصص للمطابقة ولا يُعد مخالصة نهائية إلا بعد التأكيد."
+)
+
 
 def _safe(value) -> str:
     return html.escape("" if value is None else str(value), quote=True)
@@ -426,9 +432,8 @@ def _render_document(company_name: str, rows: List[Dict[str, str]], totals: Dict
     generated_at = _dt.datetime.now().strftime("%Y-%m-%d %H:%M")
     force_full_ref = not bool(settings.get("shorten_long_references", False)) or layout_mode == LAYOUT_FULL
     compact = layout_mode != LAYOUT_FULL
-    note_html = ""
-    if reconciliation and settings.get("show_reconciliation_note", True):
-        note_html = "<div class='note'>لنا = مبالغ مستحقة لنا على الحساب. له = مبالغ مستحقة للحساب علينا أو مدفوعة منه. هذا الكشف مخصص للمطابقة ولا يُعد مخالصة نهائية إلا بعد التأكيد.</div>"
+    note_text = RECONCILIATION_EXPLANATORY_NOTE if reconciliation and settings.get("show_reconciliation_note", True) else ""
+    note_html = f"<div class='note'>{_safe(note_text)}</div>" if note_text else ""
     body = _render_body(rows, settings, layout_mode=layout_mode, force_full_ref=force_full_ref)
     footer_note = _safe("يرجى مراجعة الكشف وإبلاغنا بأي اختلاف خلال 48 ساعة." if reconciliation else settings.get("footer_note", "هذا الكشف صادر آلياً من نظام هوى الشام."))
     meta = f"تاريخ الإنشاء: {_ltr(generated_at)} | العملة المعروضة: {_ltr(display_currency)}" if settings.get("show_generated_at", True) else f"العملة المعروضة: {_ltr(display_currency)}"
@@ -499,8 +504,10 @@ def export_reconciliation_statement_html(company_name: str, records: Iterable[Di
     generated_at = _dt.datetime.now().strftime("%Y-%m-%d %H:%M")
     force_full_ref = not bool(settings.get("shorten_long_references", False)) or mode == LAYOUT_FULL
     body = _render_body(rows, settings, layout_mode=mode, force_full_ref=force_full_ref)
+    note_text = RECONCILIATION_EXPLANATORY_NOTE if settings.get("show_reconciliation_note", True) else ""
+    note_html = f"<div class='note'>{_safe(note_text)}</div>" if note_text else ""
     display_currency = currency.get_display_currency()
-    doc = f"""<!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>كشف مطابقة - {_safe(company_name)}</title><style>{_statement_css(settings, compact=(mode != LAYOUT_FULL))}</style></head><body><div class="sheet">{_header_html(info, company_name=company_name, statement_kind='كشف حساب للمطابقة', settings=settings)}<div class="title"><h2>كشف حساب للمطابقة</h2><div class="account-line">الحساب: {_safe(company_name)}</div><div class="meta">تاريخ الإنشاء: {_ltr(generated_at)} | العملة المعروضة: {_ltr(display_currency)}</div></div><div class='note'>لنا = مبالغ مستحقة لنا على الحساب. له = مبالغ مستحقة للحساب علينا أو مدفوعة منه. هذا الكشف مخصص للمطابقة ولا يُعد مخالصة نهائية إلا بعد التأكيد.</div>{_render_summary(totals, display_currency, settings, reconciliation=True)}{body}<div class="footer"><span>يرجى مراجعة الكشف وإبلاغنا بأي اختلاف خلال 48 ساعة.</span><span>{_safe(info.get('name'))}</span></div></div></body></html>"""
+    doc = f"""<!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>كشف مطابقة - {_safe(company_name)}</title><style>{_statement_css(settings, compact=(mode != LAYOUT_FULL))}</style></head><body><div class="sheet">{_header_html(info, company_name=company_name, statement_kind='كشف حساب للمطابقة', settings=settings)}<div class="title"><h2>كشف حساب للمطابقة</h2><div class="account-line">الحساب: {_safe(company_name)}</div><div class="meta">تاريخ الإنشاء: {_ltr(generated_at)} | العملة المعروضة: {_ltr(display_currency)}</div></div>{note_html}{_render_summary(totals, display_currency, settings, reconciliation=True)}{body}<div class="footer"><span>يرجى مراجعة الكشف وإبلاغنا بأي اختلاف خلال 48 ساعة.</span><span>{_safe(info.get('name'))}</span></div></div></body></html>"""
     with open(output_path, "w", encoding="utf-8") as f:
         f.write(doc)
     return output_path

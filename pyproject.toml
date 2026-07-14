@@ -1,12 +1,13 @@
 [project]
 name = "hawaa-accounting"
-version = "1.0.29"
+version = "1.0.33"
 description = "نظام حسابات هوى الشام الداخلي"
 requires-python = ">=3.10"
 dependencies = [
     "flet==0.28.3",
     "requests>=2.25.0",
     "flet-permission-handler>=0.1.0",
+    "Pillow>=10.0.0",
 ]
 
 [build-system]

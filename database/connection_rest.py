@@ -222,6 +222,14 @@ class RestClient:
                 raise Exception('خادم ويندوز لا يدعم سداد بالنيابة بعد. حدّث مشروع الويندوز إلى Phase 50 أو شغّل server/run_server.py من النسخة الجديدة.') from exc
             raise
 
+    def get_third_party_payment(self, reference: str) -> Dict:
+        from urllib.parse import quote
+        return self._request('GET', f'/api/third_party_payments/{quote(str(reference or ""), safe="")}')
+
+    def update_third_party_payment(self, reference: str, data: Dict) -> Dict:
+        from urllib.parse import quote
+        return self._request('PUT', f'/api/third_party_payments/{quote(str(reference or ""), safe="")}', data)
+
     def reverse_third_party_payment(self, reference: str) -> Dict:
         return self._request('POST', f'/api/third_party_payments/{reference}/reverse')
 

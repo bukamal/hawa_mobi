@@ -47,6 +47,7 @@ REQUIRED_MOBILE_ENDPOINTS = [
     "/api/expenses/summary",
     "/api/search/company-ledger",
     "/api/third_party_payments",
+    "/api/third_party_payments/{reference}",
     "/api/third_party_payments/{reference}/reverse",
     "/api/service_cases",
     "/api/service_cases/{reference}/reverse",
@@ -80,6 +81,7 @@ def _capabilities_payload() -> Dict[str, Any]:
         "supports_mobile_pairing": True,
         "supports_payment_reminders": True,
         "supports_third_party_payments": True,
+        "supports_linked_intercompany_entry_editing": True,
         "supports_audit_post": True,
         "supports_expense_summary": True,
         "supports_company_deep_search": True,
@@ -326,6 +328,27 @@ def _insert_expense_with_source(conn: sqlite3.Connection, p: Dict[str, Any]) -> 
     )
     return int(cur.lastrowid)
 
+
+
+def _update_expense_with_source(conn: sqlite3.Connection, expense_id: int, p: Dict[str, Any]) -> None:
+    from services.ledger_operation_service import normalize_expense_metadata
+    p = normalize_expense_metadata(p)
+    cur = conn.execute(
+        """UPDATE expenses SET
+        company_name=?, amount=?, amount_base=?, type=?, date=?, notes=?, currency=?,
+        updated_by=?, updated_at=?, amount_original=?, currency_original=?, exchange_rate_to_usd=?,
+        status=?, payment_due_date=?, payment_reminder_note=?, source_type=?, source_ref=?, counterparty_company_name=?,
+        person_name=?, person_name_search=?, service_type=?, operation_type=?, is_locked=?, reversal_of=?, reversed_by=?,
+        print_description=?, internal_note=?, service_case_role=?, linked_company_name=?
+        WHERE id=?""",
+        (p["company_name"], p["amount"], p["amount_base"], p["type"], p["date"], p.get("notes", ""), p["currency"],
+         p.get("updated_by"), p.get("updated_at"), p["amount_original"], p["currency_original"], p["exchange_rate_to_usd"],
+         p.get("status", "approved"), p.get("payment_due_date"), p.get("payment_reminder_note"), p.get("source_type"), p.get("source_ref"), p.get("counterparty_company_name"),
+         p.get("person_name"), p.get("person_name_search"), p.get("service_type"), p.get("operation_type"), p.get("is_locked", 1), p.get("reversal_of"), p.get("reversed_by"),
+         p.get("print_description"), p.get("internal_note"), p.get("service_case_role"), p.get("linked_company_name"), int(expense_id)),
+    )
+    if cur.rowcount != 1:
+        raise ValueError(f"تعذر تحديث القيد المرتبط id={expense_id}")
 
 def _new_third_party_reference() -> str:
     return "TPP-" + datetime.datetime.now().strftime("%Y%m%d-%H%M%S") + "-" + secrets.token_hex(3).upper()
@@ -714,6 +737,124 @@ def add_third_party_payment():
         _audit(conn, "سداد بالنيابة", "third_party_payments", None, f"{payer} سدّد عني إلى {paid_to}: {amount} {currency_code} | {reference}")
         conn.commit()
         return jsonify({"ok": True, "reference": reference, "payer_expense_id": payer_expense_id, "paid_to_expense_id": paid_to_expense_id, "amount_base": paid_to_payload["amount_base"], "exchange_rate_to_usd": paid_to_payload["exchange_rate_to_usd"]})
+    except Exception as e:
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+        return _json_error(e, 400)
+    finally:
+        conn.close()
+
+
+
+@app.get("/api/third_party_payments/<path:reference>")
+@require_auth
+def get_third_party_payment(reference: str):
+    reference = str(reference or "").strip()
+    conn = _connect()
+    try:
+        row = conn.execute("SELECT * FROM third_party_payments WHERE reference=?", (reference,)).fetchone()
+        if not row:
+            return _json_error("لم يتم العثور على عملية السداد بالنيابة", 404)
+        out = dict(row)
+        rows = conn.execute("SELECT * FROM expenses WHERE source_ref=? AND source_type='third_party_payment' ORDER BY id", (reference,)).fetchall()
+        out["entries"] = [dict(r) for r in rows]
+        return jsonify(out)
+    finally:
+        conn.close()
+
+
+@app.put("/api/third_party_payments/<path:reference>")
+@require_roles(*_role_allows_write())
+def update_third_party_payment(reference: str):
+    reference = str(reference or "").strip()
+    data = request.get_json(silent=True) or {}
+    conn = _connect()
+    try:
+        row = conn.execute("SELECT * FROM third_party_payments WHERE reference=?", (reference,)).fetchone()
+        if not row:
+            return _json_error("لم يتم العثور على عملية السداد بالنيابة", 404)
+        payment = dict(row)
+        if payment.get("status") == "reversed":
+            return _json_error("لا يمكن تعديل عملية معكوسة. أنشئ عملية جديدة بدلاً منها.", 409)
+        try:
+            payer, paid_to, amount, currency_code, date, notes = _validate_third_party_payload(data)
+        except ValueError as e:
+            return _json_error(e, 400)
+        reason = str(data.get("edit_reason") or "").strip()
+        if not reason:
+            return _json_error("سبب تعديل العملية مطلوب", 400)
+        payer_row = conn.execute("SELECT * FROM expenses WHERE id=?", (payment.get("payer_expense_id"),)).fetchone() if payment.get("payer_expense_id") else None
+        paid_to_row = conn.execute("SELECT * FROM expenses WHERE id=?", (payment.get("paid_to_expense_id"),)).fetchone() if payment.get("paid_to_expense_id") else None
+        if not payer_row or not paid_to_row:
+            rows = conn.execute("SELECT * FROM expenses WHERE source_ref=? AND source_type='third_party_payment' ORDER BY id", (reference,)).fetchall()
+            for r in rows:
+                if r["type"] == "outgoing" and not payer_row:
+                    payer_row = r
+                elif r["type"] == "incoming" and not paid_to_row:
+                    paid_to_row = r
+        if not payer_row or not paid_to_row:
+            return _json_error("تعذر العثور على القيدين المرتبطين بعملية سدد عني", 409)
+        payer_entry = dict(payer_row)
+        paid_to_entry = dict(paid_to_row)
+        if payer_entry.get("source_ref") != reference or paid_to_entry.get("source_ref") != reference:
+            return _json_error("ترابط القيود غير مطابق للمرجع", 409)
+        if payer_entry.get("source_type") != "third_party_payment" or paid_to_entry.get("source_type") != "third_party_payment":
+            return _json_error("لا يمكن تعديل عملية غير أصلية أو معكوسة", 409)
+        if payer_entry.get("type") != "outgoing" or paid_to_entry.get("type") != "incoming":
+            return _json_error("اتجاهات قيود سدد عني غير متوازنة", 409)
+        user = _current_user() or {}
+        uid = user.get("id") or data.get("updated_by") or 1
+        now = _now()
+        paid_to_payload = _expense_payload(conn, {
+            "company_name": paid_to,
+            "amount": amount,
+            "type": "incoming",
+            "date": date,
+            "notes": f"سداد بالنيابة: {payer} سدّد عني إلى {paid_to}. المرجع {reference}. {notes}".strip(),
+            "currency": currency_code,
+            "created_by": paid_to_entry.get("created_by"),
+            "created_at": paid_to_entry.get("created_at"),
+            "updated_by": uid,
+            "updated_at": now,
+            "source_type": "third_party_payment",
+            "source_ref": reference,
+            "counterparty_company_name": payer,
+            "service_type": "سداد بالنيابة",
+            "operation_type": "third_party_payment",
+            "is_locked": 1,
+        }, existing=paid_to_entry)
+        payer_payload = _expense_payload(conn, {
+            "company_name": payer,
+            "amount": amount,
+            "type": "outgoing",
+            "date": date,
+            "notes": f"ذمة مستحقة: {payer} سدّد عني إلى {paid_to}. المرجع {reference}. {notes}".strip(),
+            "currency": currency_code,
+            "created_by": payer_entry.get("created_by"),
+            "created_at": payer_entry.get("created_at"),
+            "updated_by": uid,
+            "updated_at": now,
+            "source_type": "third_party_payment",
+            "source_ref": reference,
+            "counterparty_company_name": paid_to,
+            "service_type": "سداد بالنيابة",
+            "operation_type": "third_party_payment",
+            "is_locked": 1,
+        }, existing=payer_entry)
+        conn.execute("BEGIN IMMEDIATE")
+        _update_expense_with_source(conn, int(paid_to_entry["id"]), paid_to_payload)
+        _update_expense_with_source(conn, int(payer_entry["id"]), payer_payload)
+        conn.execute(
+            """UPDATE third_party_payments SET payer_company_name=?, paid_to_company_name=?, amount_original=?, currency_original=?,
+               exchange_rate_to_usd=?, amount_base=?, date=?, notes=?, updated_by=?, updated_at=?, edit_reason=? WHERE reference=?""",
+            (payer, paid_to, amount, currency_code, paid_to_payload["exchange_rate_to_usd"], paid_to_payload["amount_base"], date, notes, uid, now, reason, reference),
+        )
+        details = f"{reference} | السبب: {reason} | قبل: {payment.get('payer_company_name')} -> {payment.get('paid_to_company_name')} {payment.get('amount_original')} {payment.get('currency_original')} بتاريخ {payment.get('date')} | بعد: {payer} -> {paid_to} {amount} {currency_code} بتاريخ {date}"
+        _audit(conn, "تعديل سداد بالنيابة", "third_party_payments", payment.get("id"), details)
+        conn.commit()
+        return jsonify({"ok": True, "reference": reference, "payer_expense_id": int(payer_entry["id"]), "paid_to_expense_id": int(paid_to_entry["id"]), "amount_base": paid_to_payload["amount_base"], "exchange_rate_to_usd": paid_to_payload["exchange_rate_to_usd"]})
     except Exception as e:
         try:
             conn.rollback()

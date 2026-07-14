@@ -73,7 +73,9 @@ assert "white-space:nowrap" in recon_html
 assert "class='ltr'" in recon_html
 assert "class='money" in recon_html
 assert "+963" in recon_html or "963" in recon_html, "Header contact should be present and isolated"
-assert "مخالصة نهائية" in recon_html and "48 ساعة" in recon_html
+assert "لنا = مبالغ مستحقة لنا على الحساب" in recon_html
+assert "مخالصة نهائية" in recon_html
+assert "48 ساعة" in recon_html
 
 assert "class=\"movement statement-card\"" in cards_html, "Cards layout should remain available from settings"
 assert "طارق الجباوي" in cards_html and "SVC-20260712-235813-BFFAAB" in cards_html

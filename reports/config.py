@@ -40,6 +40,7 @@ DEFAULT_REPORT_SETTINGS = {
     "show_generated_at": True,
     "show_company_contact": True,
     "show_statement_summary": True,
+    # Reconciliation explanatory note is visible by default and can be disabled from report settings.
     "show_reconciliation_note": True,
     "statement_use_colors": True,
     "shorten_long_references": False,

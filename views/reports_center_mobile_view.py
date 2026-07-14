@@ -31,6 +31,7 @@ from reports.reporting_center import (
     export_report_csv,
     export_report_html,
 )
+from reports.image_export import export_report_image
 from services.file_export_service import FileExportService
 from views.flet_compat import run_async_task
 from views.financial_date_field import FinancialDateField, today_iso
@@ -179,6 +180,7 @@ class ReportsCenterMobileView(ft.Column):
                 content=ft.Row([
                     primary_button("عرض", ft.Icons.VISIBILITY, self._on_view_report),
                     ft.OutlinedButton(content=ft.Row([ft.Icon(ft.Icons.PRINT, color=PRIMARY), ft.Text("HTML", color=PRIMARY, weight=ft.FontWeight.BOLD)], tight=True), on_click=self._on_export_html),
+                    ft.OutlinedButton(content=ft.Row([ft.Icon(ft.Icons.IMAGE, color=PRIMARY), ft.Text("PNG", color=PRIMARY, weight=ft.FontWeight.BOLD)], tight=True), on_click=self._on_export_png),
                     ft.OutlinedButton(content=ft.Row([ft.Icon(ft.Icons.TABLE_VIEW, color=PRIMARY), ft.Text("CSV", color=PRIMARY, weight=ft.FontWeight.BOLD)], tight=True), on_click=self._on_export_csv),
                     ft.OutlinedButton(content=ft.Row([ft.Icon(ft.Icons.SHARE, color=PRIMARY), ft.Text("مشاركة", color=PRIMARY, weight=ft.FontWeight.BOLD)], tight=True), on_click=self._on_share_html),
                 ], spacing=8, run_spacing=8, wrap=True),
@@ -319,6 +321,15 @@ class ReportsCenterMobileView(ft.Column):
             run_async_task(self._page, self._open_path, path, report.title)
         except Exception as ex:
             self._show_snackbar(f"تعذر إنشاء HTML: {ex}", True)
+
+
+    def _on_export_png(self, e=None):
+        try:
+            report = self._require_report()
+            path = export_report_image(report)
+            run_async_task(self._page, self._open_path, path, f"PNG — {report.title}")
+        except Exception as ex:
+            self._show_snackbar(f"تعذر إنشاء PNG: {ex}", True)
 
     def _on_export_csv(self, e=None):
         try:

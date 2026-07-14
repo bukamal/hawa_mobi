@@ -3,3 +3,5 @@ from .account_statement import export_account_statement_html, export_account_sta
 from .config import get_report_settings, save_report_settings
 
 from .share import build_statement_message, share_file, share_text_to_whatsapp, whatsapp_url
+
+from .image_export import export_statement_image, export_report_image

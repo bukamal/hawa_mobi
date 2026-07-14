@@ -25,11 +25,16 @@ from views.dialogs.dialog_kit import (
 class ThirdPartyPaymentDialog(ft.AlertDialog):
     """Mobile dialog for: شركة سدّدت عني لشركة أخرى."""
 
-    def __init__(self, page, on_save=None, payer_company_name=None, paid_to_company_name=None):
+    def __init__(self, page, on_save=None, payer_company_name=None, paid_to_company_name=None, payment=None, reference=None):
         super().__init__()
         self._page = page
         self.on_save = on_save
         self._saving = False
+        if payment is None and reference:
+            payment = ThirdPartyPaymentRepository().get_by_reference(reference)
+        self.payment = dict(payment or {})
+        self.edit_mode = bool(self.payment.get("reference"))
+        self.reference = self.payment.get("reference") or reference
 
         page_width = self._page.width or 400
         page_height = self._page.height or 650
@@ -38,30 +43,31 @@ class ThirdPartyPaymentDialog(ft.AlertDialog):
 
         self.payer_field = ft.TextField(
             label=translate("payer_company"),
-            value=payer_company_name or "",
+            value=self.payment.get("payer_company_name") or payer_company_name or "",
             width=dialog_width - 20,
         )
         self.paid_to_field = ft.TextField(
             label=translate("paid_to_company"),
-            value=paid_to_company_name or "",
-            disabled=bool(paid_to_company_name),
+            value=self.payment.get("paid_to_company_name") or paid_to_company_name or "",
+            disabled=(bool(paid_to_company_name) and not self.edit_mode),
             width=dialog_width - 20,
         )
         self.amount_field = ft.TextField(
             label=translate("amount"),
             keyboard_type=ft.KeyboardType.NUMBER,
             width=dialog_width - 150,
-            value="",
+            value=str(self.payment.get("amount_original") or ""),
         )
         self.currency_dropdown = ft.Dropdown(
             label=translate("currency"),
-            value=currency.get_display_currency(),
+            value=self.payment.get("currency_original") or currency.get_display_currency(),
             options=[ft.dropdown.Option(c) for c in ["USD", "SAR", "SYP", "EUR", "GBP", "AED", "QAR", "KWD", "OMR"]],
             width=120,
         )
         self.operation_date = FinancialDateField(
             self._page,
             label="تاريخ السداد",
+            value=self.payment.get("date"),
             width=dialog_width - 20,
         )
         self.date_field = self.operation_date.field
@@ -70,7 +76,17 @@ class ThirdPartyPaymentDialog(ft.AlertDialog):
             multiline=True,
             min_lines=2,
             max_lines=4,
+            value=self.payment.get("notes") or "",
             width=dialog_width - 20,
+        )
+        self.edit_reason_field = ft.TextField(
+            label="سبب التعديل",
+            hint_text="مثال: تصحيح مبلغ السداد أو تاريخ العملية",
+            multiline=True,
+            min_lines=1,
+            max_lines=3,
+            width=dialog_width - 20,
+            visible=self.edit_mode,
         )
         self.exchange_rate_text = ft.Text("", size=12, color=ft.Colors.GREY_600)
         self.preview_text = ft.Text("", size=12, color=ft.Colors.INDIGO, weight=ft.FontWeight.BOLD)
@@ -85,11 +101,11 @@ class ThirdPartyPaymentDialog(ft.AlertDialog):
             padding=10,
         )
 
-        self.save_btn = save_button(translate("save"), self._save)
-        self.title = dialog_title(translate("third_party_payment"), ft.Icons.SWAP_HORIZ)
+        self.save_btn = save_button("حفظ التعديل" if self.edit_mode else translate("save"), self._save)
+        self.title = dialog_title("تعديل سداد بالنيابة" if self.edit_mode else translate("third_party_payment"), ft.Icons.SWAP_HORIZ)
         self.content = dialog_body(
             controls=[
-                ft.Text("شركة دفعت عنك لشركة أخرى؛ التطبيق ينشئ قيدين متوازنين تلقائياً.", size=12, color=ft.Colors.GREY_600),
+                ft.Text("سيتم تعديل القيدين المرتبطين معاً داخل عملية واحدة، ولا يمكن تعديل قيد منفرد." if self.edit_mode else "شركة دفعت عنك لشركة أخرى؛ التطبيق ينشئ قيدين متوازنين تلقائياً.", size=12, color=ft.Colors.GREY_600),
                 self.payer_field,
                 self.paid_to_field,
                 ft.Row([self.amount_field, self.currency_dropdown], spacing=10, wrap=True),
@@ -97,6 +113,7 @@ class ThirdPartyPaymentDialog(ft.AlertDialog):
                 ft.Container(content=self.exchange_rate_text, alignment=ALIGN_CENTER),
                 self.preview_box,
                 self.notes_field,
+                self.edit_reason_field,
             ],
             spacing=14,
             width=dialog_width - 10,
@@ -179,20 +196,38 @@ class ThirdPartyPaymentDialog(ft.AlertDialog):
         set_button_busy(self.save_btn, True, translate("save"))
         try:
             repo = ThirdPartyPaymentRepository()
-            result = repo.add_payment_on_behalf(
-                payer_company_name=payer,
-                paid_to_company_name=paid_to,
-                amount=amount,
-                currency_code=self.currency_dropdown.value,
-                date=operation_date,
-                notes=self.notes_field.value or "",
-                user_id=user_id,
-            )
+            if self.edit_mode:
+                reason = normalize_text(self.edit_reason_field.value)
+                if not reason:
+                    self._show_snackbar("سبب تعديل العملية مطلوب", True)
+                    return
+                result = repo.update_payment_on_behalf(
+                    reference=self.reference,
+                    payer_company_name=payer,
+                    paid_to_company_name=paid_to,
+                    amount=amount,
+                    currency_code=self.currency_dropdown.value,
+                    date=operation_date,
+                    notes=self.notes_field.value or "",
+                    edit_reason=reason,
+                    user_id=user_id,
+                )
+            else:
+                result = repo.add_payment_on_behalf(
+                    payer_company_name=payer,
+                    paid_to_company_name=paid_to,
+                    amount=amount,
+                    currency_code=self.currency_dropdown.value,
+                    date=operation_date,
+                    notes=self.notes_field.value or "",
+                    user_id=user_id,
+                )
             self.operation_date.remember()
             self._close()
             if self.on_save:
                 self.on_save(result)
-            self._show_snackbar(f"{translate('payment_on_behalf_saved')} | {result.get('reference', '')}", False)
+            msg = "تم تعديل عملية السداد بالنيابة" if self.edit_mode else translate('payment_on_behalf_saved')
+            self._show_snackbar(f"{msg} | {result.get('reference', '')}", False)
         except Exception as ex:
             self._show_snackbar(f"فشل الحفظ: {str(ex)}", True)
         finally:

@@ -65,6 +65,10 @@ class CompanyDetailsMobileView(ft.Column):
                 color=ft.Colors.WHITE,
             ),
             ft.TextButton(
+                content=ft.Row([ft.Icon(ft.Icons.IMAGE), ft.Text("صورة")], tight=True),
+                on_click=self._share_statement_image,
+            ),
+            ft.TextButton(
                 content=ft.Row([ft.Icon(ft.Icons.CHAT), ft.Text("واتساب")], tight=True),
                 on_click=self._share_statement_whatsapp,
             ),
@@ -207,6 +211,7 @@ class CompanyDetailsMobileView(ft.Column):
                     ft.Row([
                         action_text_button("تعديل", ft.Icons.EDIT, lambda e, rec=r: self._edit_record(rec), color=PRIMARY, visible=(not is_viewer and not r.get('source_type') and not int(r.get('is_locked') or 0))),
                         action_text_button("حذف", ft.Icons.DELETE, lambda e, rec=r: self._delete_record(rec), color=DANGER, visible=(not is_viewer and not r.get('source_type') and not int(r.get('is_locked') or 0))),
+                        action_text_button("تعديل العملية", ft.Icons.EDIT_NOTE, lambda e, rec=r: self._edit_third_party(rec), color=PRIMARY, visible=(not is_viewer and r.get('source_type') == 'third_party_payment')),
                         action_text_button("عكس", ft.Icons.UNDO, lambda e, rec=r: self._reverse_third_party(rec), color=WARNING, visible=(not is_viewer and r.get('source_type') == 'third_party_payment')),
                     ], alignment=ft.MainAxisAlignment.END)
                 ], spacing=8),
@@ -258,6 +263,18 @@ class CompanyDetailsMobileView(ft.Column):
         except Exception as ex:
             self._show_snackbar(f"خطأ في مشاركة كشف المطابقة: {str(ex)}", True)
 
+
+    async def _share_statement_image(self, e):
+        try:
+            from reports.image_export import export_statement_image
+            from reports.share import share_file_async
+            path = export_statement_image(self.company_name, self.records, reconciliation=True)
+            message = f"صورة كشف مطابقة - {self.company_name}"
+            result = await share_file_async(self._page, path, message, open_whatsapp=False, title="مشاركة صورة كشف المطابقة")
+            self._show_snackbar(result.message if result.ok else result.message or f"تم إنشاء صورة الكشف: {path}", not result.ok)
+        except Exception as ex:
+            self._show_snackbar(f"خطأ في إنشاء صورة الكشف: {str(ex)}", True)
+
     async def _share_statement_whatsapp(self, e):
         try:
             from reports.account_statement import export_reconciliation_statement_html
@@ -306,6 +323,23 @@ class CompanyDetailsMobileView(ft.Column):
             actions=[btn_yes, btn_no]
         )
         open_control(self._page, dlg)
+
+    def _edit_third_party(self, record):
+        ref = record.get('source_ref') or ''
+        if not ref:
+            self._show_snackbar("لا يوجد مرجع لتعديل العملية", True)
+            return
+        try:
+            from database import ThirdPartyPaymentRepository
+            from views.dialogs.third_party_payment_dialog import ThirdPartyPaymentDialog
+            payment = ThirdPartyPaymentRepository().get_by_reference(ref)
+            if payment.get('status') == 'reversed':
+                self._show_snackbar("لا يمكن تعديل عملية معكوسة. استخدم إنشاء عملية جديدة.", True)
+                return
+            dialog = ThirdPartyPaymentDialog(page=self._page, on_save=lambda _: self._reload(), payment=payment)
+            open_control(self._page, dialog)
+        except Exception as ex:
+            self._show_snackbar(f"خطأ في فتح تعديل العملية: {str(ex)}", True)
 
     def _reverse_third_party(self, record):
         ref = record.get('source_ref') or ''
