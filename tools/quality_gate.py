@@ -110,6 +110,7 @@ def main() -> int:
         "tools/third_party_payment_smoke_test.py",
         "tools/linked_intercompany_entry_edit_smoke_test.py",
         "tools/linked_service_case_edit_smoke_test.py",
+        "tools/searchable_lookup_fields_smoke_test.py",
         "tools/company_deep_search_smoke_test.py",
         "tools/ledger_operation_core_smoke_test.py",
         "tools/service_case_workflow_smoke_test.py",

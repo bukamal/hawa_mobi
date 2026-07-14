@@ -11,6 +11,7 @@ from services.ledger_operation_service import SERVICE_TYPES
 from services.service_case_service import validate_service_case_payload
 from views.flet_compat import close_control, run_async_task
 from views.financial_date_field import FinancialDateField
+from views.searchable_lookup_field import company_lookup_field, person_lookup_field, service_type_lookup_field
 from views.dialogs.dialog_kit import (
     dialog_title,
     dialog_body,
@@ -53,19 +54,19 @@ class ServiceCaseDialog(ft.AlertDialog):
         if not transport_component and len(existing_components) > 2:
             transport_component = existing_components[2]
 
-        self.client_field = ft.TextField(label="الشركة العميلة", value=self.service_case.get("client_company_name") or client_company_name or "", width=dialog_width - 20, hint_text="مثال: بلو ستار")
-        self.supplier_field = ft.TextField(label="الشركة المورّدة", value=primary_component.get("supplier_company_name") or self.service_case.get("supplier_company_name") or supplier_company_name or "", width=dialog_width - 20, hint_text="مثال: سيف الشام")
-        self.person_field = ft.TextField(label="اسم الزبون / المسافر", value=self.service_case.get("person_name") or "", width=dialog_width - 20, hint_text="مثال: أحمد محمد")
+        self.client_field = company_lookup_field(label="الشركة العميلة", value=self.service_case.get("client_company_name") or client_company_name or "", width=dialog_width - 20, hint_text="مثال: بلو ستار")
+        self.supplier_field = company_lookup_field(label="الشركة المورّدة", value=primary_component.get("supplier_company_name") or self.service_case.get("supplier_company_name") or supplier_company_name or "", width=dialog_width - 20, hint_text="مثال: سيف الشام")
+        self.person_field = person_lookup_field(label="اسم الزبون / المسافر", value=self.service_case.get("person_name") or "", width=dialog_width - 20, hint_text="مثال: أحمد محمد")
         default_service = primary_component.get("service_type") or self.service_case.get("service_type") or ("تأشيرة سياحية" if "تأشيرة سياحية" in SERVICE_TYPES else "فيزا")
         if default_service not in SERVICE_TYPES:
             default_service = "تأشيرة سياحية" if "تأشيرة سياحية" in SERVICE_TYPES else SERVICE_TYPES[0]
-        self.service_dropdown = ft.Dropdown(label="نوع الخدمة", value=default_service, options=[ft.dropdown.Option(s) for s in SERVICE_TYPES], width=dialog_width - 20)
+        self.service_dropdown = service_type_lookup_field(label="نوع الخدمة", value=default_service, width=dialog_width - 20)
         self.sale_field = ft.TextField(label="سعر البيع على الشركة العميلة", keyboard_type=ft.KeyboardType.NUMBER, width=dialog_width - 20, value=str(primary_component.get("sale_amount_original") if primary_component else self.service_case.get("sale_amount_original") or ""))
         self.cost_field = ft.TextField(label="تكلفة الشركة المورّدة الأساسية", keyboard_type=ft.KeyboardType.NUMBER, width=dialog_width - 20, value=str(primary_component.get("cost_amount_original") if primary_component else self.service_case.get("cost_amount_original") or ""))
-        self.embassy_supplier_field = ft.TextField(label="حساب السفارة / رسوم السفارة", value=embassy_component.get("supplier_company_name") or "", width=dialog_width - 20, hint_text="مثال: رسوم سفارات أو سفارة الأردن")
+        self.embassy_supplier_field = company_lookup_field(label="حساب السفارة / رسوم السفارة", value=embassy_component.get("supplier_company_name") or "", width=dialog_width - 20, hint_text="مثال: رسوم سفارات أو سفارة الأردن")
         self.embassy_sale_field = ft.TextField(label="بيع رسوم السفارة على العميل", keyboard_type=ft.KeyboardType.NUMBER, width=(dialog_width - 34) / 2, value=str(embassy_component.get("sale_amount_original") or ""))
         self.embassy_cost_field = ft.TextField(label="تكلفة رسوم السفارة", keyboard_type=ft.KeyboardType.NUMBER, width=(dialog_width - 34) / 2, value=str(embassy_component.get("cost_amount_original") or ""))
-        self.transport_supplier_field = ft.TextField(label="شركة النقل البري", value=transport_component.get("supplier_company_name") or "", width=dialog_width - 20, hint_text="مثال: شركة نقل الشام")
+        self.transport_supplier_field = company_lookup_field(label="شركة النقل البري", value=transport_component.get("supplier_company_name") or "", width=dialog_width - 20, hint_text="مثال: شركة نقل الشام")
         self.transport_sale_field = ft.TextField(label="بيع النقل على العميل", keyboard_type=ft.KeyboardType.NUMBER, width=(dialog_width - 34) / 2, value=str(transport_component.get("sale_amount_original") or ""))
         self.transport_cost_field = ft.TextField(label="تكلفة النقل", keyboard_type=ft.KeyboardType.NUMBER, width=(dialog_width - 34) / 2, value=str(transport_component.get("cost_amount_original") or ""))
         self.currency_dropdown = ft.Dropdown(label="العملة", value=self.service_case.get("currency_original") or currency.get_display_currency(), options=[ft.dropdown.Option(c) for c in ["USD","SAR","SYP","EUR","GBP","AED","QAR","KWD","OMR"]], width=120)

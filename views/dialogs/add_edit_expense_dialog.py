@@ -9,6 +9,7 @@ from views.flet_compat import close_control, ALIGN_CENTER
 from views.dialogs.dialog_kit import dialog_title, dialog_body, cancel_button, save_button, show_snackbar, set_button_busy, normalize_text, parse_non_negative_amount
 from services.ledger_operation_service import SERVICE_TYPES, OPERATION_LABELS, SERVICE_TO_OPERATION
 from views.financial_date_field import FinancialDateField
+from views.searchable_lookup_field import company_lookup_field, person_lookup_field, service_type_lookup_field
 
 class AddEditExpenseDialog(ft.AlertDialog):
     def __init__(self, page, on_save=None, expense=None, company_name=None):
@@ -42,11 +43,12 @@ class AddEditExpenseDialog(ft.AlertDialog):
 
         is_disabled = (self.predefined_company is not None and self.predefined_company.strip() != "") and (self.expense_id is None)
 
-        self.company_field = ft.TextField(
+        self.company_field = company_lookup_field(
             label=translate('company_name'),
             value=self.predefined_company or (expense['company_name'] if expense else ""),
             disabled=is_disabled,
-            width=dialog_width - 20
+            width=dialog_width - 20,
+            hint_text="ابحث أو أنشئ حساب شركة",
         )
 
         self.amount_field = ft.TextField(
@@ -80,21 +82,20 @@ class AddEditExpenseDialog(ft.AlertDialog):
         self.date_picker_field = self.operation_date.field
         self.date_picker = self.operation_date.date_picker
 
-        self.person_field = ft.TextField(
+        self.person_field = person_lookup_field(
             label="اسم الزبون / المسافر (اختياري)",
             value=(expense.get('person_name') if expense else "") or "",
             hint_text="مثال: محمد المصري",
-            width=dialog_width - 20
+            width=dialog_width - 20,
         )
 
         current_service = (expense.get('service_type') if expense else "غير محدد") or "غير محدد"
         if current_service not in SERVICE_TYPES:
             current_service = "غير محدد"
-        self.service_dropdown = ft.Dropdown(
+        self.service_dropdown = service_type_lookup_field(
             label="نوع الخدمة",
             value=current_service,
-            options=[ft.dropdown.Option(s) for s in SERVICE_TYPES],
-            width=dialog_width - 20
+            width=dialog_width - 20,
         )
 
         current_operation = (expense.get('operation_type') if expense else "") or SERVICE_TO_OPERATION.get(current_service, 'normal')
