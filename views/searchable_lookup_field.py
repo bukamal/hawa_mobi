@@ -39,7 +39,14 @@ class SearchableLookupField(ft.Column):
         disabled: bool = False,
         strict_existing: bool = False,
     ):
-        super().__init__(spacing=6, tight=True)
+        # IMPORTANT: ``disabled`` is also a base Flet Control property.
+        # Some Flet versions assign it during ``Column.__init__``; if this class
+        # exposes a custom ``disabled`` property that touches ``self.field`` before
+        # the TextField is created, dialog construction fails and Android appears
+        # to ignore all modal windows. Keep the backing value available before
+        # calling the base constructor.
+        self._disabled = bool(disabled)
+        super().__init__(controls=[], spacing=6, tight=True)
         self.lookup_type = lookup_type
         self.provider = provider
         self.allow_create = bool(allow_create)
@@ -55,7 +62,7 @@ class SearchableLookupField(ft.Column):
             value=str(value or ""),
             hint_text=hint_text,
             width=width,
-            disabled=disabled,
+            disabled=self._disabled,
             border_radius=12,
             prefix_icon=ft.Icons.SEARCH,
             on_change=self._on_text_change,
@@ -74,11 +81,17 @@ class SearchableLookupField(ft.Column):
 
     @property
     def disabled(self) -> bool:
-        return bool(getattr(self.field, "disabled", False))
+        return bool(getattr(self, "_disabled", False))
 
     @disabled.setter
     def disabled(self, value: bool) -> None:
-        self.field.disabled = bool(value)
+        self._disabled = bool(value)
+        field = getattr(self, "field", None)
+        if field is not None:
+            try:
+                field.disabled = self._disabled
+            except Exception:
+                pass
 
     @property
     def on_change(self):

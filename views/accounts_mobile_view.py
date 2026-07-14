@@ -319,26 +319,36 @@ class AccountsMobileView(ft.Column):
             self._show_snackbar("ليس لديك صلاحية لإضافة ملفات خدمات", True)
             return
         from views.dialogs.service_case_dialog import ServiceCaseDialog
-        dialog = ServiceCaseDialog(
-            page=self._page,
-            on_save=lambda _: self._refresh_cards(None),
-            client_company_name=client_company,
-            supplier_company_name=supplier_company,
-        )
-        open_control(self._page, dialog)
+        try:
+            dialog = ServiceCaseDialog(
+                page=self._page,
+                on_save=lambda _: self._refresh_cards(None),
+                client_company_name=client_company,
+                supplier_company_name=supplier_company,
+            )
+            open_control(self._page, dialog)
+        except Exception as e:
+            self._show_snackbar(f"خطأ في فتح نافذة الخدمة: {str(e)}", True)
+            import traceback
+            traceback.print_exc()
 
     def _add_third_party_payment(self, payer_company=None, paid_to_company=None):
         if UserSession.get_current() and UserSession.get_current().get('role') == 'viewer':
             self._show_snackbar("ليس لديك صلاحية لإضافة قيود", True)
             return
         from views.dialogs.third_party_payment_dialog import ThirdPartyPaymentDialog
-        dialog = ThirdPartyPaymentDialog(
-            page=self._page,
-            on_save=lambda _: self._refresh_cards(None),
-            payer_company_name=payer_company,
-            paid_to_company_name=paid_to_company,
-        )
-        open_control(self._page, dialog)
+        try:
+            dialog = ThirdPartyPaymentDialog(
+                page=self._page,
+                on_save=lambda _: self._refresh_cards(None),
+                payer_company_name=payer_company,
+                paid_to_company_name=paid_to_company,
+            )
+            open_control(self._page, dialog)
+        except Exception as e:
+            self._show_snackbar(f"خطأ في فتح نافذة سدد عني: {str(e)}", True)
+            import traceback
+            traceback.print_exc()
 
     def _add_record(self, company_name=None):
         if UserSession.get_current() and UserSession.get_current().get('role') == 'viewer':
