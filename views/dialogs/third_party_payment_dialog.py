@@ -9,6 +9,7 @@ from currency import currency
 from database import ThirdPartyPaymentRepository
 from i18n.translator import translate
 from views.flet_compat import close_control, ALIGN_CENTER
+from views.financial_date_field import FinancialDateField
 from views.dialogs.dialog_kit import (
     dialog_title,
     dialog_body,
@@ -58,12 +59,12 @@ class ThirdPartyPaymentDialog(ft.AlertDialog):
             options=[ft.dropdown.Option(c) for c in ["USD", "SAR", "SYP", "EUR", "GBP", "AED", "QAR", "KWD", "OMR"]],
             width=120,
         )
-        self.date_field = ft.TextField(
-            label=translate("date"),
-            value=datetime.datetime.now().strftime("%Y-%m-%d"),
-            hint_text="YYYY-MM-DD",
-            width=150,
+        self.operation_date = FinancialDateField(
+            self._page,
+            label="تاريخ السداد",
+            width=dialog_width - 20,
         )
+        self.date_field = self.operation_date.field
         self.notes_field = ft.TextField(
             label=translate("notes"),
             multiline=True,
@@ -92,7 +93,7 @@ class ThirdPartyPaymentDialog(ft.AlertDialog):
                 self.payer_field,
                 self.paid_to_field,
                 ft.Row([self.amount_field, self.currency_dropdown], spacing=10, wrap=True),
-                ft.Row([self.date_field], spacing=10, wrap=True),
+                self.operation_date,
                 ft.Container(content=self.exchange_rate_text, alignment=ALIGN_CENTER),
                 self.preview_box,
                 self.notes_field,
@@ -113,6 +114,10 @@ class ThirdPartyPaymentDialog(ft.AlertDialog):
         self._update_preview(None)
 
     def _close(self):
+        try:
+            self.operation_date.close()
+        except Exception:
+            pass
         close_control(self._page, self)
 
     def _show_snackbar(self, message, is_error=False):
@@ -163,6 +168,11 @@ class ThirdPartyPaymentDialog(ft.AlertDialog):
         if amount <= 0:
             self._show_snackbar("المبلغ يجب أن يكون أكبر من صفر", True)
             return
+        try:
+            operation_date = self.operation_date.require_value("تاريخ السداد")
+        except Exception as ex:
+            self._show_snackbar(str(ex), True)
+            return
         user = UserSession.get_current() or {}
         user_id = user.get("id") or 1
         self._saving = True
@@ -174,10 +184,11 @@ class ThirdPartyPaymentDialog(ft.AlertDialog):
                 paid_to_company_name=paid_to,
                 amount=amount,
                 currency_code=self.currency_dropdown.value,
-                date=self.date_field.value or datetime.datetime.now().strftime("%Y-%m-%d"),
+                date=operation_date,
                 notes=self.notes_field.value or "",
                 user_id=user_id,
             )
+            self.operation_date.remember()
             self._close()
             if self.on_save:
                 self.on_save(result)

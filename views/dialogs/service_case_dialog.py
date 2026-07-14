@@ -10,6 +10,7 @@ from database import ServiceCaseRepository
 from services.ledger_operation_service import SERVICE_TYPES
 from services.service_case_service import validate_service_case_payload
 from views.flet_compat import close_control, run_async_task
+from views.financial_date_field import FinancialDateField
 from views.dialogs.dialog_kit import (
     dialog_title,
     dialog_body,
@@ -54,7 +55,8 @@ class ServiceCaseDialog(ft.AlertDialog):
         self.transport_sale_field = ft.TextField(label="بيع النقل على العميل", keyboard_type=ft.KeyboardType.NUMBER, width=(dialog_width - 34) / 2)
         self.transport_cost_field = ft.TextField(label="تكلفة النقل", keyboard_type=ft.KeyboardType.NUMBER, width=(dialog_width - 34) / 2)
         self.currency_dropdown = ft.Dropdown(label="العملة", value=currency.get_display_currency(), options=[ft.dropdown.Option(c) for c in ["USD","SAR","SYP","EUR","GBP","AED","QAR","KWD","OMR"]], width=120)
-        self.date_field = ft.TextField(label="التاريخ", value=datetime.datetime.now().strftime("%Y-%m-%d"), hint_text="YYYY-MM-DD", width=150)
+        self.operation_date = FinancialDateField(page, label="تاريخ الخدمة", width=dialog_width - 20)
+        self.date_field = self.operation_date.field
         self.notes_field = ft.TextField(label="ملاحظات داخلية", multiline=True, min_lines=2, max_lines=3, width=dialog_width - 20)
         self.profit_text = ft.Text("", size=13, weight=ft.FontWeight.BOLD, color=ft.Colors.INDIGO)
         self.info_text = ft.Text("سيتم إنشاء قيدين مقفلين: لنا على الشركة العميلة، وله للشركة المورّدة. الربح يظهر داخليًا فقط.", size=12, color=ft.Colors.GREY_700)
@@ -89,7 +91,7 @@ class ServiceCaseDialog(ft.AlertDialog):
             ft.Row([self.embassy_sale_field, self.embassy_cost_field], spacing=10, wrap=True),
             self.transport_supplier_field,
             ft.Row([self.transport_sale_field, self.transport_cost_field], spacing=10, wrap=True),
-            ft.Row([self.date_field], spacing=10, wrap=True),
+            self.operation_date,
             self.profit_text,
             self.notes_field,
         ], width=dialog_width - 10, height=dialog_height - 100)
@@ -102,6 +104,10 @@ class ServiceCaseDialog(ft.AlertDialog):
         show_snackbar(self._page, message, is_error)
 
     def _close(self):
+        try:
+            self.operation_date.close()
+        except Exception:
+            pass
         close_control(self._page, self)
 
     def _show_inline_error(self, message: str):
@@ -167,7 +173,7 @@ class ServiceCaseDialog(ft.AlertDialog):
             "person_name": normalize_text(self.person_field.value),
             "service_type": self.service_dropdown.value or "تأشيرة سياحية",
             "currency_original": self.currency_dropdown.value,
-            "date": normalize_text(self.date_field.value) or datetime.datetime.now().strftime("%Y-%m-%d"),
+            "date": self.operation_date.require_value("تاريخ الخدمة"),
             "notes": self.notes_field.value or "",
             "components": components,
         }
@@ -218,6 +224,7 @@ class ServiceCaseDialog(ft.AlertDialog):
             return
 
         self._set_busy(False)
+        self.operation_date.remember()
         self._close()
         refresh_error = None
         if self.on_save:

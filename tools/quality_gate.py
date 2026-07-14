@@ -91,6 +91,7 @@ def main() -> int:
         "tools/hawa_visual_identity_smoke_test.py",
         "tools/company_details_route_safearea_smoke_test.py",
         "tools/company_details_nameerror_runtime_smoke_test.py",
+        "tools/unified_financial_date_picker_smoke_test.py",
         "tools/backup_restore_smoke_test.py",
         "tools/backup_restore_button_nonblocking_smoke_test.py",
         "tools/backup_restore_snackbar_duration_smoke_test.py",

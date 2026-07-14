@@ -5,9 +5,10 @@ from database import ExpenseRepository
 from auth.session import UserSession
 from i18n.translator import translate
 from currency import currency
-from views.flet_compat import open_control, close_control, ALIGN_CENTER
+from views.flet_compat import close_control, ALIGN_CENTER
 from views.dialogs.dialog_kit import dialog_title, dialog_body, cancel_button, save_button, show_snackbar, set_button_busy, normalize_text, parse_non_negative_amount
 from services.ledger_operation_service import SERVICE_TYPES, OPERATION_LABELS, SERVICE_TO_OPERATION
+from views.financial_date_field import FinancialDateField
 
 class AddEditExpenseDialog(ft.AlertDialog):
     def __init__(self, page, on_save=None, expense=None, company_name=None):
@@ -69,19 +70,15 @@ class AddEditExpenseDialog(ft.AlertDialog):
             width=120
         )
 
-        self.date_picker_field = ft.TextField(
+        self.operation_date = FinancialDateField(
+            self._page,
             label=translate('date'),
-            value=expense['date'] if expense else datetime.datetime.now().strftime("%Y-%m-%d"),
-            hint_text="YYYY-MM-DD",
-            width=150,
-            read_only=True,
-            suffix=ft.IconButton(ft.Icons.CALENDAR_MONTH, on_click=self._open_date_picker)
+            value=expense['date'] if expense else None,
+            width=dialog_width - 20,
         )
-        self.date_picker = ft.DatePicker(
-            on_change=self._on_date_change,
-            first_date=datetime.datetime(2020, 1, 1),
-            last_date=datetime.datetime.now() + datetime.timedelta(days=365*10)
-        )
+        # Backward-compatible aliases for older tests/plugins that inspect the dialog.
+        self.date_picker_field = self.operation_date.field
+        self.date_picker = self.operation_date.date_picker
 
         self.person_field = ft.TextField(
             label="اسم الزبون / المسافر (اختياري)",
@@ -147,7 +144,7 @@ class AddEditExpenseDialog(ft.AlertDialog):
             controls=[
                 self.company_field,
                 ft.Row([self.amount_field, self.currency_dropdown], spacing=10, wrap=True),
-                ft.Row([self.type_dropdown, self.date_picker_field], spacing=10, wrap=True),
+                ft.Row([self.type_dropdown, self.operation_date], spacing=10, wrap=True),
                 self.person_field,
                 self.service_dropdown,
                 self.operation_text,
@@ -194,19 +191,17 @@ class AddEditExpenseDialog(ft.AlertDialog):
             pass
 
     def _open_date_picker(self, e):
-        open_control(self._page, self.date_picker)
+        self.operation_date._open_picker(e)
 
     def _on_date_change(self, e):
-        if self.date_picker.value:
-            self.date_picker_field.value = self.date_picker.value.strftime("%Y-%m-%d")
-            self._page.update()
+        self.operation_date._on_picker_change(e)
 
     def _close(self):
         # Close the owned DatePicker first, then the dialog itself.
         # Otherwise APK/Web builds may keep a stale overlay entry and the dialog
         # appears to remain open after Cancel/Save.
         try:
-            close_control(self._page, self.date_picker)
+            self.operation_date.close()
         except Exception:
             pass
         close_control(self._page, self)
@@ -248,7 +243,11 @@ class AddEditExpenseDialog(ft.AlertDialog):
             return
 
         type_val = 'incoming' if self.type_dropdown.value == translate('incoming') else 'outgoing'
-        date = self.date_picker_field.value or ""
+        try:
+            date = self.operation_date.require_value("تاريخ العملية")
+        except Exception as ex:
+            self._show_snackbar(str(ex), True)
+            return
         notes = self.notes_field.value or ""
         currency_code = self.currency_dropdown.value
         person_name = normalize_text(self.person_field.value)
@@ -272,6 +271,7 @@ class AddEditExpenseDialog(ft.AlertDialog):
                 repo.update(self.expense_id, company, amount, type_val, date, notes, currency_code, user_id, payment_due_date, payment_note, person_name=person_name, service_type=service_type, operation_type=operation_type)
             else:
                 repo.add(company, amount, type_val, date, notes, currency_code, user_id, payment_due_date, payment_note, person_name=person_name, service_type=service_type, operation_type=operation_type)
+            self.operation_date.remember()
             self._close()
             if self.on_save:
                 self.on_save(None)
