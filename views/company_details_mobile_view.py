@@ -5,7 +5,7 @@ from database import ExpenseRepository
 from auth.session import UserSession
 from i18n.translator import translate
 from currency import currency
-from views.ui_kit import show_snackbar, empty_state, data_card, action_text_button, amount_pill, key_value_tile, pill, summary_bar, metric_tile, info_banner
+from views.ui_kit import show_snackbar, empty_state, data_card, action_text_button, amount_pill, key_value_tile, pill, summary_bar, metric_tile, info_banner, PRIMARY, PRIMARY_SOFT, SUCCESS, DANGER, WARNING
 from services.company_search_service import enrich_expense_match, normalize_search_text
 from services.ledger_operation_service import operation_label
 
