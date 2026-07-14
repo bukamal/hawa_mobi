@@ -90,6 +90,7 @@ def main() -> int:
         "tools/professional_statement_layout_smoke_test.py",
         "tools/reporting_center_core_smoke_test.py",
         "tools/reporting_center_advanced_smoke_test.py",
+        "tools/sqlite_closed_connection_recovery_smoke_test.py",
         "tools/hawa_visual_identity_smoke_test.py",
         "tools/company_details_route_safearea_smoke_test.py",
         "tools/company_details_nameerror_runtime_smoke_test.py",

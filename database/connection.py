@@ -122,15 +122,62 @@ class DatabaseConnection:
             pass
         return conn
 
+    @staticmethod
+    def _connection_is_open(conn) -> bool:
+        """Return True only for a usable sqlite3 connection.
+
+        Android/Flet callbacks may keep a thread-local reference to a SQLite
+        handle after another part of the app closed the global connection pool
+        during startup, backup restore, or mode refresh.  Returning that stale
+        object later causes user-visible failures such as:
+        ``Cannot operate on a closed database``.  A cheap SELECT 1 makes
+        get_connection() self-healing instead of trusting the cache blindly.
+        """
+        if conn is None:
+            return False
+        try:
+            conn.execute("SELECT 1")
+            return True
+        except sqlite3.ProgrammingError:
+            return False
+        except Exception:
+            # Other errors (for example transient locking) do not necessarily
+            # mean the handle is closed.  Keep the connection so callers can
+            # receive the real database error instead of silently reopening.
+            return True
+
+    def _discard_thread_connection(self, tid: int, conn=None) -> None:
+        try:
+            current = getattr(self._thread_local, "conn", None)
+            if conn is None or current is conn:
+                self._thread_local.conn = None
+        except Exception:
+            pass
+        with self._connections_lock:
+            if conn is None or self._connections.get(tid) is conn:
+                self._connections.pop(tid, None)
+        if self._local_conn is conn:
+            self._local_conn = None
+
     def get_connection(self):
         if self.mode != "client":
             tid = threading.get_ident()
             conn = getattr(self._thread_local, "conn", None)
             if conn is not None:
-                self._local_conn = conn
-                return conn
+                if self._connection_is_open(conn):
+                    self._local_conn = conn
+                    return conn
+                self._discard_thread_connection(tid, conn)
+
             with self._connections_lock:
                 conn = self._connections.get(tid)
+                if conn is not None and not self._connection_is_open(conn):
+                    try:
+                        conn.close()
+                    except Exception:
+                        pass
+                    self._connections.pop(tid, None)
+                    conn = None
                 if conn is None:
                     conn = self._open_local_connection()
                     self._connections[tid] = conn
