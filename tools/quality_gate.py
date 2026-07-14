@@ -88,6 +88,8 @@ def main() -> int:
         "tools/share_export_fallback_smoke_test.py",
         "tools/report_action_share_print_whatsapp_smoke_test.py",
         "tools/professional_statement_layout_smoke_test.py",
+        "tools/reporting_center_core_smoke_test.py",
+        "tools/reporting_center_advanced_smoke_test.py",
         "tools/hawa_visual_identity_smoke_test.py",
         "tools/company_details_route_safearea_smoke_test.py",
         "tools/company_details_nameerror_runtime_smoke_test.py",

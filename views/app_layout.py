@@ -68,6 +68,7 @@ class AppLayout(ft.Column):
         destinations = [
             ft.NavigationBarDestination(icon=ft.Icons.DASHBOARD, label=translate('dashboard')),
             ft.NavigationBarDestination(icon=ft.Icons.ACCOUNT_BALANCE, label=translate('accounts')),
+            ft.NavigationBarDestination(icon=ft.Icons.INSIGHTS, label='التقارير'),
         ]
         if user_role == 'admin':
             destinations.append(ft.NavigationBarDestination(icon=ft.Icons.PEOPLE, label=translate('users')))
@@ -113,9 +114,9 @@ class AppLayout(ft.Column):
         index = e.control.selected_index
         user_role = UserSession.get_current().get('role') if UserSession.get_current() else 'user'
         if user_role == 'admin':
-            pages = ['dashboard', 'accounts', 'users', 'audit_log', 'settings']
+            pages = ['dashboard', 'accounts', 'reports', 'users', 'audit_log', 'settings']
         else:
-            pages = ['dashboard', 'accounts', 'settings']
+            pages = ['dashboard', 'accounts', 'reports', 'settings']
         if index < len(pages):
             self.switch_page(pages[index])
 
@@ -128,6 +129,13 @@ class AppLayout(ft.Column):
         # the newly rendered screen until the user presses Back.
         clear_transient_ui(self._page, clear_fab=True)
         self.current_page_id = page_id
+        try:
+            role = UserSession.get_current().get('role') if UserSession.get_current() else 'user'
+            pages = ['dashboard', 'accounts', 'reports', 'users', 'audit_log', 'settings'] if role == 'admin' else ['dashboard', 'accounts', 'reports', 'settings']
+            if page_id in pages:
+                self.nav_bar.selected_index = pages.index(page_id)
+        except Exception:
+            pass
         # Do not let a FAB from the previous page leak into settings/audit/dashboard.
         # Individual pages that need a FAB (accounts/users) set their own button.
         try:
@@ -144,6 +152,9 @@ class AppLayout(ft.Column):
             elif page_id == 'accounts':
                 from views.accounts_mobile_view import AccountsMobileView
                 view = AccountsMobileView(self._page)
+            elif page_id == 'reports':
+                from views.reports_center_mobile_view import ReportsCenterMobileView
+                view = ReportsCenterMobileView(self._page)
             elif page_id == 'users':
                 from views.users_mobile_view import UsersMobileView
                 view = UsersMobileView(self._page)
