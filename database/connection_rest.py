@@ -211,6 +211,14 @@ class RestClient:
     def get_service_cases(self) -> List[Dict]:
         return self._request('GET', '/api/service_cases')
 
+    def get_service_case(self, reference: str) -> Dict:
+        from urllib.parse import quote
+        return self._request('GET', f'/api/service_cases/{quote(str(reference or ""), safe="")}')
+
+    def update_service_case(self, reference: str, data: Dict) -> Dict:
+        from urllib.parse import quote
+        return self._request('PUT', f'/api/service_cases/{quote(str(reference or ""), safe="")}', data)
+
     def reverse_service_case(self, reference: str) -> Dict:
         return self._request('POST', f'/api/service_cases/{reference}/reverse')
 
