@@ -6,7 +6,7 @@ from i18n.translator import translate
 from datetime import datetime, timedelta
 from collections import defaultdict
 from views.flet_compat import open_control
-from views.ui_kit import show_snackbar, page_header, stat_card, empty_state
+from views.ui_kit import show_snackbar, page_header, stat_card, empty_state, data_card, section_label, summary_bar, metric_tile, money_text, PRIMARY, PRIMARY_SOFT, SUCCESS, DANGER, WARNING, MUTED, TEXT
 
 class DashboardMobileView(ft.Column):
     def __init__(self, page):
@@ -55,9 +55,15 @@ class DashboardMobileView(ft.Column):
         self._page.overlay.append(self.end_date_picker_obj)
 
         self.cards_container = ft.Column(spacing=10, scroll=ft.ScrollMode.AUTO)
+        self.quick_actions = ft.Row([
+            ft.OutlinedButton(content=ft.Row([ft.Icon(ft.Icons.ACCOUNT_BALANCE), ft.Text("الحسابات")], tight=True), on_click=lambda e: self._open_page("accounts")),
+            ft.OutlinedButton(content=ft.Row([ft.Icon(ft.Icons.INSIGHTS), ft.Text("التقارير")], tight=True), on_click=lambda e: self._open_page("reports")),
+            ft.OutlinedButton(content=ft.Row([ft.Icon(ft.Icons.TRAVEL_EXPLORE), ft.Text("الأرباح")], tight=True), on_click=self._open_profit_report),
+        ], spacing=8, wrap=True)
 
         self.controls = [
-            page_header(translate('dashboard'), icon=ft.Icons.DASHBOARD, trailing=self.refresh_btn),
+            page_header("لوحة تحكم هوى الشام", icon=ft.Icons.DASHBOARD, trailing=self.refresh_btn, subtitle="مؤشرات الذمم والخدمات والأرباح والتشغيل"),
+            ft.Container(content=self.quick_actions, padding=ft.Padding(left=10, right=10, top=0, bottom=0)),
             ft.Container(content=self.period_filter, padding=ft.Padding(left=10, right=10, top=0, bottom=0)),
             ft.Container(content=self.custom_date_row, padding=ft.Padding(left=10, right=10, top=0, bottom=0)),
             ft.Row([self.transactions_count_text], alignment=ft.MainAxisAlignment.CENTER),
@@ -66,6 +72,22 @@ class DashboardMobileView(ft.Column):
         ]
 
         self._load_data()
+
+    def _open_page(self, page_id: str):
+        opener = getattr(self._page, '_hawaa_open_page', None)
+        if callable(opener):
+            opener(page_id)
+
+    async def _open_profit_report(self, e):
+        try:
+            from reports.reporting_center import PERIOD_THIS_MONTH, REPORT_PROFIT, ReportingCenterService, export_report_html
+            from services.file_export_service import FileExportService
+            report = ReportingCenterService().build_report(REPORT_PROFIT, period=PERIOD_THIS_MONTH)
+            path = export_report_html(report)
+            result = await FileExportService.open_file_async(self._page, path, title="تقرير أرباح الشهر")
+            self._show_snackbar(result.message if result.ok else result.message or f"تم إنشاء تقرير الأرباح: {path}", not result.ok)
+        except Exception as ex:
+            self._show_snackbar(f"تعذر فتح تقرير الأرباح: {str(ex)}", True)
 
     def _show_snackbar(self, message, is_error=False):
         show_snackbar(self._page, message, is_error)
@@ -215,17 +237,93 @@ class DashboardMobileView(ft.Column):
             rate = currency.get_rate_to_usd(display_curr)
             rate_text = f"1 {display_curr} = {rate:.4f} USD" if display_curr != 'USD' else "1 USD = 1.00 USD"
 
+            # Operational metrics that match the app features: supplier-service files,
+            # direct customer services, third-party payments, and locked accounting flows.
+            service_cases = []
+            direct_services = []
+            third_party_payments = []
+            try:
+                from database import ServiceCaseRepository, DirectServiceRepository, ThirdPartyPaymentRepository
+                service_cases = ServiceCaseRepository().list_cases()
+                direct_services = DirectServiceRepository().list_services()
+                tpp_repo = ThirdPartyPaymentRepository()
+                if hasattr(tpp_repo, "list_payments"):
+                    third_party_payments = tpp_repo.list_payments()
+                elif not tpp_repo.data.is_remote():
+                    conn = tpp_repo.db.get_connection()
+                    third_party_payments = [dict(r) for r in conn.execute("SELECT * FROM third_party_payments ORDER BY date DESC, id DESC").fetchall()]
+                else:
+                    third_party_payments = []
+            except Exception as metrics_ex:
+                print(f"[WARN] تعذر تحميل مؤشرات العمليات المركبة: {metrics_ex}")
+
+            def in_period(row):
+                d = str(row.get('date') or '')
+                if start_date and d < start_date:
+                    return False
+                if end_date and d > end_date:
+                    return False
+                return True
+
+            service_cases = [r for r in service_cases if in_period(r)]
+            direct_services = [r for r in direct_services if in_period(r)]
+            third_party_payments = [r for r in third_party_payments if in_period(r)]
+            active_service_cases = [r for r in service_cases if (r.get('status') or 'open') != 'reversed']
+            active_direct_services = [r for r in direct_services if (r.get('status') or 'open') != 'reversed']
+            open_service_cases = [r for r in active_service_cases if (r.get('status') or 'open') == 'open']
+            open_direct_services = [r for r in active_direct_services if (r.get('status') or 'open') == 'open']
+            service_profit_base = sum(float(r.get('sale_amount_base') or 0) - float(r.get('cost_amount_base') or 0) for r in active_service_cases)
+            direct_profit_base = sum(float(r.get('sale_amount_base') or 0) - float(r.get('cost_amount_base') or 0) for r in active_direct_services)
+            total_profit_display = currency.convert(service_profit_base + direct_profit_base, 'USD', display_curr)
+            low_profit_count = 0
+            for r in active_service_cases + active_direct_services:
+                sale = float(r.get('sale_amount_base') or 0)
+                profit = sale - float(r.get('cost_amount_base') or 0)
+                if sale > 0 and (profit < 0 or (profit / sale) < 0.10):
+                    low_profit_count += 1
+            locked_entries = len([e for e in approved_filtered if int(e.get('is_locked') or 0)])
+            composite_entries = len([e for e in approved_filtered if (e.get('source_type') or '').strip()])
+
+            hero = data_card(
+                ft.Column([
+                    ft.Row([
+                        ft.Column([
+                            ft.Text('المؤشر العام', size=12, color=MUTED),
+                            money_text(currency.format_amount(base_net, display_curr), color=SUCCESS if historical_base['net'] >= 0 else DANGER, size=24),
+                            ft.Text('الصافي المحسوب بالأسعار التاريخية', size=11, color=MUTED),
+                        ], expand=True, spacing=3),
+                        ft.Container(content=ft.Icon(ft.Icons.ACCOUNT_BALANCE_WALLET, color=PRIMARY, size=28), bgcolor=PRIMARY_SOFT, border_radius=18, padding=12),
+                    ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
+                    summary_bar([
+                        metric_tile('لنا', money_text(currency.format_amount(base_in, display_curr), color=SUCCESS, size=14)),
+                        metric_tile('له', money_text(currency.format_amount(base_out, display_curr), color=DANGER, size=14)),
+                        metric_tile('ربح الخدمات', money_text(currency.format_amount(total_profit_display, display_curr), color=SUCCESS if total_profit_display >= 0 else DANGER, size=14)),
+                    ], visible=True, bgcolor=PRIMARY_SOFT),
+                ], spacing=10),
+                padding=14,
+                elevation=2,
+            )
+
             cards = [
-                self._create_card('لنا حسب العملة', format_currency_lines('incoming'), ft.Colors.GREEN),
-                self._create_card('له حسب العملة', format_currency_lines('outgoing'), ft.Colors.RED),
-                self._create_card('الصافي حسب العملة', format_currency_lines('net', with_direction=True), ft.Colors.GREEN if historical_base['net'] >= 0 else ft.Colors.RED),
-                self._create_card(f'إجمالي تقريبي بـ {display_curr}', f"لنا: {currency.format_amount(base_in, display_curr)}\nله: {currency.format_amount(base_out, display_curr)}\nالصافي: {currency.format_amount(base_net, display_curr)}\nمحسوب حسب أسعار الصرف التاريخية", ft.Colors.INDIGO, ft.Icons.CURRENCY_EXCHANGE),
+                hero,
+                ft.Container(content=section_label('مؤشرات مالية', ft.Icons.PIE_CHART), padding=ft.Padding(left=12, right=12, top=4, bottom=0)),
+                self._create_card('لنا حسب العملة', format_currency_lines('incoming'), ft.Colors.GREEN, ft.Icons.SOUTH_WEST),
+                self._create_card('له حسب العملة', format_currency_lines('outgoing'), ft.Colors.RED, ft.Icons.NORTH_EAST),
+                self._create_card('الصافي حسب العملة', format_currency_lines('net', with_direction=True), ft.Colors.GREEN if historical_base['net'] >= 0 else ft.Colors.RED, ft.Icons.ACCOUNT_BALANCE),
+                self._create_card(f'إجمالي تقريبي بـ {display_curr}', f"لنا: {currency.format_amount(base_in, display_curr)}\nله: {currency.format_amount(base_out, display_curr)}\nالصافي: {currency.format_amount(base_net, display_curr)}", ft.Colors.INDIGO, ft.Icons.CURRENCY_EXCHANGE),
+                ft.Container(content=section_label('تشغيل الخدمات والسفر', ft.Icons.TRAVEL_EXPLORE), padding=ft.Padding(left=12, right=12, top=8, bottom=0)),
+                self._create_card('أرباح الخدمات', currency.format_amount(total_profit_display, display_curr), ft.Colors.GREEN if total_profit_display >= 0 else ft.Colors.RED, ft.Icons.TRENDING_UP),
+                self._create_card('ملفات خدمة مفتوحة', f"عبر مورد: {len(open_service_cases)}\nمباشرة: {len(open_direct_services)}", ft.Colors.BLUE, ft.Icons.TRAVEL_EXPLORE),
+                self._create_card('خدمات منخفضة الربح', str(low_profit_count), ft.Colors.ORANGE if low_profit_count else ft.Colors.TEAL, ft.Icons.WARNING_AMBER),
+                self._create_card('سدد عني', str(len(third_party_payments)), ft.Colors.TEAL, ft.Icons.SWAP_HORIZ),
+                ft.Container(content=section_label('سلامة الدفتر', ft.Icons.VERIFIED), padding=ft.Padding(left=12, right=12, top=8, bottom=0)),
+                self._create_card('قيود مقفلة مترابطة', str(locked_entries), ft.Colors.INDIGO, ft.Icons.LOCK),
+                self._create_card('عمليات مركبة', str(composite_entries), ft.Colors.PURPLE, ft.Icons.LINK),
                 self._create_card("عدد الشركات", str(len(companies)), ft.Colors.BLUE, ft.Icons.BUSINESS),
+                self._create_card("بانتظار الدفع", str(len(waiting_payment)), ft.Colors.ORANGE, ft.Icons.PAYMENTS),
                 self._create_card("عدد المستخدمين", str(users_count), ft.Colors.ORANGE, ft.Icons.PEOPLE),
-                self._create_card("متوسط القيد التقريبي", currency.format_amount(avg_display, display_curr), ft.Colors.PURPLE, ft.Icons.CALCULATE),
                 self._create_card("أعلى شركة تقريبياً", f"{top_company[0]}\n({currency.format_amount(top_display, display_curr)})", ft.Colors.TEAL, ft.Icons.EMOJI_EVENTS),
                 self._create_card("سعر الصرف الحالي", rate_text, ft.Colors.INDIGO, ft.Icons.MONEY),
-                self._create_card("بانتظار الدفع", str(len(waiting_payment)), ft.Colors.ORANGE, ft.Icons.PAYMENTS)
             ]
             self.cards_container.controls = cards
 

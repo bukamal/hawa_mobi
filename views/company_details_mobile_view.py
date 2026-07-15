@@ -224,6 +224,8 @@ class CompanyDetailsMobileView(ft.Column):
                         action_text_button("حذف", ft.Icons.DELETE, lambda e, rec=r: self._delete_record(rec), color=DANGER, visible=(not is_viewer and not r.get('source_type') and not int(r.get('is_locked') or 0))),
                         action_text_button("تعديل العملية", ft.Icons.EDIT_NOTE, lambda e, rec=r: self._edit_third_party(rec), color=PRIMARY, visible=(not is_viewer and r.get('source_type') == 'third_party_payment')),
                         action_text_button("عكس", ft.Icons.UNDO, lambda e, rec=r: self._reverse_third_party(rec), color=WARNING, visible=(not is_viewer and r.get('source_type') == 'third_party_payment')),
+                        action_text_button("تعديل ملف الخدمة", ft.Icons.EDIT_NOTE, lambda e, rec=r: self._edit_service_case(rec), color=PRIMARY, visible=(not is_viewer and r.get('source_type') in ('service_case_client', 'service_case_supplier'))),
+                        action_text_button("عكس ملف الخدمة", ft.Icons.UNDO, lambda e, rec=r: self._reverse_service_case(rec), color=WARNING, visible=(not is_viewer and r.get('source_type') in ('service_case_client', 'service_case_supplier'))),
                         action_text_button("تعديل الخدمة", ft.Icons.EDIT_NOTE, lambda e, rec=r: self._edit_direct_service(rec), color=PRIMARY, visible=(not is_viewer and r.get('source_type') in ('direct_service_client', 'direct_service_supplier'))),
                         action_text_button("عكس الخدمة", ft.Icons.UNDO, lambda e, rec=r: self._reverse_direct_service(rec), color=WARNING, visible=(not is_viewer and r.get('source_type') in ('direct_service_client', 'direct_service_supplier'))),
                     ], alignment=ft.MainAxisAlignment.END)
@@ -389,6 +391,65 @@ class CompanyDetailsMobileView(ft.Column):
             title=ft.Text("عكس سداد بالنيابة"),
             content=ft.Text(f"سيتم إنشاء قيود عكسية للعملية {ref}. هل تريد المتابعة؟"),
             actions=[ft.TextButton("نعم", on_click=confirm), ft.TextButton("لا", on_click=lambda e: self._close_dialog(dlg))],
+        )
+        open_control(self._page, dlg)
+
+
+    def _edit_service_case(self, record):
+        ref = record.get('source_ref') or ''
+        if not ref:
+            self._show_snackbar("لا يوجد مرجع لتعديل ملف الخدمة", True)
+            return
+        try:
+            from database import ServiceCaseRepository
+            from views.dialogs.service_case_dialog import ServiceCaseDialog
+            service_case = ServiceCaseRepository().get_by_reference(ref)
+            if service_case.get('status') == 'reversed':
+                self._show_snackbar("لا يمكن تعديل ملف خدمة معكوس. أنشئ ملف خدمة جديداً.", True)
+                return
+            dialog = ServiceCaseDialog(page=self._page, on_save=lambda _: self._reload(), service_case=service_case)
+            open_control(self._page, dialog)
+        except Exception as ex:
+            self._show_snackbar(f"خطأ في فتح تعديل ملف الخدمة: {str(ex)}", True)
+
+    def _reverse_service_case(self, record):
+        ref = record.get('source_ref') or ''
+        if not ref:
+            self._show_snackbar("لا يوجد مرجع لعكس ملف الخدمة", True)
+            return
+        reason_field = ft.TextField(label="سبب العكس", multiline=True, min_lines=2, max_lines=3, hint_text="مثال: إلغاء الخدمة أو تصحيح عملية مدخلة بالخطأ")
+
+        def confirm(e):
+            reason = str(reason_field.value or '').strip()
+            if not reason:
+                self._show_snackbar("سبب عكس ملف الخدمة مطلوب", True)
+                return
+            try:
+                from database import ServiceCaseRepository
+                repo = ServiceCaseRepository()
+                repo.reverse(ref, reason=reason)
+                self._show_snackbar("تم عكس ملف الخدمة", False)
+                self._reload()
+                self._close_dialog(dlg)
+            except TypeError:
+                try:
+                    from database import ServiceCaseRepository
+                    ServiceCaseRepository().reverse(ref)
+                    self._show_snackbar("تم عكس ملف الخدمة", False)
+                    self._reload()
+                    self._close_dialog(dlg)
+                except Exception as ex:
+                    self._show_snackbar(f"خطأ: {str(ex)}", True)
+            except Exception as ex:
+                self._show_snackbar(f"خطأ: {str(ex)}", True)
+
+        dlg = ft.AlertDialog(
+            title=ft.Text("عكس ملف خدمة"),
+            content=ft.Column([
+                ft.Text(f"سيتم إنشاء قيود عكسية لملف الخدمة {ref}."),
+                reason_field,
+            ], tight=True, spacing=10),
+            actions=[ft.TextButton("عكس", on_click=confirm), ft.TextButton("إلغاء", on_click=lambda e: self._close_dialog(dlg))],
         )
         open_control(self._page, dlg)
 

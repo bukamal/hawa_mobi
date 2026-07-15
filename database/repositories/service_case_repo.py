@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import datetime
 import json
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional, Tuple
 
 from database.repositories.base_repo import BaseRepository
 from auth.session import UserSession
@@ -62,6 +62,108 @@ class ServiceCaseRepository(BaseRepository):
             ),
         )
         return int(cur.lastrowid)
+
+    def _update_expense(self, conn, expense_id: int, payload: Dict[str, Any]) -> None:
+        payload = normalize_expense_metadata(payload)
+        cur = conn.execute(
+            """UPDATE expenses SET
+            company_name=?, amount=?, amount_base=?, type=?, date=?, notes=?, currency=?,
+            updated_by=?, updated_at=?, amount_original=?, currency_original=?, exchange_rate_to_usd=?,
+            status=?, payment_due_date=?, payment_reminder_note=?, source_type=?, source_ref=?, counterparty_company_name=?,
+            person_name=?, person_name_search=?, service_type=?, operation_type=?, is_locked=?, reversal_of=?, reversed_by=?,
+            print_description=?, internal_note=?, service_case_role=?, linked_company_name=?
+            WHERE id=?""",
+            (
+                payload["company_name"], payload["amount"], payload.get("amount_base", payload["amount"]), payload["type"], payload["date"], payload.get("notes", ""), payload["currency"],
+                payload.get("updated_by"), payload.get("updated_at"), payload.get("amount_original", payload["amount"]), payload.get("currency_original", payload["currency"]), payload.get("exchange_rate_to_usd", 1.0),
+                payload.get("status", "approved"), payload.get("payment_due_date"), payload.get("payment_reminder_note"), payload.get("source_type"), payload.get("source_ref"), payload.get("counterparty_company_name"),
+                payload.get("person_name"), payload.get("person_name_search"), payload.get("service_type"), payload.get("operation_type"), payload.get("is_locked", 1), payload.get("reversal_of"), payload.get("reversed_by"),
+                payload.get("print_description"), payload.get("internal_note"), payload.get("service_case_role"), payload.get("linked_company_name"), int(expense_id),
+            ),
+        )
+        if cur.rowcount != 1:
+            raise ValueError(f"تعذر تحديث القيد المرتبط id={expense_id}")
+
+    def _row_by_id(self, conn, expense_id) -> Optional[Dict[str, Any]]:
+        if not expense_id:
+            return None
+        row = conn.execute("SELECT * FROM expenses WHERE id=?", (expense_id,)).fetchone()
+        return dict(row) if row else None
+
+    def _client_row(self, conn, service: Dict[str, Any]) -> Dict[str, Any]:
+        reference = service["reference"]
+        client = self._row_by_id(conn, service.get("client_expense_id"))
+        if not client:
+            row = conn.execute(
+                "SELECT * FROM expenses WHERE source_ref=? AND source_type=? ORDER BY id LIMIT 1",
+                (reference, SERVICE_CASE_SOURCE_CLIENT),
+            ).fetchone()
+            client = dict(row) if row else None
+        if not client:
+            raise ValueError("تعذر العثور على قيد العميل المرتبط بملف الخدمة")
+        if client.get("source_ref") != reference or client.get("source_type") != SERVICE_CASE_SOURCE_CLIENT or client.get("type") != "incoming":
+            raise ValueError("ترابط قيد العميل لملف الخدمة غير صحيح")
+        return client
+
+    def _build_payloads(self, reference: str, payload: Dict[str, Any], uid: int, now: str, *, existing_client: Optional[Dict[str, Any]] = None) -> Tuple[Dict[str, Any], List[Dict[str, Any]], float, float, float, str]:
+        supplier_summary = payload.get("supplier_summary") or payload.get("supplier_company_name")
+        client_payload = self.ledger.normalize_expense_payload({
+            "company_name": payload["client_company_name"],
+            "amount": payload["sale_amount_original"],
+            "type": "incoming",
+            "date": payload["date"],
+            "notes": build_client_note(reference, payload),
+            "currency": payload["currency_original"],
+            "created_by": (existing_client or {}).get("created_by") or uid,
+            "created_at": (existing_client or {}).get("created_at") or now,
+            "updated_by": uid,
+            "updated_at": now,
+            "source_type": SERVICE_CASE_SOURCE_CLIENT,
+            "source_ref": reference,
+            "counterparty_company_name": supplier_summary,
+            "person_name": payload["person_name"],
+            "service_type": payload["service_type"],
+            "operation_type": SERVICE_CASE_OPERATION_CLIENT,
+            "is_locked": 1,
+            "print_description": client_print_description(payload),
+            "service_case_role": "client",
+            "linked_company_name": supplier_summary,
+        })
+        supplier_payloads: List[Dict[str, Any]] = []
+        for component in payload.get("components") or []:
+            if float(component.get("cost_amount_original") or 0) <= 0:
+                continue
+            supplier_payload = self.ledger.normalize_expense_payload({
+                "company_name": component["supplier_company_name"],
+                "amount": component["cost_amount_original"],
+                "type": "outgoing",
+                "date": payload["date"],
+                "notes": build_supplier_note(reference, payload, component),
+                "currency": payload["currency_original"],
+                "created_by": uid,
+                "created_at": now,
+                "updated_by": uid,
+                "updated_at": now,
+                "source_type": SERVICE_CASE_SOURCE_SUPPLIER,
+                "source_ref": reference,
+                "counterparty_company_name": payload["client_company_name"],
+                "person_name": payload["person_name"],
+                "service_type": component["service_type"],
+                "operation_type": SERVICE_CASE_OPERATION_SUPPLIER,
+                "is_locked": 1,
+                "print_description": supplier_print_description(payload, component),
+                "service_case_role": "supplier",
+                "linked_company_name": payload["client_company_name"],
+            })
+            supplier_payloads.append({"component": component, "payload": supplier_payload})
+        sale_base = float(client_payload.get("amount_base") or 0)
+        cost_base = sum(float(x["payload"].get("amount_base") or 0) for x in supplier_payloads)
+        rate = float(client_payload.get("exchange_rate_to_usd") or 1.0)
+        note = internal_note(reference, payload, sale_base, cost_base)
+        client_payload["internal_note"] = note
+        for item in supplier_payloads:
+            item["payload"]["internal_note"] = note
+        return client_payload, supplier_payloads, sale_base, cost_base, rate, note
 
     def _insert_component(self, conn, reference: str, idx: int, component: Dict[str, Any], payload: Dict[str, Any], supplier_expense_id: int | None, supplier_payload: Dict[str, Any] | None) -> int:
         cur = conn.execute(
@@ -221,12 +323,136 @@ class ServiceCaseRepository(BaseRepository):
                 )
         return cases
 
-    def reverse(self, reference: str) -> Dict[str, Any]:
+    def get_by_reference(self, reference: str) -> Dict[str, Any]:
         reference = str(reference or "").strip()
         if not reference:
             raise ValueError("مرجع ملف الخدمة مطلوب")
         if self.data.is_remote():
-            return self.db.get_rest_client().reverse_service_case(reference)
+            client = self.db.get_rest_client()
+            if hasattr(client, "get_service_case"):
+                return client.get_service_case(reference)
+            cases = client.get_service_cases()
+            for case in cases:
+                if str(case.get("reference") or "") == reference:
+                    return case
+            raise ValueError("لم يتم العثور على ملف الخدمة")
+        conn = self.db.get_connection()
+        row = conn.execute("SELECT * FROM service_cases WHERE reference=?", (reference,)).fetchone()
+        if not row:
+            raise ValueError("لم يتم العثور على ملف الخدمة")
+        case = dict(row)
+        comps = conn.execute("SELECT * FROM service_case_components WHERE service_case_ref=? ORDER BY component_index", (reference,)).fetchall()
+        case["components"] = [dict(c) for c in comps]
+        return case
+
+    def update(self, reference: str, data: Dict[str, Any], edit_reason: str = "", user_id: int | None = None) -> Dict[str, Any]:
+        reference = str(reference or "").strip()
+        if not reference:
+            raise ValueError("مرجع ملف الخدمة مطلوب")
+        reason = str(edit_reason or data.get("edit_reason") or "").strip()
+        if not reason:
+            raise ValueError("سبب تعديل ملف الخدمة مطلوب")
+        payload = validate_service_case_payload(data)
+        uid = int(user_id or (UserSession.get_current() or {}).get("id") or data.get("updated_by") or 1)
+        if self.data.is_remote():
+            client = self.db.get_rest_client()
+            if hasattr(client, "update_service_case"):
+                return client.update_service_case(reference, dict(payload, edit_reason=reason, updated_by=uid))
+            raise RuntimeError("خادم ويندوز لا يدعم تعديل ملف الخدمة بعد. حدّث الخادم إلى النسخة الحالية.")
+        conn = self.db.get_connection()
+        user = UserSession.get_current() or {}
+        row = conn.execute("SELECT * FROM service_cases WHERE reference=?", (reference,)).fetchone()
+        if not row:
+            raise ValueError("لم يتم العثور على ملف الخدمة")
+        service = dict(row)
+        if service.get("status") == SERVICE_CASE_STATUS_REVERSED:
+            raise ValueError("لا يمكن تعديل ملف خدمة معكوس. أنشئ ملف خدمة جديداً بدلاً منه.")
+        client_entry = self._client_row(conn, service)
+        before_components = [dict(r) for r in conn.execute("SELECT * FROM service_case_components WHERE service_case_ref=? ORDER BY component_index", (reference,)).fetchall()]
+        before = {
+            "client_company_name": service.get("client_company_name"),
+            "supplier_company_name": service.get("supplier_company_name"),
+            "person_name": service.get("person_name"),
+            "service_type": service.get("service_type"),
+            "sale_amount_original": service.get("sale_amount_original"),
+            "cost_amount_original": service.get("cost_amount_original"),
+            "currency_original": service.get("currency_original"),
+            "date": service.get("date"),
+            "notes": service.get("notes") or "",
+            "components": [
+                {
+                    "service_type": c.get("service_type"),
+                    "supplier_company_name": c.get("supplier_company_name"),
+                    "sale_amount_original": c.get("sale_amount_original"),
+                    "cost_amount_original": c.get("cost_amount_original"),
+                } for c in before_components
+            ],
+        }
+        now = datetime.datetime.now().isoformat()
+        supplier_summary = payload.get("supplier_summary") or payload.get("supplier_company_name")
+        client_payload, supplier_payloads, sale_base, cost_base, rate, note = self._build_payloads(reference, payload, uid, now, existing_client=client_entry)
+        try:
+            conn.execute("BEGIN IMMEDIATE")
+            self._update_expense(conn, int(client_entry["id"]), client_payload)
+            # A correction may change suppliers, remove a component, or add new components.
+            # Replace only the generated supplier rows for this service-case reference;
+            # keep reversals and unrelated ledger rows untouched.
+            conn.execute("DELETE FROM expenses WHERE source_ref=? AND source_type=?", (reference, SERVICE_CASE_SOURCE_SUPPLIER))
+            conn.execute("DELETE FROM service_case_components WHERE service_case_ref=?", (reference,))
+            supplier_expense_ids: List[int] = []
+            first_supplier_expense_id = None
+            component_rows = []
+            for idx, component in enumerate(payload.get("components") or [], 1):
+                supplier_expense_id = None
+                supplier_payload_for_component = None
+                for item in supplier_payloads:
+                    if item["component"] is component:
+                        supplier_payload_for_component = item["payload"]
+                        supplier_expense_id = self._insert_expense(conn, supplier_payload_for_component)
+                        supplier_expense_ids.append(supplier_expense_id)
+                        if first_supplier_expense_id is None:
+                            first_supplier_expense_id = supplier_expense_id
+                        break
+                component_rows.append((idx, component, supplier_expense_id, supplier_payload_for_component))
+            for idx, component, supplier_expense_id, supplier_payload_for_component in component_rows:
+                self._insert_component(conn, reference, idx, component, payload, supplier_expense_id, supplier_payload_for_component)
+            conn.execute(
+                """UPDATE service_cases SET
+                client_company_name=?, supplier_company_name=?, person_name=?, service_type=?, sale_amount_original=?, cost_amount_original=?,
+                currency_original=?, exchange_rate_to_usd=?, sale_amount_base=?, cost_amount_base=?, date=?, notes=?,
+                client_expense_id=?, supplier_expense_id=?, print_description_client=?, print_description_supplier=?, internal_note=?, updated_by=?, updated_at=?, edit_reason=?
+                WHERE reference=?""",
+                (
+                    payload["client_company_name"], supplier_summary, payload["person_name"], payload["service_type"], payload["sale_amount_original"], payload["cost_amount_original"],
+                    payload["currency_original"], rate, sale_base, cost_base, payload["date"], payload.get("notes", ""),
+                    int(client_entry["id"]), first_supplier_expense_id, client_print_description(payload), "تفاصيل حسب بنود الخدمة", note, uid, now, reason, reference,
+                ),
+            )
+            details = (
+                f"{reference} | السبب: {reason} | قبل: {before['client_company_name']} / {before['person_name']} / "
+                f"بيع {before['sale_amount_original']} {before['currency_original']} / تكلفة {before['cost_amount_original']} / موردون {before['supplier_company_name']} بتاريخ {before['date']} | "
+                f"بعد: {payload['client_company_name']} / {payload['person_name']} / بيع {payload['sale_amount_original']} {payload['currency_original']} / تكلفة {payload['cost_amount_original']} / موردون {supplier_summary} بتاريخ {payload['date']}"
+            )
+            conn.execute(
+                "INSERT INTO audit_log (user_id, username, action, table_name, record_id, details, ip_address, timestamp) VALUES (?,?,?,?,?,?,?,?)",
+                (uid, user.get("username", ""), "تعديل ملف خدمة", "service_cases", service.get("id"), details, "127.0.0.1", now),
+            )
+            conn.commit()
+            return {"ok": True, "reference": reference, "client_expense_id": int(client_entry["id"]), "supplier_expense_id": first_supplier_expense_id, "supplier_expense_ids": supplier_expense_ids, "profit_base": sale_base - cost_base}
+        except Exception:
+            try:
+                conn.rollback()
+            except Exception:
+                pass
+            raise
+
+    def reverse(self, reference: str, reason: str = "") -> Dict[str, Any]:
+        reference = str(reference or "").strip()
+        if not reference:
+            raise ValueError("مرجع ملف الخدمة مطلوب")
+        clean_reason = str(reason or "").strip()
+        if self.data.is_remote():
+            return self.db.get_rest_client().reverse_service_case(reference, {"reason": clean_reason} if clean_reason else None)
         conn = self.db.get_connection()
         row = conn.execute("SELECT * FROM service_cases WHERE reference=?", (reference,)).fetchone()
         if not row:
@@ -250,7 +476,7 @@ class ServiceCaseRepository(BaseRepository):
         reversal_ref = f"REV-{reference}"
         client_rev = self.ledger.normalize_expense_payload({
             "company_name": row["client_company_name"], "amount": row["sale_amount_original"], "type": "outgoing", "date": date,
-            "notes": f"عكس ملف خدمة {reference}", "currency": row["currency_original"], "created_by": uid, "created_at": now, "updated_by": uid, "updated_at": now,
+            "notes": f"عكس ملف خدمة {reference}" + (f". السبب: {clean_reason}" if clean_reason else ""), "currency": row["currency_original"], "created_by": uid, "created_at": now, "updated_by": uid, "updated_at": now,
             "source_type": SERVICE_CASE_REVERSAL, "source_ref": reference, "counterparty_company_name": row["supplier_company_name"],
             "person_name": row["person_name"], "service_type": row["service_type"], "operation_type": SERVICE_CASE_OPERATION_REVERSAL,
             "is_locked": 1, "print_description": f"عكس {row.get('print_description_client') or row.get('service_type')}", "service_case_role": "client_reversal", "linked_company_name": row["supplier_company_name"], "internal_note": f"عكس ملف خدمة {reference}",
@@ -262,7 +488,7 @@ class ServiceCaseRepository(BaseRepository):
                 continue
             supplier_revs.append(self.ledger.normalize_expense_payload({
                 "company_name": comp["supplier_company_name"], "amount": cost, "type": "incoming", "date": date,
-                "notes": f"عكس ملف خدمة {reference}", "currency": row["currency_original"], "created_by": uid, "created_at": now, "updated_by": uid, "updated_at": now,
+                "notes": f"عكس ملف خدمة {reference}" + (f". السبب: {clean_reason}" if clean_reason else ""), "currency": row["currency_original"], "created_by": uid, "created_at": now, "updated_by": uid, "updated_at": now,
                 "source_type": SERVICE_CASE_REVERSAL, "source_ref": reference, "counterparty_company_name": row["client_company_name"],
                 "person_name": row["person_name"], "service_type": comp.get("service_type") or row["service_type"], "operation_type": SERVICE_CASE_OPERATION_REVERSAL,
                 "is_locked": 1, "print_description": f"عكس {comp.get('print_description_supplier') or comp.get('service_type') or row.get('service_type')}", "service_case_role": "supplier_reversal", "linked_company_name": row["client_company_name"], "internal_note": f"عكس ملف خدمة {reference}",
@@ -273,7 +499,7 @@ class ServiceCaseRepository(BaseRepository):
             for supplier_rev in supplier_revs:
                 self._insert_expense(conn, supplier_rev)
             conn.execute("UPDATE service_cases SET status=?, reversed_at=?, reversal_ref=? WHERE reference=?", (SERVICE_CASE_STATUS_REVERSED, now, reversal_ref, reference))
-            self.db._log_audit_local(uid, user.get("username", ""), "عكس ملف خدمة", "service_cases", row.get("id"), reference)
+            self.db._log_audit_local(uid, user.get("username", ""), "عكس ملف خدمة", "service_cases", row.get("id"), f"{reference}" + (f" | السبب: {clean_reason}" if clean_reason else ""))
             conn.commit()
             return {"ok": True, "reference": reference, "reversal_ref": reversal_ref}
         except Exception:

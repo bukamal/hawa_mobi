@@ -50,6 +50,7 @@ REQUIRED_MOBILE_ENDPOINTS = [
     "/api/third_party_payments/{reference}",
     "/api/third_party_payments/{reference}/reverse",
     "/api/service_cases",
+    "/api/service_cases/{reference}",
     "/api/service_cases/{reference}/reverse",
     "/api/direct_services",
     "/api/direct_services/{reference}",
@@ -90,6 +91,7 @@ def _capabilities_payload() -> Dict[str, Any]:
         "supports_company_deep_search": True,
         "supports_ledger_operation_core": True,
         "supports_service_cases": True,
+        "supports_service_case_editing": True,
         "supports_service_case_components": True,
         "supports_direct_services": True,
         "supports_direct_service_correction": True,
@@ -978,6 +980,33 @@ def reverse_direct_service(reference: str):
     except Exception as e:
         return _json_error(e, 400)
 
+@app.get("/api/service_cases/<path:reference>")
+@require_auth
+def get_service_case(reference: str):
+    try:
+        from database.repositories.service_case_repo import ServiceCaseRepository
+        return jsonify(ServiceCaseRepository().get_by_reference(reference))
+    except ValueError as e:
+        return _json_error(e, 404)
+    except Exception as e:
+        return _json_error(e, 400)
+
+
+@app.put("/api/service_cases/<path:reference>")
+@require_roles(*_role_allows_write())
+def update_service_case(reference: str):
+    data = request.get_json(silent=True) or {}
+    try:
+        from database.repositories.service_case_repo import ServiceCaseRepository
+        user = _current_user() or {}
+        reason = str(data.get("edit_reason") or "").strip()
+        return jsonify(ServiceCaseRepository().update(reference, data, edit_reason=reason, user_id=user.get("id") or data.get("updated_by") or 1))
+    except ValueError as e:
+        return _json_error(e, 400)
+    except Exception as e:
+        return _json_error(e, 400)
+
+
 @app.get("/api/service_cases")
 @require_auth
 def get_service_cases():
@@ -1139,6 +1168,8 @@ def add_service_case():
 @require_roles(*_role_allows_write())
 def reverse_service_case(reference: str):
     from services.service_case_service import SERVICE_CASE_REVERSAL, SERVICE_CASE_OPERATION_REVERSAL, SERVICE_CASE_STATUS_REVERSED
+    data = request.get_json(silent=True) or {}
+    reason = str(data.get("reason") or data.get("edit_reason") or "").strip()
     reference = str(reference or "").strip()
     conn = _connect()
     try:
@@ -1152,14 +1183,14 @@ def reverse_service_case(reference: str):
         uid = user.get("id") or 1
         date = _now()[:10]
         now = _now()
-        client_rev = _expense_payload(conn, {"company_name": row["client_company_name"], "amount": row["sale_amount_original"], "type": "outgoing", "date": date, "notes": f"عكس ملف خدمة {reference}", "currency": row["currency_original"], "created_by": uid, "updated_by": uid, "source_type": SERVICE_CASE_REVERSAL, "source_ref": reference, "counterparty_company_name": row["supplier_company_name"], "person_name": row["person_name"], "service_type": row["service_type"], "operation_type": SERVICE_CASE_OPERATION_REVERSAL, "is_locked": 1, "print_description": f"عكس {row.get('print_description_client') or row.get('service_type')}", "service_case_role": "client_reversal", "linked_company_name": row["supplier_company_name"]})
-        supplier_rev = _expense_payload(conn, {"company_name": row["supplier_company_name"], "amount": row["cost_amount_original"], "type": "incoming", "date": date, "notes": f"عكس ملف خدمة {reference}", "currency": row["currency_original"], "created_by": uid, "updated_by": uid, "source_type": SERVICE_CASE_REVERSAL, "source_ref": reference, "counterparty_company_name": row["client_company_name"], "person_name": row["person_name"], "service_type": row["service_type"], "operation_type": SERVICE_CASE_OPERATION_REVERSAL, "is_locked": 1, "print_description": f"عكس {row.get('print_description_supplier') or row.get('service_type')}", "service_case_role": "supplier_reversal", "linked_company_name": row["client_company_name"]})
+        client_rev = _expense_payload(conn, {"company_name": row["client_company_name"], "amount": row["sale_amount_original"], "type": "outgoing", "date": date, "notes": f"عكس ملف خدمة {reference}" + (f". السبب: {reason}" if reason else ""), "currency": row["currency_original"], "created_by": uid, "updated_by": uid, "source_type": SERVICE_CASE_REVERSAL, "source_ref": reference, "counterparty_company_name": row["supplier_company_name"], "person_name": row["person_name"], "service_type": row["service_type"], "operation_type": SERVICE_CASE_OPERATION_REVERSAL, "is_locked": 1, "print_description": f"عكس {row.get('print_description_client') or row.get('service_type')}", "service_case_role": "client_reversal", "linked_company_name": row["supplier_company_name"]})
+        supplier_rev = _expense_payload(conn, {"company_name": row["supplier_company_name"], "amount": row["cost_amount_original"], "type": "incoming", "date": date, "notes": f"عكس ملف خدمة {reference}" + (f". السبب: {reason}" if reason else ""), "currency": row["currency_original"], "created_by": uid, "updated_by": uid, "source_type": SERVICE_CASE_REVERSAL, "source_ref": reference, "counterparty_company_name": row["client_company_name"], "person_name": row["person_name"], "service_type": row["service_type"], "operation_type": SERVICE_CASE_OPERATION_REVERSAL, "is_locked": 1, "print_description": f"عكس {row.get('print_description_supplier') or row.get('service_type')}", "service_case_role": "supplier_reversal", "linked_company_name": row["client_company_name"]})
         conn.execute("BEGIN IMMEDIATE")
         _insert_expense_with_source(conn, client_rev)
         _insert_expense_with_source(conn, supplier_rev)
         reversal_ref = f"REV-{reference}"
         conn.execute("UPDATE service_cases SET status=?, reversed_at=?, reversal_ref=? WHERE reference=?", (SERVICE_CASE_STATUS_REVERSED, now, reversal_ref, reference))
-        _audit(conn, "عكس ملف خدمة", "service_cases", row.get("id"), reference)
+        _audit(conn, "عكس ملف خدمة", "service_cases", row.get("id"), f"{reference}" + (f" | السبب: {reason}" if reason else ""))
         conn.commit()
         return jsonify({"ok": True, "reference": reference, "reversal_ref": reversal_ref})
     except Exception as e:

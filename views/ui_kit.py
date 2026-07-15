@@ -236,9 +236,21 @@ def action_text_button(label, icon, on_click, color=None, visible=True):
     )
 
 
-def data_card(content, padding=15, elevation=2, margin=None):
+def data_card(content, padding=15, elevation=2, margin=None, on_click=None):
+    container_kwargs = {
+        "content": content,
+        "padding": padding,
+        "bgcolor": CARD_BG,
+        "border_radius": 20,
+    }
+    if on_click is not None:
+        # Make list cards directly tappable on Android.  Keep the action buttons
+        # inside the card for quick operations; Flet buttons handle their own
+        # click events, while tapping the card body opens the details workflow.
+        container_kwargs["on_click"] = on_click
+        container_kwargs["ink"] = True
     return ft.Card(
-        content=ft.Container(content=content, padding=padding, bgcolor=CARD_BG, border_radius=20),
+        content=ft.Container(**container_kwargs),
         elevation=elevation,
         margin=margin or ft.Margin(left=10, right=10, top=5, bottom=5),
     )

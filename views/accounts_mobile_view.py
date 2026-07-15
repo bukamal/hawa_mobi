@@ -185,8 +185,17 @@ class AccountsMobileView(ft.Column):
                 ft.Row([
                     ft.Icon(ft.Icons.BUSINESS, color=PRIMARY, size=24),
                     ft.Text(company, size=16, weight=ft.FontWeight.BOLD, expand=True, max_lines=2, overflow=ft.TextOverflow.ELLIPSIS),
+                    ft.Container(
+                        content=ft.Row([
+                            ft.Icon(ft.Icons.TOUCH_APP, color=PRIMARY, size=14),
+                            ft.Text('اضغط للتفاصيل', size=10, color=PRIMARY, weight=ft.FontWeight.BOLD),
+                        ], spacing=3, tight=True),
+                        bgcolor=PRIMARY_SOFT,
+                        border_radius=999,
+                        padding=ft.Padding(left=8, right=8, top=4, bottom=4),
+                    ),
                     amount_pill(currency.format_amount(net, display_curr), net_color),
-                ]),
+                ], spacing=6),
                 ft.Divider(height=1, color=ft.Colors.GREY_200),
                 ft.Row([
                     key_value_tile("📥 لنا", currency.format_amount(inc, display_curr), SUCCESS),
@@ -206,18 +215,18 @@ class AccountsMobileView(ft.Column):
             content_controls.extend(self._match_preview_controls(company, matches, raw_search))
             content_controls.append(
                 ft.Row([
-                    action_text_button("تفاصيل", ft.Icons.INFO_OUTLINE, lambda e, c=company, r=vals['records'], q=details_query: self._show_details(c, r, q)),
                     action_text_button("قيد", ft.Icons.ADD, lambda e, c=company: self._add_record(c), color=SUCCESS),
                     action_text_button("سداد عني", ft.Icons.SWAP_HORIZ, lambda e, c=company: self._add_third_party_payment(paid_to_company=c), color=PRIMARY),
                     action_text_button("خدمة", ft.Icons.TRAVEL_EXPLORE, lambda e, c=company: self._add_service_case(client_company=c), color=PRIMARY),
                     action_text_button("مباشرة", ft.Icons.PERSON_ADD_ALT, lambda e, c=company: self._add_direct_service(company_name=c), color=WARNING),
-                ], alignment=ft.MainAxisAlignment.SPACE_AROUND)
+                ], alignment=ft.MainAxisAlignment.SPACE_AROUND, wrap=True)
             )
             card = data_card(
                 ft.Column(content_controls, spacing=10),
                 padding=15,
                 elevation=2,
                 margin=ft.Margin(left=10, right=10, top=5, bottom=5),
+                on_click=lambda e, c=company, r=vals['records'], q=details_query: self._show_details(c, r, q),
             )
             cards.append(card)
 
