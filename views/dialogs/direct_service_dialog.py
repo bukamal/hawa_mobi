@@ -32,29 +32,33 @@ class DirectServiceDialog(ft.AlertDialog):
     affects receivables only, while this workflow stores sale, cost and profit.
     """
 
-    def __init__(self, page, on_save=None, company_name=None):
+    def __init__(self, page, on_save=None, company_name=None, service=None):
         super().__init__()
         self._page = page
         self.on_save = on_save
         self._saving = False
+        self.service = dict(service or {})
+        self.reference = (self.service.get("reference") or "").strip()
+        self.is_edit = bool(self.reference)
         page_width = page.width or 400
         page_height = page.height or 650
         dialog_width = min(390, page_width - 32)
         dialog_height = min(570, page_height - 90)
 
         default_service = "تذكرة سفر" if "تذكرة سفر" in SERVICE_TYPES else ("تأشيرة سياحية" if "تأشيرة سياحية" in SERVICE_TYPES else "أخرى")
-        self.company_field = ft.TextField(label="الشركة / الحساب", value=company_name or "", width=dialog_width - 20, hint_text="مثال: أبو تيم")
-        self.person_field = ft.TextField(label="اسم الزبون / المسافر", width=dialog_width - 20, hint_text="مثال: أحمد محمد")
-        self.service_dropdown = ft.Dropdown(label="نوع الخدمة", value=default_service, options=[ft.dropdown.Option(s) for s in SERVICE_TYPES], width=dialog_width - 20)
-        self.sale_field = ft.TextField(label="سعر البيع على الزبون", keyboard_type=ft.KeyboardType.NUMBER, width=dialog_width - 20)
-        self.cost_field = ft.TextField(label="التكلفة الداخلية / تكلفة المورد", keyboard_type=ft.KeyboardType.NUMBER, width=dialog_width - 20, hint_text="اتركها 0 إذا لم توجد تكلفة")
-        self.supplier_field = ft.TextField(label="المورد / حساب التكلفة (اختياري)", width=dialog_width - 20, hint_text="إذا أُدخل مع تكلفة، ينشئ قيدًا له على المورد")
-        self.currency_dropdown = ft.Dropdown(label="العملة", value=currency.get_display_currency(), options=[ft.dropdown.Option(c) for c in ["USD","SAR","SYP","EUR","GBP","AED","QAR","KWD","OMR"]], width=120)
-        self.operation_date = FinancialDateField(page, label="تاريخ الخدمة المباشرة", width=dialog_width - 20)
-        self.notes_field = ft.TextField(label="ملاحظات", multiline=True, min_lines=2, max_lines=3, width=dialog_width - 20)
+        self.company_field = ft.TextField(label="الشركة / الحساب", value=self.service.get("company_name") or company_name or "", width=dialog_width - 20, hint_text="مثال: أبو تيم")
+        self.person_field = ft.TextField(label="اسم الزبون / المسافر", value=self.service.get("person_name") or "", width=dialog_width - 20, hint_text="مثال: أحمد محمد")
+        self.service_dropdown = ft.Dropdown(label="نوع الخدمة", value=self.service.get("service_type") or default_service, options=[ft.dropdown.Option(s) for s in SERVICE_TYPES], width=dialog_width - 20)
+        self.sale_field = ft.TextField(label="سعر البيع على الزبون", value=str(self.service.get("sale_amount_original") or ""), keyboard_type=ft.KeyboardType.NUMBER, width=dialog_width - 20)
+        self.cost_field = ft.TextField(label="التكلفة الداخلية / تكلفة المورد", value=str(self.service.get("cost_amount_original") or ""), keyboard_type=ft.KeyboardType.NUMBER, width=dialog_width - 20, hint_text="اتركها 0 إذا لم توجد تكلفة")
+        self.supplier_field = ft.TextField(label="المورد / حساب التكلفة (اختياري)", value=self.service.get("supplier_company_name") or "", width=dialog_width - 20, hint_text="إذا أُدخل مع تكلفة، ينشئ قيدًا له على المورد")
+        self.currency_dropdown = ft.Dropdown(label="العملة", value=self.service.get("currency_original") or currency.get_display_currency(), options=[ft.dropdown.Option(c) for c in ["USD","SAR","SYP","EUR","GBP","AED","QAR","KWD","OMR"]], width=120)
+        self.operation_date = FinancialDateField(page, label="تاريخ الخدمة المباشرة", value=self.service.get("date"), width=dialog_width - 20)
+        self.notes_field = ft.TextField(label="ملاحظات", value=self.service.get("notes") or "", multiline=True, min_lines=2, max_lines=3, width=dialog_width - 20)
         self.profit_text = ft.Text("", size=13, weight=ft.FontWeight.BOLD, color=ft.Colors.INDIGO)
+        self.edit_reason_field = ft.TextField(label="سبب التعديل", multiline=True, min_lines=2, max_lines=3, width=dialog_width - 20, visible=self.is_edit, hint_text="مثال: تصحيح سعر البيع أو المورد")
         self.info_text = ft.Text(
-            "الخدمة المباشرة تنشئ قيدًا مقفلًا لنا على الحساب وتخزن البيع والتكلفة والربح داخليًا. إذا أدخلت مورّدًا مع تكلفة، ينشأ قيد تكلفة عليه أيضًا.",
+            "الخدمة المباشرة تنشئ/تحدّث قيودًا مقفلة مترابطة وتخزن البيع والتكلفة والربح داخليًا. التعديل يتم على العملية الأصلية وليس على القيد المنفرد.",
             size=12,
             color=ft.Colors.GREY_700,
         )
@@ -66,13 +70,13 @@ class DirectServiceDialog(ft.AlertDialog):
             padding=10,
             visible=False,
         )
-        self.save_btn = save_button("إنشاء خدمة مباشرة", self._save)
+        self.save_btn = save_button("حفظ التعديل" if self.is_edit else "إنشاء خدمة مباشرة", self._save)
         for fld in (self.sale_field, self.cost_field):
             fld.on_change = self._update_profit
         self.currency_dropdown.on_change = self._update_profit
         self._update_profit(None)
 
-        self.title = dialog_title("خدمة مباشرة / ربح زبون", ft.Icons.PERSON_ADD_ALT)
+        self.title = dialog_title("تعديل خدمة مباشرة" if self.is_edit else "خدمة مباشرة / ربح زبون", ft.Icons.PERSON_ADD_ALT)
         self.content = dialog_body([
             self.info_text,
             self.error_box,
@@ -85,6 +89,7 @@ class DirectServiceDialog(ft.AlertDialog):
             self.operation_date,
             self.profit_text,
             self.notes_field,
+            self.edit_reason_field,
         ], width=dialog_width - 10, height=dialog_height - 100)
         self.actions = [cancel_button("إلغاء", lambda e: self._close()), self.save_btn]
         self.actions_alignment = ft.MainAxisAlignment.END
@@ -144,7 +149,7 @@ class DirectServiceDialog(ft.AlertDialog):
 
     def _set_busy(self, busy: bool):
         self._saving = bool(busy)
-        set_button_busy(self.save_btn, busy, "إنشاء خدمة مباشرة", busy_label="جارٍ إنشاء الخدمة...")
+        set_button_busy(self.save_btn, busy, "حفظ التعديل" if self.is_edit else "إنشاء خدمة مباشرة", busy_label="جارٍ حفظ التعديل..." if self.is_edit else "جارٍ إنشاء الخدمة...")
         try:
             self._page.update()
         except Exception:
@@ -169,15 +174,21 @@ class DirectServiceDialog(ft.AlertDialog):
 
     async def _save_async(self, payload):
         try:
-            result = await asyncio.to_thread(lambda: DirectServiceRepository().add(payload))
+            if self.is_edit:
+                reason = normalize_text(self.edit_reason_field.value)
+                if not reason:
+                    raise ValueError("سبب تعديل الخدمة المباشرة مطلوب")
+                result = await asyncio.to_thread(lambda: DirectServiceRepository().update(self.reference, payload, edit_reason=reason))
+            else:
+                result = await asyncio.to_thread(lambda: DirectServiceRepository().add(payload))
         except Exception as ex:
             details = str(ex) or ex.__class__.__name__
             try:
                 print(f"[direct-service-save-error] {details}\n{traceback.format_exc()}", flush=True)
             except Exception:
                 pass
-            self._show_inline_error(f"فشل إنشاء الخدمة المباشرة: {details}")
-            self._show_snackbar(f"فشل إنشاء الخدمة المباشرة: {details}", True)
+            self._show_inline_error(f"فشل حفظ الخدمة المباشرة: {details}")
+            self._show_snackbar(f"فشل حفظ الخدمة المباشرة: {details}", True)
             self._set_busy(False)
             return
         self._set_busy(False)
@@ -190,6 +201,6 @@ class DirectServiceDialog(ft.AlertDialog):
             except Exception as ex:
                 refresh_error = str(ex) or ex.__class__.__name__
         if refresh_error:
-            self._show_snackbar(f"تم إنشاء الخدمة المباشرة، لكن تعذر تحديث الشاشة: {refresh_error}", True)
+            self._show_snackbar(f"تم حفظ الخدمة المباشرة، لكن تعذر تحديث الشاشة: {refresh_error}", True)
         else:
-            self._show_snackbar(f"تم إنشاء الخدمة المباشرة: {result.get('reference')}", False)
+            self._show_snackbar(("تم تعديل الخدمة المباشرة" if self.is_edit else "تم إنشاء الخدمة المباشرة") + f": {result.get('reference')}", False)

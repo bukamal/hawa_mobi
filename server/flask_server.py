@@ -51,6 +51,9 @@ REQUIRED_MOBILE_ENDPOINTS = [
     "/api/third_party_payments/{reference}/reverse",
     "/api/service_cases",
     "/api/service_cases/{reference}/reverse",
+    "/api/direct_services",
+    "/api/direct_services/{reference}",
+    "/api/direct_services/{reference}/reverse",
     "/api/payment_reminders",
     "/api/payment_reminders/count_waiting",
     "/api/users",
@@ -88,6 +91,8 @@ def _capabilities_payload() -> Dict[str, Any]:
         "supports_ledger_operation_core": True,
         "supports_service_cases": True,
         "supports_service_case_components": True,
+        "supports_direct_services": True,
+        "supports_direct_service_correction": True,
         "supports_embassy_and_ground_transport_components": True,
         "supports_reconciliation_statement": True,
         "auth_required": True,
@@ -905,6 +910,73 @@ def reverse_third_party_payment(reference: str):
     finally:
         conn.close()
 
+
+
+@app.get("/api/direct_services")
+@require_auth
+def get_direct_services():
+    try:
+        from database.repositories.direct_service_repo import DirectServiceRepository
+        return jsonify(DirectServiceRepository().list_services())
+    except Exception as e:
+        return _json_error(e, 400)
+
+
+@app.post("/api/direct_services")
+@require_roles(*_role_allows_write())
+def add_direct_service():
+    data = request.get_json(silent=True) or {}
+    try:
+        from database.repositories.direct_service_repo import DirectServiceRepository
+        user = _current_user() or {}
+        payload = dict(data)
+        payload["created_by"] = user.get("id") or data.get("created_by") or 1
+        return jsonify(DirectServiceRepository().add(payload))
+    except Exception as e:
+        return _json_error(e, 400)
+
+
+@app.get("/api/direct_services/<path:reference>")
+@require_auth
+def get_direct_service(reference: str):
+    try:
+        from database.repositories.direct_service_repo import DirectServiceRepository
+        return jsonify(DirectServiceRepository().get_by_reference(reference))
+    except ValueError as e:
+        return _json_error(e, 404)
+    except Exception as e:
+        return _json_error(e, 400)
+
+
+@app.put("/api/direct_services/<path:reference>")
+@require_roles(*_role_allows_write())
+def update_direct_service(reference: str):
+    data = request.get_json(silent=True) or {}
+    try:
+        from database.repositories.direct_service_repo import DirectServiceRepository
+        user = _current_user() or {}
+        reason = str(data.get("edit_reason") or "").strip()
+        return jsonify(DirectServiceRepository().update(reference, data, edit_reason=reason, user_id=user.get("id") or data.get("updated_by") or 1))
+    except ValueError as e:
+        return _json_error(e, 400)
+    except Exception as e:
+        return _json_error(e, 400)
+
+
+@app.post("/api/direct_services/<path:reference>/reverse")
+@require_roles(*_role_allows_write())
+def reverse_direct_service(reference: str):
+    data = request.get_json(silent=True) or {}
+    try:
+        from database.repositories.direct_service_repo import DirectServiceRepository
+        user = _current_user() or {}
+        reason = str(data.get("reason") or data.get("edit_reason") or "").strip()
+        date = data.get("date") or None
+        return jsonify(DirectServiceRepository().reverse(reference, user_id=user.get("id") or 1, date=date, reason=reason))
+    except ValueError as e:
+        return _json_error(e, 400)
+    except Exception as e:
+        return _json_error(e, 400)
 
 @app.get("/api/service_cases")
 @require_auth

@@ -233,6 +233,30 @@ class RestClient:
     def reverse_third_party_payment(self, reference: str) -> Dict:
         return self._request('POST', f'/api/third_party_payments/{reference}/reverse')
 
+
+    def add_direct_service(self, data: Dict) -> Dict:
+        try:
+            return self._request('POST', '/api/direct_services', data)
+        except Exception as exc:
+            if 'API error 404' in str(exc):
+                raise Exception('خادم ويندوز لا يدعم الخدمات المباشرة بعد. حدّث الخادم إلى النسخة الحالية.') from exc
+            raise
+
+    def get_direct_services(self) -> List[Dict]:
+        return self._request('GET', '/api/direct_services')
+
+    def get_direct_service(self, reference: str) -> Dict:
+        from urllib.parse import quote
+        return self._request('GET', f'/api/direct_services/{quote(str(reference or ""), safe="")}')
+
+    def update_direct_service(self, reference: str, data: Dict) -> Dict:
+        from urllib.parse import quote
+        return self._request('PUT', f'/api/direct_services/{quote(str(reference or ""), safe="")}', data)
+
+    def reverse_direct_service(self, reference: str, data: Dict | None = None) -> Dict:
+        from urllib.parse import quote
+        return self._request('POST', f'/api/direct_services/{quote(str(reference or ""), safe="")}/reverse', data or {})
+
     def get_pending_payment_reminders(self) -> List[Dict]:
         return self._request('GET', '/api/payment_reminders')
 
