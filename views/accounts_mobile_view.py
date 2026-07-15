@@ -210,6 +210,7 @@ class AccountsMobileView(ft.Column):
                     action_text_button("قيد", ft.Icons.ADD, lambda e, c=company: self._add_record(c), color=SUCCESS),
                     action_text_button("سداد عني", ft.Icons.SWAP_HORIZ, lambda e, c=company: self._add_third_party_payment(paid_to_company=c), color=PRIMARY),
                     action_text_button("خدمة", ft.Icons.TRAVEL_EXPLORE, lambda e, c=company: self._add_service_case(client_company=c), color=PRIMARY),
+                    action_text_button("مباشرة", ft.Icons.PERSON_ADD_ALT, lambda e, c=company: self._add_direct_service(company_name=c), color=WARNING),
                 ], alignment=ft.MainAxisAlignment.SPACE_AROUND)
             )
             card = data_card(
@@ -237,11 +238,10 @@ class AccountsMobileView(ft.Column):
 
     async def _export_service_profit_report(self, e):
         try:
-            from database import ServiceCaseRepository
-            from reports.account_statement import export_service_profit_report_html
+            from reports.reporting_center import PERIOD_ALL, REPORT_PROFIT, ReportingCenterService, export_report_html
             from services.file_export_service import FileExportService
-            cases = ServiceCaseRepository().list_cases()
-            path = export_service_profit_report_html(cases)
+            report = ReportingCenterService().build_report(REPORT_PROFIT, period=PERIOD_ALL)
+            path = export_report_html(report)
             result = await FileExportService.open_file_async(self._page, path, title="تقرير أرباح الخدمات الداخلي")
             self._show_snackbar(result.message if result.ok else result.message or f"تم إنشاء تقرير الأرباح: {path}", not result.ok)
         except Exception as ex:
@@ -288,6 +288,10 @@ class AccountsMobileView(ft.Column):
             self._close_dialog(dlg)
             self._add_service_case()
 
+        def open_direct_service(_):
+            self._close_dialog(dlg)
+            self._add_direct_service()
+
         dlg = ft.AlertDialog(
             title=ft.Text(translate('choose_operation'), weight=ft.FontWeight.BOLD),
             content=ft.Column([
@@ -304,6 +308,12 @@ class AccountsMobileView(ft.Column):
                     color=ft.Colors.WHITE,
                 ),
                 ft.FilledButton(
+                    content=ft.Row([ft.Icon(ft.Icons.PERSON_ADD_ALT), ft.Text("خدمة مباشرة / ربح زبون")], tight=True),
+                    on_click=open_direct_service,
+                    bgcolor=WARNING,
+                    color=ft.Colors.WHITE,
+                ),
+                ft.FilledButton(
                     content=ft.Row([ft.Icon(ft.Icons.SWAP_HORIZ), ft.Text(translate('third_party_payment'))], tight=True),
                     on_click=open_third_party,
                     bgcolor=PRIMARY,
@@ -314,41 +324,44 @@ class AccountsMobileView(ft.Column):
         )
         open_control(self._page, dlg)
 
+
+    def _add_direct_service(self, company_name=None):
+        if UserSession.get_current() and UserSession.get_current().get('role') == 'viewer':
+            self._show_snackbar("ليس لديك صلاحية لإضافة خدمات مباشرة", True)
+            return
+        from views.dialogs.direct_service_dialog import DirectServiceDialog
+        dialog = DirectServiceDialog(
+            page=self._page,
+            on_save=lambda _: self._refresh_cards(None),
+            company_name=company_name,
+        )
+        open_control(self._page, dialog)
+
     def _add_service_case(self, client_company=None, supplier_company=None):
         if UserSession.get_current() and UserSession.get_current().get('role') == 'viewer':
             self._show_snackbar("ليس لديك صلاحية لإضافة ملفات خدمات", True)
             return
         from views.dialogs.service_case_dialog import ServiceCaseDialog
-        try:
-            dialog = ServiceCaseDialog(
-                page=self._page,
-                on_save=lambda _: self._refresh_cards(None),
-                client_company_name=client_company,
-                supplier_company_name=supplier_company,
-            )
-            open_control(self._page, dialog)
-        except Exception as e:
-            self._show_snackbar(f"خطأ في فتح نافذة الخدمة: {str(e)}", True)
-            import traceback
-            traceback.print_exc()
+        dialog = ServiceCaseDialog(
+            page=self._page,
+            on_save=lambda _: self._refresh_cards(None),
+            client_company_name=client_company,
+            supplier_company_name=supplier_company,
+        )
+        open_control(self._page, dialog)
 
     def _add_third_party_payment(self, payer_company=None, paid_to_company=None):
         if UserSession.get_current() and UserSession.get_current().get('role') == 'viewer':
             self._show_snackbar("ليس لديك صلاحية لإضافة قيود", True)
             return
         from views.dialogs.third_party_payment_dialog import ThirdPartyPaymentDialog
-        try:
-            dialog = ThirdPartyPaymentDialog(
-                page=self._page,
-                on_save=lambda _: self._refresh_cards(None),
-                payer_company_name=payer_company,
-                paid_to_company_name=paid_to_company,
-            )
-            open_control(self._page, dialog)
-        except Exception as e:
-            self._show_snackbar(f"خطأ في فتح نافذة سدد عني: {str(e)}", True)
-            import traceback
-            traceback.print_exc()
+        dialog = ThirdPartyPaymentDialog(
+            page=self._page,
+            on_save=lambda _: self._refresh_cards(None),
+            payer_company_name=payer_company,
+            paid_to_company_name=paid_to_company,
+        )
+        open_control(self._page, dialog)
 
     def _add_record(self, company_name=None):
         if UserSession.get_current() and UserSession.get_current().get('role') == 'viewer':

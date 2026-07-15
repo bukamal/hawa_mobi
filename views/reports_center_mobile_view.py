@@ -25,6 +25,7 @@ from reports.reporting_center import (
     REPORT_COMPANY_BALANCES,
     REPORT_DEFINITIONS,
     REPORT_PROFIT,
+    REPORT_DIRECT_SERVICES,
     REPORT_SERVICES,
     REPORT_THIRD_PARTY,
     ReportingCenterService,
@@ -72,6 +73,7 @@ _REPORT_ORDER = [
     REPORT_COMPANY_BALANCES,
     REPORT_AGING,
     REPORT_PROFIT,
+    REPORT_DIRECT_SERVICES,
     REPORT_SERVICES,
     REPORT_THIRD_PARTY,
     REPORT_AUDIT,
@@ -325,9 +327,18 @@ class ReportsCenterMobileView(ft.Column):
 
     def _on_export_png(self, e=None):
         try:
+            self._require_report()
+            self._show_snackbar("جارٍ إنشاء صورة PNG للتقرير...", False)
+            run_async_task(self._page, self._export_png_async)
+        except Exception as ex:
+            self._show_snackbar(f"تعذر إنشاء PNG: {ex}", True)
+
+    async def _export_png_async(self):
+        try:
+            import asyncio
             report = self._require_report()
-            path = export_report_image(report)
-            run_async_task(self._page, self._open_path, path, f"PNG — {report.title}")
+            path = await asyncio.to_thread(lambda: export_report_image(report))
+            await self._open_path(path, f"PNG — {report.title}")
         except Exception as ex:
             self._show_snackbar(f"تعذر إنشاء PNG: {ex}", True)
 

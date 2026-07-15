@@ -17,7 +17,7 @@ from typing import Dict, Iterable, List, Tuple
 
 from config import get_company_info
 from currency import currency
-from database import AuditRepository, ExpenseRepository, ServiceCaseRepository
+from database import AuditRepository, ExpenseRepository, ServiceCaseRepository, DirectServiceRepository
 from reports.account_statement import _base_css, _header_html, _ltr, _money_span, _safe
 from services.file_export_service import FileExportService
 from services.ledger_operation_service import operation_label
@@ -41,6 +41,7 @@ REPORT_LOW_MARGIN = "low_margin_services"
 REPORT_LOCKED_ENTRIES = "locked_entries"
 REPORT_REVERSALS = "reversal_operations"
 REPORT_OPERATION_SUMMARY = "operation_summary"
+REPORT_DIRECT_SERVICES = "direct_services_profit"
 
 REPORT_DEFINITIONS: Dict[str, Dict[str, str]] = {
     REPORT_COMPANY_BALANCES: {"title": "تقرير أرصدة الشركات", "category": "تقارير مالية", "icon": "account_balance"},
@@ -54,6 +55,7 @@ REPORT_DEFINITIONS: Dict[str, Dict[str, str]] = {
     REPORT_LOCKED_ENTRIES: {"title": "تقرير القيود المقفلة", "category": "تقارير التدقيق", "icon": "lock"},
     REPORT_REVERSALS: {"title": "تقرير العمليات المعكوسة", "category": "تقارير التدقيق", "icon": "undo"},
     REPORT_OPERATION_SUMMARY: {"title": "ملخص أنواع العمليات", "category": "تقارير مالية", "icon": "donut_large"},
+    REPORT_DIRECT_SERVICES: {"title": "تقرير أرباح الخدمات المباشرة", "category": "تقارير الأرباح", "icon": "person_add_alt"},
 }
 
 
@@ -180,6 +182,7 @@ class ReportingCenterService:
         self.expense_repo = ExpenseRepository()
         self.service_repo = ServiceCaseRepository()
         self.audit_repo = AuditRepository()
+        self.direct_repo = DirectServiceRepository()
 
     def list_companies(self) -> List[str]:
         names = {str(r.get("company_name") or "").strip() for r in self.expense_repo.get_all(convert_to_display=False)}
@@ -225,6 +228,8 @@ class ReportingCenterService:
             return self.reversal_operations(period=period, start_date=start_date, end_date=end_date, company_name=company_name, currency_code=currency_code)
         if report_id == REPORT_OPERATION_SUMMARY:
             return self.operation_summary(period=period, start_date=start_date, end_date=end_date, company_name=company_name, currency_code=currency_code)
+        if report_id == REPORT_DIRECT_SERVICES:
+            return self.direct_services_profit(period=period, start_date=start_date, end_date=end_date, company_name=company_name, currency_code=currency_code)
         raise ValueError("تقرير غير معروف")
 
     def _result(self, report_id: str, period_label: str, columns: List[Dict[str, str]], rows: List[Dict[str, object]], summary: List[Dict[str, str]], slug_suffix: str = "") -> ReportResult:
@@ -368,8 +373,24 @@ class ReportingCenterService:
             cases.append(c)
         return cases, label
 
+    def _filtered_direct_services(self, *, period: str = PERIOD_THIS_MONTH, start_date: str | None = None, end_date: str | None = None, company_name: str | None = None, currency_code: str | None = None) -> Tuple[List[Dict], str]:
+        start, end, label = resolve_period(period, start_date, end_date)
+        company_name = str(company_name or "").strip()
+        currency_code = str(currency_code or "").upper().strip()
+        rows = []
+        for d in self.direct_repo.list_services():
+            if not _in_range(d.get("date"), start, end):
+                continue
+            if company_name and company_name != "الكل" and company_name not in {d.get("company_name"), d.get("supplier_company_name")}:
+                continue
+            if currency_code and currency_code != "الكل" and str(d.get("currency_original") or "USD").upper() != currency_code:
+                continue
+            rows.append(d)
+        return rows, label
+
     def period_profit(self, **filters) -> ReportResult:
         cases, label = self._filtered_service_cases(**filters)
+        direct_services, _ = self._filtered_direct_services(**filters)
         display = currency.get_display_currency()
         rows = []
         total_sale = total_cost = total_profit = 0.0
@@ -393,6 +414,25 @@ class ReportingCenterService:
                 "person": c.get("person_name") or "", "service": service, "sale": _fmt_usd_to_display(sale, display),
                 "cost": _fmt_usd_to_display(cost, display), "profit": _fmt_usd_to_display(profit, display), "margin": f"{margin:.2f}%",
             })
+        for d in direct_services:
+            if str(d.get("status") or "open") == "reversed":
+                continue
+            sale = float(d.get("sale_amount_base") or 0)
+            cost = float(d.get("cost_amount_base") or 0)
+            profit = sale - cost
+            margin = (profit / sale * 100.0) if sale else 0.0
+            total_sale += sale
+            total_cost += cost
+            total_profit += profit
+            service = str(d.get("service_type") or "خدمة مباشرة")
+            by_service[service]["sale"] += sale
+            by_service[service]["cost"] += cost
+            by_service[service]["count"] += 1
+            rows.append({
+                "date": d.get("date") or "", "reference": d.get("reference") or "", "client": d.get("company_name") or "",
+                "person": d.get("person_name") or "", "service": service + " · مباشرة", "sale": _fmt_usd_to_display(sale, display),
+                "cost": _fmt_usd_to_display(cost, display), "profit": _fmt_usd_to_display(profit, display), "margin": f"{margin:.2f}%",
+            })
         # Append grouped summaries after details; keeps the report useful even if UI preview uses first rows.
         for service, vals in sorted(by_service.items()):
             sale = float(vals["sale"]); cost = float(vals["cost"]); profit = sale - cost
@@ -406,12 +446,13 @@ class ReportingCenterService:
             {"label": "إجمالي البيع", "value": _fmt_usd_to_display(total_sale, display), "class": "debit"},
             {"label": "إجمالي التكلفة", "value": _fmt_usd_to_display(total_cost, display), "class": "credit"},
             {"label": "إجمالي الربح", "value": _fmt_usd_to_display(total_profit, display), "class": "balance"},
-            {"label": "عدد الخدمات", "value": str(len([c for c in cases if str(c.get("status") or "open") != "reversed"])), "class": "balance"},
+            {"label": "عدد الخدمات", "value": str(len([c for c in cases if str(c.get("status") or "open") != "reversed"]) + len([d for d in direct_services if str(d.get("status") or "open") != "reversed"])), "class": "balance"},
         ]
         return self._result(REPORT_PROFIT, label, columns, rows, summary)
 
     def services_period(self, **filters) -> ReportResult:
         cases, label = self._filtered_service_cases(**filters)
+        direct_services, _ = self._filtered_direct_services(**filters)
         rows = []
         total_sale = total_cost = 0.0
         for c in cases:
@@ -428,6 +469,18 @@ class ReportingCenterService:
                 "components": components, "sale": _fmt_usd_to_display(sale), "cost": _fmt_usd_to_display(cost),
                 "profit": _fmt_usd_to_display(sale - cost), "status": c.get("status") or "open",
             })
+        for d in direct_services:
+            sale = float(d.get("sale_amount_base") or 0)
+            cost = float(d.get("cost_amount_base") or 0)
+            if str(d.get("status") or "open") != "reversed":
+                total_sale += sale
+                total_cost += cost
+            rows.append({
+                "date": d.get("date") or "", "reference": d.get("reference") or "", "client": d.get("company_name") or "",
+                "supplier": d.get("supplier_company_name") or "تكلفة داخلية", "person": d.get("person_name") or "", "service": (d.get("service_type") or "") + " · مباشرة",
+                "components": "خدمة مباشرة", "sale": _fmt_usd_to_display(sale), "cost": _fmt_usd_to_display(cost),
+                "profit": _fmt_usd_to_display(sale - cost), "status": d.get("status") or "open",
+            })
         columns = [
             {"key": "date", "label": "التاريخ"}, {"key": "reference", "label": "المرجع"}, {"key": "client", "label": "العميل"},
             {"key": "supplier", "label": "المورد"}, {"key": "person", "label": "المسافر"}, {"key": "service", "label": "الخدمة"},
@@ -435,12 +488,44 @@ class ReportingCenterService:
             {"key": "profit", "label": "الربح"}, {"key": "status", "label": "الحالة"},
         ]
         summary = [
-            {"label": "عدد الخدمات", "value": str(len(cases)), "class": "balance"},
+            {"label": "عدد الخدمات", "value": str(len(cases) + len(direct_services)), "class": "balance"},
             {"label": "إجمالي البيع", "value": _fmt_usd_to_display(total_sale), "class": "debit"},
             {"label": "إجمالي التكلفة", "value": _fmt_usd_to_display(total_cost), "class": "credit"},
             {"label": "صافي الربح", "value": _fmt_usd_to_display(total_sale - total_cost), "class": "balance"},
         ]
         return self._result(REPORT_SERVICES, label, columns, rows, summary)
+
+    def direct_services_profit(self, **filters) -> ReportResult:
+        rows_src, label = self._filtered_direct_services(**filters)
+        rows = []
+        total_sale = total_cost = total_profit = 0.0
+        for d in rows_src:
+            if str(d.get("status") or "open") == "reversed":
+                continue
+            sale = float(d.get("sale_amount_base") or 0)
+            cost = float(d.get("cost_amount_base") or 0)
+            profit = sale - cost
+            margin = (profit / sale * 100.0) if sale else 0.0
+            total_sale += sale
+            total_cost += cost
+            total_profit += profit
+            rows.append({
+                "date": d.get("date") or "", "reference": d.get("reference") or "", "company": d.get("company_name") or "",
+                "person": d.get("person_name") or "", "service": d.get("service_type") or "", "supplier": d.get("supplier_company_name") or "تكلفة داخلية",
+                "sale": _fmt_usd_to_display(sale), "cost": _fmt_usd_to_display(cost), "profit": _fmt_usd_to_display(profit), "margin": f"{margin:.2f}%",
+            })
+        columns = [
+            {"key": "date", "label": "التاريخ"}, {"key": "reference", "label": "المرجع"}, {"key": "company", "label": "الحساب"},
+            {"key": "person", "label": "الزبون"}, {"key": "service", "label": "الخدمة"}, {"key": "supplier", "label": "المورد/التكلفة"},
+            {"key": "sale", "label": "البيع"}, {"key": "cost", "label": "التكلفة"}, {"key": "profit", "label": "الربح"}, {"key": "margin", "label": "الهامش"},
+        ]
+        summary = [
+            {"label": "خدمات مباشرة", "value": str(len(rows)), "class": "balance"},
+            {"label": "إجمالي البيع", "value": _fmt_usd_to_display(total_sale), "class": "debit"},
+            {"label": "إجمالي التكلفة", "value": _fmt_usd_to_display(total_cost), "class": "credit"},
+            {"label": "صافي الربح", "value": _fmt_usd_to_display(total_profit), "class": "balance"},
+        ]
+        return self._result(REPORT_DIRECT_SERVICES, label, columns, rows, summary)
 
     def third_party_payments(self, **filters) -> ReportResult:
         expenses, label, _, _ = self._filtered_expenses(include_waiting=False, **filters)
@@ -484,6 +569,7 @@ class ReportingCenterService:
 
     def open_services(self, **filters) -> ReportResult:
         cases, label = self._filtered_service_cases(**filters)
+        direct_services, _ = self._filtered_direct_services(**filters)
         today = _dt.date.today()
         rows = []
         total_sale = total_cost = 0.0
@@ -507,6 +593,22 @@ class ReportingCenterService:
                 "components": components, "sale": _fmt_usd_to_display(sale), "cost": _fmt_usd_to_display(cost),
                 "profit": _fmt_usd_to_display(sale - cost), "status": status,
             })
+        for d in direct_services:
+            if str(d.get("status") or "open") == "reversed":
+                continue
+            sale = float(d.get("sale_amount_base") or 0)
+            cost = float(d.get("cost_amount_base") or 0)
+            total_sale += sale
+            total_cost += cost
+            dd = _parse_iso(d.get("date")) or today
+            age = max(0, (today - dd).days)
+            rows.append({
+                "date": d.get("date") or "", "age_days": age, "reference": d.get("reference") or "",
+                "client": d.get("company_name") or "", "supplier": d.get("supplier_company_name") or "تكلفة داخلية",
+                "person": d.get("person_name") or "", "service": (d.get("service_type") or "") + " · مباشرة",
+                "components": "خدمة مباشرة", "sale": _fmt_usd_to_display(sale), "cost": _fmt_usd_to_display(cost),
+                "profit": _fmt_usd_to_display(sale - cost), "status": d.get("status") or "open",
+            })
         rows.sort(key=lambda r: (-int(r.get("age_days") or 0), str(r.get("date") or "")))
         columns = [
             {"key": "date", "label": "التاريخ"}, {"key": "age_days", "label": "العمر"}, {"key": "reference", "label": "المرجع"},
@@ -524,6 +626,7 @@ class ReportingCenterService:
 
     def low_margin_services(self, **filters) -> ReportResult:
         cases, label = self._filtered_service_cases(**filters)
+        direct_services, _ = self._filtered_direct_services(**filters)
         rows = []
         total_risk_profit = 0.0
         count_loss = count_low = 0
@@ -544,6 +647,25 @@ class ReportingCenterService:
             rows.append({
                 "date": c.get("date") or "", "reference": c.get("reference") or "", "client": c.get("client_company_name") or "",
                 "supplier": c.get("supplier_company_name") or "", "person": c.get("person_name") or "", "service": c.get("service_type") or "",
+                "sale": _fmt_usd_to_display(sale), "cost": _fmt_usd_to_display(cost), "profit": _fmt_usd_to_display(profit),
+                "margin": f"{margin:.2f}%", "risk": status,
+            })
+        for d in direct_services:
+            if str(d.get("status") or "open") == "reversed":
+                continue
+            sale = float(d.get("sale_amount_base") or 0)
+            cost = float(d.get("cost_amount_base") or 0)
+            profit = sale - cost
+            margin = (profit / sale * 100.0) if sale else 0.0
+            if profit >= 0 and margin > threshold:
+                continue
+            status = "خسارة" if profit < 0 else "هامش منخفض"
+            count_loss += 1 if profit < 0 else 0
+            count_low += 1 if profit >= 0 else 0
+            total_risk_profit += profit
+            rows.append({
+                "date": d.get("date") or "", "reference": d.get("reference") or "", "client": d.get("company_name") or "",
+                "supplier": d.get("supplier_company_name") or "تكلفة داخلية", "person": d.get("person_name") or "", "service": (d.get("service_type") or "") + " · مباشرة",
                 "sale": _fmt_usd_to_display(sale), "cost": _fmt_usd_to_display(cost), "profit": _fmt_usd_to_display(profit),
                 "margin": f"{margin:.2f}%", "risk": status,
             })

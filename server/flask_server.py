@@ -925,35 +925,6 @@ def get_service_cases():
         conn.close()
 
 
-@app.get("/api/service_cases/<path:reference>")
-@require_auth
-def get_service_case(reference: str):
-    from database.repositories.service_case_repo import ServiceCaseRepository
-    try:
-        return jsonify(ServiceCaseRepository().get_by_reference(reference))
-    except Exception as e:
-        return _json_error(e, 404)
-
-
-@app.put("/api/service_cases/<path:reference>")
-@require_roles(*_role_allows_write())
-def update_service_case(reference: str):
-    from database.repositories.service_case_repo import ServiceCaseRepository
-    data = request.get_json(silent=True) or {}
-    user = _current_user() or {}
-    uid = user.get("id") or data.get("updated_by") or 1
-    try:
-        result = ServiceCaseRepository().update_service_case(
-            reference=reference,
-            data=data,
-            edit_reason=data.get("edit_reason") or "",
-            user_id=uid,
-        )
-        return jsonify(result)
-    except Exception as e:
-        return _json_error(e, 400)
-
-
 @app.post("/api/service_cases")
 @require_roles(*_role_allows_write())
 def add_service_case():

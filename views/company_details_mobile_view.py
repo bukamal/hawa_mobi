@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 import flet as ft
-from views.flet_compat import open_control, close_control
+from views.flet_compat import open_control, close_control, run_async_task
 from database import ExpenseRepository
 from auth.session import UserSession
 from i18n.translator import translate
@@ -47,6 +47,12 @@ class CompanyDetailsMobileView(ft.Column):
 
         self.report_actions = ft.Row([
             ft.FilledButton(
+                content=ft.Row([ft.Icon(ft.Icons.PERSON_ADD_ALT), ft.Text("خدمة مباشرة")], tight=True),
+                on_click=self._add_direct_service,
+                bgcolor=WARNING,
+                color=ft.Colors.WHITE,
+            ),
+            ft.FilledButton(
                 content=ft.Row([ft.Icon(ft.Icons.PRINT), ft.Text("كشف للطباعة")], tight=True),
                 on_click=self._export_printable_statement,
                 bgcolor=PRIMARY,
@@ -66,7 +72,7 @@ class CompanyDetailsMobileView(ft.Column):
             ),
             ft.TextButton(
                 content=ft.Row([ft.Icon(ft.Icons.IMAGE), ft.Text("صورة")], tight=True),
-                on_click=self._share_statement_image,
+                on_click=self._on_share_statement_image,
             ),
             ft.TextButton(
                 content=ft.Row([ft.Icon(ft.Icons.CHAT), ft.Text("واتساب")], tight=True),
@@ -208,13 +214,16 @@ class CompanyDetailsMobileView(ft.Column):
                         color=PRIMARY,
                         bgcolor=PRIMARY_SOFT,
                     ) if r.get('source_type') in ('service_case_client', 'service_case_supplier', 'service_case_reversal') else ft.Container(width=0, height=0),
+                    pill(
+                        '💼 خدمة مباشرة - عميل' if r.get('source_type') == 'direct_service_client' else ('💼 خدمة مباشرة - مورد' if r.get('source_type') == 'direct_service_supplier' else '↩️ عكس خدمة مباشرة'),
+                        color=PRIMARY,
+                        bgcolor=PRIMARY_SOFT,
+                    ) if r.get('source_type') in ('direct_service_client', 'direct_service_supplier', 'direct_service_reversal') else ft.Container(width=0, height=0),
                     ft.Row([
                         action_text_button("تعديل", ft.Icons.EDIT, lambda e, rec=r: self._edit_record(rec), color=PRIMARY, visible=(not is_viewer and not r.get('source_type') and not int(r.get('is_locked') or 0))),
                         action_text_button("حذف", ft.Icons.DELETE, lambda e, rec=r: self._delete_record(rec), color=DANGER, visible=(not is_viewer and not r.get('source_type') and not int(r.get('is_locked') or 0))),
                         action_text_button("تعديل العملية", ft.Icons.EDIT_NOTE, lambda e, rec=r: self._edit_third_party(rec), color=PRIMARY, visible=(not is_viewer and r.get('source_type') == 'third_party_payment')),
                         action_text_button("عكس", ft.Icons.UNDO, lambda e, rec=r: self._reverse_third_party(rec), color=WARNING, visible=(not is_viewer and r.get('source_type') == 'third_party_payment')),
-                        action_text_button("تعديل الخدمة", ft.Icons.EDIT_NOTE, lambda e, rec=r: self._edit_service_case(rec), color=PRIMARY, visible=(not is_viewer and r.get('source_type') in ('service_case_client', 'service_case_supplier'))),
-                        action_text_button("عكس الخدمة", ft.Icons.UNDO, lambda e, rec=r: self._reverse_service_case(rec), color=WARNING, visible=(not is_viewer and r.get('source_type') in ('service_case_client', 'service_case_supplier'))),
                     ], alignment=ft.MainAxisAlignment.END)
                 ], spacing=8),
                 padding=12,
@@ -228,6 +237,15 @@ class CompanyDetailsMobileView(ft.Column):
 
         self.records_list.controls = cards
         self._page.update()
+
+
+    def _add_direct_service(self, e=None):
+        if UserSession.get_current() and UserSession.get_current().get('role') == 'viewer':
+            self._show_snackbar("ليس لديك صلاحية لإضافة خدمات مباشرة", True)
+            return
+        from views.dialogs.direct_service_dialog import DirectServiceDialog
+        dialog = DirectServiceDialog(page=self._page, on_save=lambda _: self._reload(), company_name=self.company_name)
+        open_control(self._page, dialog)
 
     async def _export_printable_statement(self, e):
         try:
@@ -266,11 +284,16 @@ class CompanyDetailsMobileView(ft.Column):
             self._show_snackbar(f"خطأ في مشاركة كشف المطابقة: {str(ex)}", True)
 
 
-    async def _share_statement_image(self, e):
+    def _on_share_statement_image(self, e=None):
+        self._show_snackbar("جارٍ إنشاء صورة كشف المطابقة...", False)
+        run_async_task(self._page, self._share_statement_image_async)
+
+    async def _share_statement_image_async(self):
         try:
+            import asyncio
             from reports.image_export import export_statement_image
             from reports.share import share_file_async
-            path = export_statement_image(self.company_name, self.records, reconciliation=True)
+            path = await asyncio.to_thread(lambda: export_statement_image(self.company_name, self.records, reconciliation=True))
             message = f"صورة كشف مطابقة - {self.company_name}"
             result = await share_file_async(self._page, path, message, open_whatsapp=False, title="مشاركة صورة كشف المطابقة")
             self._show_snackbar(result.message if result.ok else result.message or f"تم إنشاء صورة الكشف: {path}", not result.ok)
@@ -342,46 +365,6 @@ class CompanyDetailsMobileView(ft.Column):
             open_control(self._page, dialog)
         except Exception as ex:
             self._show_snackbar(f"خطأ في فتح تعديل العملية: {str(ex)}", True)
-
-    def _edit_service_case(self, record):
-        ref = record.get('source_ref') or ''
-        if not ref:
-            self._show_snackbar("لا يوجد مرجع لتعديل الخدمة", True)
-            return
-        try:
-            from database import ServiceCaseRepository
-            from views.dialogs.service_case_dialog import ServiceCaseDialog
-            service_case = ServiceCaseRepository().get_by_reference(ref)
-            if service_case.get('status') == 'reversed':
-                self._show_snackbar("لا يمكن تعديل خدمة معكوسة. أنشئ خدمة جديدة.", True)
-                return
-            dialog = ServiceCaseDialog(page=self._page, on_save=lambda _: self._reload(), service_case=service_case)
-            open_control(self._page, dialog)
-        except Exception as ex:
-            self._show_snackbar(f"خطأ في فتح تعديل الخدمة: {str(ex)}", True)
-
-    def _reverse_service_case(self, record):
-        ref = record.get('source_ref') or ''
-        if not ref:
-            self._show_snackbar("لا يوجد مرجع لعكس الخدمة", True)
-            return
-
-        def confirm(e):
-            try:
-                from database import ServiceCaseRepository
-                ServiceCaseRepository().reverse(ref)
-                self._show_snackbar("تم عكس ملف الخدمة", False)
-                self._reload()
-            except Exception as ex:
-                self._show_snackbar(f"خطأ: {str(ex)}", True)
-            self._close_dialog(dlg)
-
-        dlg = ft.AlertDialog(
-            title=ft.Text("عكس ملف خدمة"),
-            content=ft.Text(f"سيتم إنشاء قيود عكسية لملف الخدمة {ref}. هل تريد المتابعة؟"),
-            actions=[ft.TextButton("نعم", on_click=confirm), ft.TextButton("لا", on_click=lambda e: self._close_dialog(dlg))],
-        )
-        open_control(self._page, dlg)
 
     def _reverse_third_party(self, record):
         ref = record.get('source_ref') or ''
