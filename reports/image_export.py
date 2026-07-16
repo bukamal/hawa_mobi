@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import datetime as _dt
 import os
+import re
 from typing import Dict, Iterable, List
 
 from config import get_company_info
@@ -21,9 +22,9 @@ from reports.account_statement import (
 from services.file_export_service import FileExportService
 
 try:  # Pillow is intentionally optional at import time; buttons surface errors.
-    from PIL import Image, ImageDraw, ImageFont, ImageOps
+    from PIL import Image, ImageDraw, ImageFont, ImageOps, features
 except Exception:  # pragma: no cover - exercised only on runtimes missing Pillow
-    Image = ImageDraw = ImageFont = ImageOps = None
+    Image = ImageDraw = ImageFont = ImageOps = features = None
 
 PRIMARY = "#0A3F70"
 PRIMARY_SOFT = "#EAF4FF"
@@ -38,6 +39,130 @@ WHITE = "#FFFFFF"
 CARD_BG = "#F9FBFD"
 PAGE_W = 1240
 MARGIN = 64
+
+
+def _has_raqm() -> bool:
+    """Return whether Pillow can shape RTL Arabic text natively.
+
+    Desktop Pillow often has libraqm; Android APK builds frequently do not.
+    Without libraqm, drawing Arabic with ``direction='rtl'`` either raises or
+    draws characters in logical order, which looks reversed in exported PNGs.
+    The fallback below reshapes Arabic into presentation forms and reverses the
+    RTL runs while preserving Latin numbers/currency tokens.
+    """
+    try:
+        return bool(features and features.check("raqm"))
+    except Exception:
+        return False
+
+
+_HAS_RAQM = _has_raqm()
+
+
+# (isolated, final, initial, medial).  Empty forms mean that side cannot join.
+_ARABIC_FORMS = {
+    "ء": ("\ufe80", "", "", ""),
+    "آ": ("\ufe81", "\ufe82", "", ""),
+    "أ": ("\ufe83", "\ufe84", "", ""),
+    "ؤ": ("\ufe85", "\ufe86", "", ""),
+    "إ": ("\ufe87", "\ufe88", "", ""),
+    "ئ": ("\ufe89", "\ufe8a", "\ufe8b", "\ufe8c"),
+    "ا": ("\ufe8d", "\ufe8e", "", ""),
+    "ب": ("\ufe8f", "\ufe90", "\ufe91", "\ufe92"),
+    "ة": ("\ufe93", "\ufe94", "", ""),
+    "ت": ("\ufe95", "\ufe96", "\ufe97", "\ufe98"),
+    "ث": ("\ufe99", "\ufe9a", "\ufe9b", "\ufe9c"),
+    "ج": ("\ufe9d", "\ufe9e", "\ufe9f", "\ufea0"),
+    "ح": ("\ufea1", "\ufea2", "\ufea3", "\ufea4"),
+    "خ": ("\ufea5", "\ufea6", "\ufea7", "\ufea8"),
+    "د": ("\ufea9", "\ufeaa", "", ""),
+    "ذ": ("\ufeab", "\ufeac", "", ""),
+    "ر": ("\ufead", "\ufeae", "", ""),
+    "ز": ("\ufeaf", "\ufeb0", "", ""),
+    "س": ("\ufeb1", "\ufeb2", "\ufeb3", "\ufeb4"),
+    "ش": ("\ufeb5", "\ufeb6", "\ufeb7", "\ufeb8"),
+    "ص": ("\ufeb9", "\ufeba", "\ufebb", "\ufebc"),
+    "ض": ("\ufebd", "\ufebe", "\ufebf", "\ufec0"),
+    "ط": ("\ufec1", "\ufec2", "\ufec3", "\ufec4"),
+    "ظ": ("\ufec5", "\ufec6", "\ufec7", "\ufec8"),
+    "ع": ("\ufec9", "\ufeca", "\ufecb", "\ufecc"),
+    "غ": ("\ufecd", "\ufece", "\ufecf", "\ufed0"),
+    "ف": ("\ufed1", "\ufed2", "\ufed3", "\ufed4"),
+    "ق": ("\ufed5", "\ufed6", "\ufed7", "\ufed8"),
+    "ك": ("\ufed9", "\ufeda", "\ufedb", "\ufedc"),
+    "ل": ("\ufedd", "\ufede", "\ufedf", "\ufee0"),
+    "م": ("\ufee1", "\ufee2", "\ufee3", "\ufee4"),
+    "ن": ("\ufee5", "\ufee6", "\ufee7", "\ufee8"),
+    "ه": ("\ufee9", "\ufeea", "\ufeeb", "\ufeec"),
+    "و": ("\ufeed", "\ufeee", "", ""),
+    "ى": ("\ufeef", "\ufef0", "", ""),
+    "ي": ("\ufef1", "\ufef2", "\ufef3", "\ufef4"),
+}
+_ARABIC_RE = re.compile(r"[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF]")
+_TOKEN_RE = re.compile(r"[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF]+|[A-Za-z0-9$€£¥.,:/%+\-()#]+|\s+|.")
+
+
+def _is_arabic_char(ch: str) -> bool:
+    return bool(ch and _ARABIC_RE.match(ch))
+
+
+def _connects_prev(ch: str) -> bool:
+    forms = _ARABIC_FORMS.get(ch)
+    return bool(forms and forms[1])
+
+
+def _connects_next(ch: str) -> bool:
+    forms = _ARABIC_FORMS.get(ch)
+    return bool(forms and forms[2])
+
+
+def _shape_arabic_run(text: str) -> str:
+    chars = list(text or "")
+    shaped: list[str] = []
+    for idx, ch in enumerate(chars):
+        forms = _ARABIC_FORMS.get(ch)
+        if not forms:
+            shaped.append(ch)
+            continue
+        prev_ch = chars[idx - 1] if idx else ""
+        next_ch = chars[idx + 1] if idx + 1 < len(chars) else ""
+        join_prev = _connects_prev(ch) and _connects_next(prev_ch)
+        join_next = _connects_next(ch) and _connects_prev(next_ch)
+        isolated, final, initial, medial = forms
+        if join_prev and join_next and medial:
+            shaped.append(medial)
+        elif join_prev and final:
+            shaped.append(final)
+        elif join_next and initial:
+            shaped.append(initial)
+        else:
+            shaped.append(isolated)
+    return "".join(shaped)
+
+
+def _rtl_fallback_visual(text: object) -> str:
+    raw = "" if text is None else str(text)
+    if not raw or not _ARABIC_RE.search(raw):
+        return raw
+    # Approximate bidi display order for report labels: reverse top-level
+    # tokens for RTL paragraphs, reverse shaped Arabic runs, keep numbers,
+    # dates, currency and Latin tokens readable left-to-right.
+    tokens = _TOKEN_RE.findall(raw)
+    visual: list[str] = []
+    for token in reversed(tokens):
+        if _ARABIC_RE.search(token):
+            visual.append(_shape_arabic_run(token)[::-1])
+        else:
+            visual.append(token)
+    return "".join(visual)
+
+
+def _display_text(text: object, *, rtl: bool = True) -> str:
+    raw = "" if text is None else str(text)
+    if rtl and not _HAS_RAQM:
+        return _rtl_fallback_visual(raw)
+    return raw
+
 
 
 def _require_pillow() -> None:
@@ -98,27 +223,32 @@ def _font(size: int, *, bold: bool = False):
 def _txt_size(draw, text: str, font) -> tuple[int, int]:
     if not text:
         return 0, 0
+    rendered = _display_text(text, rtl=True)
     try:
-        box = draw.textbbox((0, 0), str(text), font=font, direction="rtl")
+        if _HAS_RAQM:
+            box = draw.textbbox((0, 0), rendered, font=font, direction="rtl")
+        else:
+            box = draw.textbbox((0, 0), rendered, font=font)
     except Exception:
-        box = draw.textbbox((0, 0), str(text), font=font)
+        box = draw.textbbox((0, 0), rendered, font=font)
     return max(0, box[2] - box[0]), max(0, box[3] - box[1])
 
 
 def _draw_text(draw, xy, text: object, font, fill=TEXT, *, anchor: str = "ra", rtl: bool = True) -> None:
+    rendered = _display_text(text, rtl=rtl)
     kwargs = {"font": font, "fill": fill, "anchor": anchor}
-    if rtl:
+    if rtl and _HAS_RAQM:
         kwargs["direction"] = "rtl"
     try:
-        draw.text(xy, "" if text is None else str(text), **kwargs)
+        draw.text(xy, rendered, **kwargs)
     except Exception:
         # Several Android Pillow builds ship without libraqm or with a default
         # bitmap font that rejects the ``direction`` keyword.  PNG export must
         # never look like a dead button because text shaping failed.  Retry with
-        # plain drawing; the report remains usable and the UI can still share it.
+        # the pre-shaped fallback text.
         kwargs.pop("direction", None)
         try:
-            draw.text(xy, "" if text is None else str(text), **kwargs)
+            draw.text(xy, _rtl_fallback_visual(text) if rtl else ("" if text is None else str(text)), **kwargs)
         except Exception:
             # Last resort: avoid aborting the entire image because of one label.
             pass
