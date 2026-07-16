@@ -12,6 +12,7 @@ required_files = [
     ROOT / 'views' / 'dialogs' / 'change_password_dialog.py',
     ROOT / 'auth' / 'session.py',
     ROOT / 'auth' / 'password_policy.py',
+    ROOT / 'auth' / 'credential_store.py',
 ]
 
 for path in required_files:
@@ -27,6 +28,9 @@ assert "on_complete({'activated': False" in splash
 login = (ROOT / 'views' / 'login_view.py').read_text(encoding='utf-8')
 assert 'MAX_ATTEMPTS' in login and 'LOCK_SECONDS' in login
 assert "set_setting('login/last_username'" in login
+assert 'CredentialStore' in login and "login/remember_password" in login
+assert "_credential_store.save(username, password" in login
+assert "set_setting('login/password'" not in login and "set_setting('login/saved_password'" not in login
 assert '.login(username, password)' in login and 'get_rest_client()' in login
 assert '_set_busy' in login
 

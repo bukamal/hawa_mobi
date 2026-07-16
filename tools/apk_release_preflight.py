@@ -162,6 +162,27 @@ def main() -> int:
     if "NetworkService.save_mode(\"client\"" not in pairing:
         return fail("نجاح ربط QR يجب أن يحفظ وضع عميل الشبكة فوراً")
     login_view = (ROOT / "views" / "login_view.py").read_text(encoding="utf-8")
+    credential_store = (ROOT / "auth" / "credential_store.py").read_text(encoding="utf-8")
+    if "CredentialStore" not in login_view or "login/remember_password" not in login_view:
+        return fail("واجهة تسجيل الدخول يجب أن تدعم حفظ كلمة المرور المشفرة")
+    if "_credential_store.save(username, password" not in login_view:
+        return fail("حفظ كلمة المرور يجب أن يحدث فقط بعد نجاح تسجيل الدخول")
+    if "Fernet" not in credential_store or "login_credentials.vault" not in credential_store:
+        return fail("مخزن بيانات الدخول المشفر غير مكتمل")
+    forbidden_password_settings = [
+        "set_setting('login/password'",
+        'set_setting("login/password"',
+        "set_setting('login/saved_password'",
+        'set_setting("login/saved_password"',
+    ]
+    if any(term in login_view for term in forbidden_password_settings):
+        return fail("يُمنع تخزين كلمة المرور كنص صريح داخل جدول settings")
+    if 'cryptography==43.0.1' not in pyproject:
+        return fail("اعتماد cryptography المدعوم على Android مفقود")
+    if 'flet-permission-handler==0.1.0' not in pyproject:
+        return fail("يجب تثبيت إصدار PermissionHandler المتوافق مع Flet 0.28.3 لمنع تعارض الاعتمادات")
+    if '[tool.flet.android.manifest_application]' not in pyproject or 'allowBackup = "false"' not in pyproject:
+        return fail("يجب تعطيل Android app backup لحماية مخزن بيانات الدخول")
     if "ربط مع Windows عبر QR" not in login_view:
         return fail("واجهة تسجيل الدخول يجب أن توفر ربط Android مع Windows عبر QR قبل تسجيل الدخول")
     if "ربط عبر QR" not in settings_view:

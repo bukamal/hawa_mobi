@@ -131,6 +131,8 @@ def main() -> int:
         "tools/flet_fab_compat_smoke_test.py",
         "tools/flet_expansion_tile_compat_smoke_test.py",
         "tools/mandatory_password_change_flow_smoke_test.py",
+        "tools/credential_store_smoke_test.py",
+        "tools/login_remember_password_flow_test.py",
         "tools/flet_alertdialog_no_overlay_blank_screen_smoke_test.py",
         "tools/flet_dialog_open_rendering_smoke_test.py",
         "tools/flet_dialog_route_cleanup_smoke_test.py",

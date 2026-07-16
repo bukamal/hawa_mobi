@@ -211,3 +211,20 @@ flet build apk --verbose --clear-cache
 ### Phase 44 note — Flet entrypoint compatibility
 
 The APK pins `flet==0.28.3` for a real Android FilePicker path. This line uses `ft.app(target=main, assets_dir="assets")`, while newer Flet runtimes may expose `ft.run(...)`. `main.py` now uses `run_hawaa_app()` to support both entrypoints. Do not replace it with a direct `ft.run(...)` call unless the APK is rebuilt on a verified newer Flet line with FilePicker working on a real device.
+
+## Phase 98 — Secure Remembered Login Password
+
+- شاشة تسجيل الدخول يمكنها الآن حفظ اسم المستخدم وكلمة المرور اختيارياً.
+- كلمة المرور لا تُكتب في SQLite/settings؛ تُحفظ في vault مشفّر داخل app-private storage.
+- البيانات المحفوظة مفصولة بين الحساب المحلي وكل عنوان Windows Server.
+- تعطيل Android Auto Backup لحماية المخزن.
+- مراجعة التنفيذ والحدود الأمنية: `PHASE98_SECURE_REMEMBER_PASSWORD_NOTES.md` و`SECURITY_REVIEW_PHASE98_AR.md`.
+
+للفحص:
+
+```bash
+PYTHONPATH=. python tools/credential_store_smoke_test.py
+PYTHONPATH=. python tools/login_remember_password_flow_test.py
+PYTHONPATH=. python tools/apk_release_preflight.py
+PYTHONPATH=. python tools/quality_gate.py
+```

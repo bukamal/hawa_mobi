@@ -6,6 +6,7 @@ import flet as ft
 from database import UserRepository
 from database.connection import DatabaseConnection, get_setting, set_setting
 from auth.session import UserSession
+from auth.credential_store import CredentialStore, CredentialStoreError, credential_scope
 from i18n.translator import translate, set_language, language_code_from_label, language_label, is_rtl
 from views.ui_kit import app_brand, brand_background, brand_card, status_chip, info_banner, show_snackbar, PRIMARY, PRIMARY_SOFT, MUTED, DANGER, SUCCESS
 from views.flet_compat import open_control, close_control, ALIGN_CENTER
@@ -24,6 +25,8 @@ class LoginView(ft.Container):
         self._navigating_after_login = False
         self._failed_attempts = 0
         self._locked_until = 0.0
+        self._credential_store = CredentialStore()
+        self._loaded_saved_credentials = None
         self.expand = True
         self.alignment = ALIGN_CENTER
         self.padding = 0
@@ -37,7 +40,17 @@ class LoginView(ft.Container):
         self.login_btn = ft.FilledButton(content=ft.Text(translate('login'), size=16, weight=ft.FontWeight.BOLD), width=340, height=48, bgcolor=PRIMARY, color=ft.Colors.WHITE, on_click=self._do_login)
         self.lang_dropdown = ft.Dropdown(label=translate('language'), width=130, value=language_label(), options=[ft.dropdown.Option('العربية'), ft.dropdown.Option('English'), ft.dropdown.Option('Français')], border_radius=14)
         self.lang_dropdown.on_change = self._change_language
-        self.remember = ft.Checkbox(label=translate('remember_username'), value=(get_setting('login/remember_username', 'false') == 'true'))
+        self.remember = ft.Checkbox(
+            label=translate('remember_password'),
+            value=(get_setting('login/remember_password', 'false') == 'true'),
+        )
+        self.remember.on_change = self._remember_changed
+        self.saved_password_hint = ft.Text(
+            translate('remember_password_security_hint'),
+            size=10,
+            color=MUTED,
+            text_align=ft.TextAlign.CENTER,
+        )
         self.brand = app_brand(translate('app_name'), translate('login_subtitle'), size=92, dark=True)
         self.form_title = ft.Text(translate('login_data'), size=16, weight=ft.FontWeight.BOLD, color="#102033")
         self.clear_saved_btn = ft.TextButton(content=ft.Text(translate('clear_saved_user'), size=12, color=PRIMARY), on_click=self._switch_account)
@@ -55,6 +68,7 @@ class LoginView(ft.Container):
                 self.password,
                 self.error_msg,
                 ft.Row([self.remember, self.lang_dropdown], alignment=ft.MainAxisAlignment.SPACE_BETWEEN, vertical_alignment=ft.CrossAxisAlignment.CENTER),
+                self.saved_password_hint,
                 ft.Container(height=6),
                 self.login_btn,
                 self.qr_pair_btn,
@@ -94,9 +108,44 @@ class LoginView(ft.Container):
             self.network_status.value = translate('local_database')
             self.network_status.color = SUCCESS
 
+    def _current_credential_scope(self) -> str:
+        db = DatabaseConnection()
+        return credential_scope('client' if db.is_remote() else 'local', db.server_url or '')
+
+    def _restore_saved_credentials(self) -> None:
+        self._loaded_saved_credentials = None
+        if get_setting('login/remember_password', 'false') != 'true':
+            return
+        saved = self._credential_store.load(self._current_credential_scope())
+        if saved is None:
+            self.remember.value = False
+            return
+        self.username.value = saved.username
+        self.password.value = saved.password
+        self.remember.value = True
+        self._loaded_saved_credentials = (saved.username, saved.password)
+
+    def _clear_saved_credentials(self, *, clear_username: bool = True) -> None:
+        self._credential_store.clear()
+        self._loaded_saved_credentials = None
+        set_setting('login/remember_password', 'false')
+        set_setting('login/remember_username', 'false')
+        if clear_username:
+            set_setting('login/last_username', '')
+
+    def _remember_changed(self, e):
+        if not self.remember.value:
+            self._clear_saved_credentials(clear_username=False)
+
     def _populate_users(self):
         db = DatabaseConnection()
-        remembered = get_setting('login/last_username', '') if self.remember.value else ''
+        remembered = get_setting('login/last_username', '')
+        remember_username = (
+            get_setting('login/remember_username', 'false') == 'true'
+            or get_setting('login/remember_password', 'false') == 'true'
+        )
+        if not remember_username:
+            remembered = ''
         if db.is_remote():
             self.username.options = [ft.dropdown.Option(remembered or '')]
             self.username.value = remembered or ''
@@ -108,6 +157,7 @@ class LoginView(ft.Container):
                     self.username.value = remembered
             except Exception:
                 self.username.options = []
+        self._restore_saved_credentials()
 
     def _apply_language_texts(self):
         self._page.rtl = is_rtl()
@@ -118,7 +168,8 @@ class LoginView(ft.Container):
         self.login_btn.content.value = translate('login')
         self.lang_dropdown.label = translate('language')
         self.lang_dropdown.value = language_label()
-        self.remember.label = translate('remember_username')
+        self.remember.label = translate('remember_password')
+        self.saved_password_hint.value = translate('remember_password_security_hint')
         self.form_title.value = translate('login_data')
         self.clear_saved_btn.content.value = translate('clear_saved_user')
         self.forgot_hint.value = translate('forgot_password_hint')
@@ -140,9 +191,8 @@ class LoginView(ft.Container):
         self.username.value = ''
         self.password.value = ''
         self.remember.value = False
-        set_setting('login/remember_username', 'false')
-        set_setting('login/last_username', '')
-        self.error_msg.value = 'تم مسح اسم المستخدم المحفوظ'
+        self._clear_saved_credentials(clear_username=True)
+        self.error_msg.value = translate('saved_credentials_cleared')
         self.error_msg.color = SUCCESS
         self._populate_users()
         self._page.update()
@@ -201,14 +251,34 @@ class LoginView(ft.Container):
                 user = UserRepository().authenticate(username, password)
             if not user:
                 self._record_failure()
-                self.error_msg.value = 'اسم المستخدم أو كلمة المرور غير صحيحة'
+                if self._loaded_saved_credentials == (username, password):
+                    self._clear_saved_credentials(clear_username=False)
+                    self.remember.value = False
+                    self.error_msg.value = translate('saved_password_invalid')
+                else:
+                    self.error_msg.value = 'اسم المستخدم أو كلمة المرور غير صحيحة'
                 self.error_msg.color = DANGER
                 self.password.value = ''
                 return
+
+            credential_warning = ''
+            if self.remember.value:
+                try:
+                    self._credential_store.save(username, password, self._current_credential_scope())
+                    set_setting('login/remember_password', 'true')
+                    set_setting('login/remember_username', 'true')
+                    set_setting('login/last_username', username)
+                    self._loaded_saved_credentials = (username, password)
+                except CredentialStoreError:
+                    self._clear_saved_credentials(clear_username=False)
+                    self.remember.value = False
+                    credential_warning = translate('saved_password_failed')
+            else:
+                self._clear_saved_credentials(clear_username=True)
+
             UserSession.login(user)
-            set_setting('login/remember_username', 'true' if self.remember.value else 'false')
-            set_setting('login/last_username', username if self.remember.value else '')
-            self.error_msg.value = 'تم تسجيل الدخول. جارٍ فتح الواجهة...'
+            self.password.value = ''
+            self.error_msg.value = credential_warning or 'تم تسجيل الدخول. جارٍ فتح الواجهة...'
             self.error_msg.color = SUCCESS
             self._navigating_after_login = True
             self.on_login_success(user)
