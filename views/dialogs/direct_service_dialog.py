@@ -34,7 +34,7 @@ class DirectServiceDialog(ft.AlertDialog):
     affects receivables only, while this workflow stores sale, cost and profit.
     """
 
-    def __init__(self, page, on_save=None, company_name=None, service=None):
+    def __init__(self, page, on_save=None, company_name=None, service=None, supplier_company_name=None):
         super().__init__()
         self._page = page
         self.on_save = on_save
@@ -42,6 +42,10 @@ class DirectServiceDialog(ft.AlertDialog):
         self.service = dict(service or {})
         self.reference = (self.service.get("reference") or "").strip()
         self.is_edit = bool(self.reference)
+        self.supplier_locked_name = (supplier_company_name or "").strip()
+        if self.is_edit and not self.supplier_locked_name and not self.service.get("client_expense_id") and self.service.get("supplier_company_name"):
+            self.supplier_locked_name = str(self.service.get("supplier_company_name") or self.service.get("company_name") or "").strip()
+        self.supplier_only_mode = bool(self.supplier_locked_name)
         page_width = page.width or 400
         page_height = page.height or 650
         dialog_width = min(390, page_width - 32)
@@ -49,18 +53,33 @@ class DirectServiceDialog(ft.AlertDialog):
 
         default_service = "تذكرة سفر" if "تذكرة سفر" in SERVICE_TYPES else ("تأشيرة سياحية" if "تأشيرة سياحية" in SERVICE_TYPES else "أخرى")
         self.company_field = SearchableTextField(label="الشركة / الحساب", value=self.service.get("company_name") or company_name or "", width=dialog_width - 20, hint_text="ابحث عن شركة أو اكتب اسمًا جديدًا", suggestions_provider=list_company_names)
-        self.person_field = SearchableTextField(label="اسم الزبون / المسافر", value=self.service.get("person_name") or "", width=dialog_width - 20, hint_text="ابحث عن زبون سابق أو اكتب اسمًا جديدًا", suggestions_provider=lambda: list_person_names(self.company_field.value))
+        person_suggestions_company = lambda: self.supplier_locked_name if self.supplier_only_mode else self.company_field.value
+        self.person_field = SearchableTextField(label="اسم الزبون / المسافر", value=self.service.get("person_name") or "", width=dialog_width - 20, hint_text="ابحث عن زبون سابق أو اكتب اسمًا جديدًا", suggestions_provider=lambda: list_person_names(person_suggestions_company()))
         self.service_dropdown = ft.Dropdown(label="نوع الخدمة", value=self.service.get("service_type") or default_service, options=[ft.dropdown.Option(s) for s in SERVICE_TYPES], width=dialog_width - 20)
         self.sale_field = ft.TextField(label="سعر البيع على الزبون", value=str(self.service.get("sale_amount_original") or ""), keyboard_type=ft.KeyboardType.NUMBER, width=dialog_width - 20)
-        self.cost_field = ft.TextField(label="التكلفة الداخلية / تكلفة المورد", value=str(self.service.get("cost_amount_original") or ""), keyboard_type=ft.KeyboardType.NUMBER, width=dialog_width - 20, hint_text="اتركها 0 إذا لم توجد تكلفة")
+        self.cost_field = ft.TextField(label="تكلفة المورد", value=str(self.service.get("cost_amount_original") or ""), keyboard_type=ft.KeyboardType.NUMBER, width=dialog_width - 20, hint_text="المبلغ المستحق للمورد المختار")
         self.supplier_field = SearchableTextField(label="المورد / حساب التكلفة (اختياري)", value=self.service.get("supplier_company_name") or "", width=dialog_width - 20, hint_text="ابحث عن مورد سابق أو اكتب اسمًا جديدًا", suggestions_provider=list_company_names)
+        self.supplier_badge = ft.Container(
+            content=ft.Row([ft.Icon(ft.Icons.BUSINESS_CENTER, color=ft.Colors.INDIGO, size=18), ft.Text(f"المورد / مصدر الخدمة: {self.supplier_locked_name}", weight=ft.FontWeight.BOLD, color=ft.Colors.INDIGO, expand=True)], spacing=8),
+            bgcolor=ft.Colors.INDIGO_50,
+            border_radius=12,
+            padding=10,
+            visible=self.supplier_only_mode,
+        )
+        self.company_field.visible = not self.supplier_only_mode
+        self.supplier_field.visible = not self.supplier_only_mode
         self.currency_dropdown = ft.Dropdown(label="العملة", value=self.service.get("currency_original") or currency.get_display_currency(), options=[ft.dropdown.Option(c) for c in ["USD","SAR","SYP","EUR","GBP","AED","QAR","KWD","OMR"]], width=120)
         self.operation_date = FinancialDateField(page, label="تاريخ الخدمة المباشرة", value=self.service.get("date"), width=dialog_width - 20)
         self.notes_field = ft.TextField(label="ملاحظات", value=self.service.get("notes") or "", multiline=True, min_lines=2, max_lines=3, width=dialog_width - 20)
         self.profit_text = ft.Text("", size=13, weight=ft.FontWeight.BOLD, color=ft.Colors.INDIGO)
         self.edit_reason_field = ft.TextField(label="سبب التعديل", multiline=True, min_lines=2, max_lines=3, width=dialog_width - 20, visible=self.is_edit, hint_text="مثال: تصحيح سعر البيع أو المورد")
+        info_message = (
+            "هذه العملية تسجل ربح زبون مباشر عبر المورد المحدد. لا يوجد حقل مورد آخر؛ الشركة التي فتحت منها النافذة هي المورد وله تُسجل تكلفة الخدمة."
+            if self.supplier_only_mode
+            else "الخدمة المباشرة تنشئ/تحدّث قيودًا مقفلة مترابطة وتخزن البيع والتكلفة والربح داخليًا. التعديل يتم على العملية الأصلية وليس على القيد المنفرد."
+        )
         self.info_text = ft.Text(
-            "الخدمة المباشرة تنشئ/تحدّث قيودًا مقفلة مترابطة وتخزن البيع والتكلفة والربح داخليًا. التعديل يتم على العملية الأصلية وليس على القيد المنفرد.",
+            info_message,
             size=12,
             color=ft.Colors.GREY_700,
         )
@@ -78,10 +97,12 @@ class DirectServiceDialog(ft.AlertDialog):
         self.currency_dropdown.on_change = self._update_profit
         self._update_profit(None)
 
-        self.title = dialog_title("تعديل خدمة مباشرة" if self.is_edit else "خدمة مباشرة / ربح زبون", ft.Icons.PERSON_ADD_ALT)
+        title_text = "تعديل خدمة مباشرة عبر مورد" if self.is_edit and self.supplier_only_mode else ("خدمة مباشرة عبر مورد" if self.supplier_only_mode else ("تعديل خدمة مباشرة" if self.is_edit else "خدمة مباشرة / ربح زبون"))
+        self.title = dialog_title(title_text, ft.Icons.PERSON_ADD_ALT)
         self.content = dialog_body([
             self.info_text,
             self.error_box,
+            self.supplier_badge,
             self.company_field,
             self.person_field,
             self.service_dropdown,
@@ -136,16 +157,23 @@ class DirectServiceDialog(ft.AlertDialog):
             pass
 
     def _build_payload(self):
+        if self.supplier_only_mode:
+            company_name = normalize_text(self.supplier_locked_name)
+            supplier_name = company_name
+        else:
+            company_name = normalize_text(self.company_field.value)
+            supplier_name = normalize_text(self.supplier_field.value)
         payload = {
-            "company_name": normalize_text(self.company_field.value),
+            "company_name": company_name,
             "person_name": normalize_text(self.person_field.value),
             "service_type": self.service_dropdown.value or "خدمة",
             "sale_amount_original": self.sale_field.value,
             "cost_amount_original": self.cost_field.value or 0,
-            "supplier_company_name": normalize_text(self.supplier_field.value),
+            "supplier_company_name": supplier_name,
             "currency_original": self.currency_dropdown.value,
             "date": self.operation_date.require_value("تاريخ الخدمة المباشرة"),
             "notes": self.notes_field.value or "",
+            "supplier_only": self.supplier_only_mode,
         }
         return validate_direct_service_payload(payload)
 

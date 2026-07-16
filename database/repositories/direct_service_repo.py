@@ -91,29 +91,33 @@ class DirectServiceRepository(BaseRepository):
         if cur.rowcount != 1:
             raise ValueError(f"تعذر تحديث القيد المرتبط id={expense_id}")
 
-    def _build_payloads(self, reference: str, payload: Dict[str, Any], uid: int, now: str, *, existing_client: Optional[Dict[str, Any]] = None, existing_supplier: Optional[Dict[str, Any]] = None) -> Tuple[Dict[str, Any], Optional[Dict[str, Any]], float, float, float]:
-        client_payload = self.ledger.normalize_expense_payload({
-            "company_name": payload["company_name"],
-            "amount": payload["sale_amount_original"],
-            "type": "incoming",
-            "date": payload["date"],
-            "notes": client_note(reference, payload),
-            "currency": payload["currency_original"],
-            "created_by": (existing_client or {}).get("created_by") or uid,
-            "created_at": (existing_client or {}).get("created_at") or now,
-            "updated_by": uid,
-            "updated_at": now,
-            "source_type": DIRECT_SERVICE_SOURCE_CLIENT,
-            "source_ref": reference,
-            "counterparty_company_name": payload.get("supplier_company_name") or "تكلفة داخلية",
-            "person_name": payload["person_name"],
-            "service_type": payload["service_type"],
-            "operation_type": DIRECT_SERVICE_OPERATION_CLIENT,
-            "is_locked": 1,
-            "print_description": payload.get("print_description"),
-            "service_case_role": "direct_client",
-            "linked_company_name": payload.get("supplier_company_name") or "",
-        })
+    def _build_payloads(self, reference: str, payload: Dict[str, Any], uid: int, now: str, *, existing_client: Optional[Dict[str, Any]] = None, existing_supplier: Optional[Dict[str, Any]] = None) -> Tuple[Optional[Dict[str, Any]], Optional[Dict[str, Any]], float, float, float]:
+        supplier_only = bool(payload.get("supplier_only"))
+
+        client_payload = None
+        if not supplier_only:
+            client_payload = self.ledger.normalize_expense_payload({
+                "company_name": payload["company_name"],
+                "amount": payload["sale_amount_original"],
+                "type": "incoming",
+                "date": payload["date"],
+                "notes": client_note(reference, payload),
+                "currency": payload["currency_original"],
+                "created_by": (existing_client or {}).get("created_by") or uid,
+                "created_at": (existing_client or {}).get("created_at") or now,
+                "updated_by": uid,
+                "updated_at": now,
+                "source_type": DIRECT_SERVICE_SOURCE_CLIENT,
+                "source_ref": reference,
+                "counterparty_company_name": payload.get("supplier_company_name") or "تكلفة داخلية",
+                "person_name": payload["person_name"],
+                "service_type": payload["service_type"],
+                "operation_type": DIRECT_SERVICE_OPERATION_CLIENT,
+                "is_locked": 1,
+                "print_description": payload.get("print_description"),
+                "service_case_role": "direct_client",
+                "linked_company_name": payload.get("supplier_company_name") or "",
+            })
 
         supplier_payload = None
         if payload.get("supplier_company_name") and float(payload.get("cost_amount_original") or 0) > 0:
@@ -130,25 +134,39 @@ class DirectServiceRepository(BaseRepository):
                 "updated_at": now,
                 "source_type": DIRECT_SERVICE_SOURCE_SUPPLIER,
                 "source_ref": reference,
-                "counterparty_company_name": payload["company_name"],
+                "counterparty_company_name": "زبون مباشر" if supplier_only else payload["company_name"],
                 "person_name": payload["person_name"],
                 "service_type": payload["service_type"],
                 "operation_type": DIRECT_SERVICE_OPERATION_SUPPLIER,
                 "is_locked": 1,
                 "print_description": f"تكلفة {payload.get('service_type')} - {payload.get('person_name')}",
                 "service_case_role": "direct_supplier",
-                "linked_company_name": payload["company_name"],
+                "linked_company_name": "زبون مباشر" if supplier_only else payload["company_name"],
             })
 
-        sale_base = float(client_payload.get("amount_base") or 0)
+        if client_payload:
+            sale_base = float(client_payload.get("amount_base") or 0)
+            rate = float(client_payload.get("exchange_rate_to_usd") or 1.0)
+        elif supplier_payload:
+            # Supplier-only direct service: no customer/company receivable row is
+            # created.  Use the supplier row exchange-rate snapshot to convert
+            # the internal sale value into base currency for profit reporting.
+            rate = float(supplier_payload.get("exchange_rate_to_usd") or 1.0)
+            sale_base = self.ledger.to_base(float(payload.get("sale_amount_original") or 0), payload["currency_original"], rate)
+        else:
+            # No supplier cost row either; still keep an internal profit record.
+            rate = 1.0
+            sale_base = self.ledger.to_base(float(payload.get("sale_amount_original") or 0), payload["currency_original"], rate)
+
         if supplier_payload:
             cost_base = float(supplier_payload.get("amount_base") or 0)
-            rate = float(supplier_payload.get("exchange_rate_to_usd") or client_payload.get("exchange_rate_to_usd") or 1.0)
+            rate = float(supplier_payload.get("exchange_rate_to_usd") or rate or 1.0)
         else:
-            rate = float(client_payload.get("exchange_rate_to_usd") or 1.0)
             cost_base = self.ledger.to_base(float(payload.get("cost_amount_original") or 0), payload["currency_original"], rate)
+
         note = internal_note(reference, payload, sale_base, cost_base)
-        client_payload["internal_note"] = note
+        if client_payload:
+            client_payload["internal_note"] = note
         if supplier_payload:
             supplier_payload["internal_note"] = note
         return client_payload, supplier_payload, sale_base, cost_base, rate
@@ -159,7 +177,7 @@ class DirectServiceRepository(BaseRepository):
         row = conn.execute("SELECT * FROM expenses WHERE id=?", (expense_id,)).fetchone()
         return dict(row) if row else None
 
-    def _linked_rows(self, conn, service: Dict[str, Any]) -> Tuple[Dict[str, Any], Optional[Dict[str, Any]]]:
+    def _linked_rows(self, conn, service: Dict[str, Any]) -> Tuple[Optional[Dict[str, Any]], Optional[Dict[str, Any]]]:
         reference = service["reference"]
         client = self._row_by_id(conn, service.get("client_expense_id"))
         supplier = self._row_by_id(conn, service.get("supplier_expense_id"))
@@ -170,13 +188,16 @@ class DirectServiceRepository(BaseRepository):
                 client = rr
             elif rr.get("source_type") == DIRECT_SERVICE_SOURCE_SUPPLIER and not supplier:
                 supplier = rr
-        if not client:
+        supplier_only = (not service.get("client_expense_id")) and bool(service.get("supplier_company_name"))
+        if not supplier_only and not client:
             raise ValueError("تعذر العثور على قيد العميل المرتبط بالخدمة المباشرة")
-        if client.get("source_ref") != reference or client.get("source_type") != DIRECT_SERVICE_SOURCE_CLIENT or client.get("type") != "incoming":
+        if client and (client.get("source_ref") != reference or client.get("source_type") != DIRECT_SERVICE_SOURCE_CLIENT or client.get("type") != "incoming"):
             raise ValueError("ترابط قيد العميل للخدمة المباشرة غير صحيح")
         if supplier:
             if supplier.get("source_ref") != reference or supplier.get("source_type") != DIRECT_SERVICE_SOURCE_SUPPLIER or supplier.get("type") != "outgoing":
                 raise ValueError("ترابط قيد المورد للخدمة المباشرة غير صحيح")
+        if supplier_only and float(service.get("cost_amount_original") or 0) > 0 and not supplier:
+            raise ValueError("تعذر العثور على قيد المورد المرتبط بالخدمة المباشرة")
         return client, supplier
 
     def add(self, data: Dict[str, Any]) -> Dict[str, Any]:
@@ -196,8 +217,9 @@ class DirectServiceRepository(BaseRepository):
 
         try:
             conn.execute("BEGIN IMMEDIATE")
-            client_expense_id = self._insert_expense(conn, client_payload)
+            client_expense_id = self._insert_expense(conn, client_payload) if client_payload else None
             supplier_expense_id = self._insert_expense(conn, supplier_payload) if supplier_payload else None
+            note_payload = client_payload or supplier_payload or {"internal_note": internal_note(reference, payload, sale_base, cost_base)}
             conn.execute(
                 """INSERT INTO direct_services
                 (reference, company_name, person_name, service_type, sale_amount_original, cost_amount_original,
@@ -208,12 +230,12 @@ class DirectServiceRepository(BaseRepository):
                     reference, payload["company_name"], payload["person_name"], payload["service_type"],
                     payload["sale_amount_original"], payload["cost_amount_original"], payload["currency_original"],
                     rate, sale_base, cost_base, payload["date"], payload.get("notes", ""), DIRECT_SERVICE_STATUS_OPEN,
-                    client_expense_id, payload.get("supplier_company_name") or "", supplier_expense_id, uid, now, client_payload["internal_note"],
+                    client_expense_id, payload.get("supplier_company_name") or "", supplier_expense_id, uid, now, note_payload.get("internal_note", ""),
                 ),
             )
             self.db._log_audit_local(uid, user.get("username", ""), "إضافة خدمة مباشرة", "direct_services", None, f"{reference}: {payload['company_name']} / {payload['person_name']}")
             conn.commit()
-            return {"ok": True, "reference": reference, "client_expense_id": client_expense_id, "supplier_expense_id": supplier_expense_id, "profit_base": sale_base - cost_base}
+            return {"ok": True, "reference": reference, "client_expense_id": client_expense_id, "supplier_expense_id": supplier_expense_id, "profit_base": sale_base - cost_base, "supplier_only": bool(payload.get("supplier_only"))}
         except Exception:
             try:
                 conn.rollback()
@@ -278,9 +300,20 @@ class DirectServiceRepository(BaseRepository):
         }
         now = datetime.datetime.now().isoformat()
         client_payload, supplier_payload, sale_base, cost_base, rate = self._build_payloads(reference, payload, uid, now, existing_client=client_entry, existing_supplier=supplier_entry)
+        note_payload = client_payload or supplier_payload or {"internal_note": internal_note(reference, payload, sale_base, cost_base)}
         try:
             conn.execute("BEGIN IMMEDIATE")
-            self._update_expense(conn, int(client_entry["id"]), client_payload)
+            client_expense_id = service.get("client_expense_id")
+            if client_payload:
+                if client_entry:
+                    self._update_expense(conn, int(client_entry["id"]), client_payload)
+                    client_expense_id = int(client_entry["id"])
+                else:
+                    client_expense_id = self._insert_expense(conn, client_payload)
+            elif client_entry:
+                conn.execute("DELETE FROM expenses WHERE id=? AND source_ref=? AND source_type=?", (int(client_entry["id"]), reference, DIRECT_SERVICE_SOURCE_CLIENT))
+                client_expense_id = None
+
             supplier_expense_id = service.get("supplier_expense_id")
             if supplier_payload:
                 if supplier_entry:
@@ -289,8 +322,6 @@ class DirectServiceRepository(BaseRepository):
                 else:
                     supplier_expense_id = self._insert_expense(conn, supplier_payload)
             elif supplier_entry:
-                # Correction mode: remove the old generated supplier row because the
-                # edited direct service no longer has a supplier ledger effect.
                 conn.execute("DELETE FROM expenses WHERE id=? AND source_ref=? AND source_type=?", (int(supplier_entry["id"]), reference, DIRECT_SERVICE_SOURCE_SUPPLIER))
                 supplier_expense_id = None
             conn.execute(
@@ -302,10 +333,9 @@ class DirectServiceRepository(BaseRepository):
                 (
                     payload["company_name"], payload["person_name"], payload["service_type"], payload["sale_amount_original"], payload["cost_amount_original"],
                     payload["currency_original"], rate, sale_base, cost_base, payload["date"], payload.get("notes", ""),
-                    int(client_entry["id"]), payload.get("supplier_company_name") or "", supplier_expense_id, uid, now, reason, client_payload["internal_note"], reference,
+                    client_expense_id, payload.get("supplier_company_name") or "", supplier_expense_id, uid, now, reason, note_payload.get("internal_note", ""), reference,
                 ),
             )
-            after = {k: payload.get(k) for k in before.keys() if k in payload}
             details = (
                 f"{reference} | السبب: {reason} | قبل: {before['company_name']} / {before['person_name']} / "
                 f"بيع {before['sale_amount_original']} {before['currency_original']} / تكلفة {before['cost_amount_original']} / مورد {before['supplier_company_name'] or 'داخلي'} بتاريخ {before['date']} | "
@@ -316,7 +346,7 @@ class DirectServiceRepository(BaseRepository):
                 (uid, user.get("username", ""), "تعديل خدمة مباشرة", "direct_services", service.get("id"), details, "127.0.0.1", now),
             )
             conn.commit()
-            return {"ok": True, "reference": reference, "client_expense_id": int(client_entry["id"]), "supplier_expense_id": supplier_expense_id, "profit_base": sale_base - cost_base}
+            return {"ok": True, "reference": reference, "client_expense_id": client_expense_id, "supplier_expense_id": supplier_expense_id, "profit_base": sale_base - cost_base, "supplier_only": bool(payload.get("supplier_only"))}
         except Exception:
             try:
                 conn.rollback()
@@ -351,16 +381,18 @@ class DirectServiceRepository(BaseRepository):
         reversal_ref = f"REV-{reference}"
         try:
             conn.execute("BEGIN IMMEDIATE")
-            client_rev = self.ledger.normalize_expense_payload({
-                "company_name": service["company_name"], "amount": service["sale_amount_original"], "type": "outgoing", "date": date,
-                "notes": f"عكس خدمة مباشرة: {reference}. السبب: {clean_reason}", "currency": service["currency_original"],
-                "created_by": uid, "created_at": now, "updated_by": uid, "updated_at": now,
-                "source_type": DIRECT_SERVICE_REVERSAL, "source_ref": reference, "counterparty_company_name": service.get("supplier_company_name") or "تكلفة داخلية",
-                "person_name": service["person_name"], "service_type": service["service_type"], "operation_type": DIRECT_SERVICE_OPERATION_REVERSAL,
-                "is_locked": 1, "print_description": f"عكس {service.get('service_type') or 'خدمة مباشرة'} - {service.get('person_name')}",
-                "service_case_role": "direct_client_reversal", "linked_company_name": service.get("supplier_company_name") or "", "internal_note": f"عكس خدمة مباشرة {reference}: {clean_reason}",
-            })
-            client_rev_id = self._insert_expense(conn, client_rev)
+            client_rev_id = None
+            if client_entry:
+                client_rev = self.ledger.normalize_expense_payload({
+                    "company_name": service["company_name"], "amount": service["sale_amount_original"], "type": "outgoing", "date": date,
+                    "notes": f"عكس خدمة مباشرة: {reference}. السبب: {clean_reason}", "currency": service["currency_original"],
+                    "created_by": uid, "created_at": now, "updated_by": uid, "updated_at": now,
+                    "source_type": DIRECT_SERVICE_REVERSAL, "source_ref": reference, "counterparty_company_name": service.get("supplier_company_name") or "تكلفة داخلية",
+                    "person_name": service["person_name"], "service_type": service["service_type"], "operation_type": DIRECT_SERVICE_OPERATION_REVERSAL,
+                    "is_locked": 1, "print_description": f"عكس {service.get('service_type') or 'خدمة مباشرة'} - {service.get('person_name')}",
+                    "service_case_role": "direct_client_reversal", "linked_company_name": service.get("supplier_company_name") or "", "internal_note": f"عكس خدمة مباشرة {reference}: {clean_reason}",
+                })
+                client_rev_id = self._insert_expense(conn, client_rev)
             supplier_rev_id = None
             if supplier_entry and float(service.get("cost_amount_original") or 0) > 0:
                 supplier_rev = self.ledger.normalize_expense_payload({
@@ -376,7 +408,7 @@ class DirectServiceRepository(BaseRepository):
             conn.execute("UPDATE direct_services SET status=?, reversed_at=?, reversal_ref=?, updated_by=?, updated_at=?, edit_reason=? WHERE reference=?", (DIRECT_SERVICE_STATUS_REVERSED, now, reversal_ref, uid, now, clean_reason, reference))
             conn.execute(
                 "INSERT INTO audit_log (user_id, username, action, table_name, record_id, details, ip_address, timestamp) VALUES (?,?,?,?,?,?,?,?)",
-                (uid, user.get("username", ""), "عكس خدمة مباشرة", "direct_services", service.get("id"), f"{reference} | السبب: {clean_reason} | عكس القيود: {client_rev_id}/{supplier_rev_id or '-'}", "127.0.0.1", now),
+                (uid, user.get("username", ""), "عكس خدمة مباشرة", "direct_services", service.get("id"), f"{reference} | السبب: {clean_reason} | عكس القيود: {client_rev_id or '-'}/{supplier_rev_id or '-'}", "127.0.0.1", now),
             )
             conn.commit()
             return {"ok": True, "reference": reference, "reversal_ref": reversal_ref, "client_reversal_expense_id": client_rev_id, "supplier_reversal_expense_id": supplier_rev_id}

@@ -248,7 +248,7 @@ class CompanyDetailsMobileView(ft.Column):
             self._show_snackbar("ليس لديك صلاحية لإضافة خدمات مباشرة", True)
             return
         from views.dialogs.direct_service_dialog import DirectServiceDialog
-        dialog = DirectServiceDialog(page=self._page, on_save=lambda _: self._reload(), company_name=self.company_name)
+        dialog = DirectServiceDialog(page=self._page, on_save=lambda _: self._reload(), supplier_company_name=self.company_name)
         open_control(self._page, dialog)
 
     async def _export_printable_statement(self, e):

@@ -342,7 +342,7 @@ class AccountsMobileView(ft.Column):
         dialog = DirectServiceDialog(
             page=self._page,
             on_save=lambda _: self._refresh_cards(None),
-            company_name=company_name,
+            supplier_company_name=company_name,
         )
         open_control(self._page, dialog)
 
