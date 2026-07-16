@@ -95,6 +95,7 @@ def main() -> int:
         "tools/reporting_center_advanced_smoke_test.py",
         "tools/report_image_export_smoke_test.py",
         "tools/image_export_button_responsive_smoke_test.py",
+        "tools/image_export_android_responsiveness_regression_test.py",
         "tools/sqlite_closed_connection_recovery_smoke_test.py",
         "tools/hawa_visual_identity_smoke_test.py",
         "tools/modern_dashboard_features_smoke_test.py",

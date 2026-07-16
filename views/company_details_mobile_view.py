@@ -72,7 +72,7 @@ class CompanyDetailsMobileView(ft.Column):
             ),
             ft.TextButton(
                 content=ft.Row([ft.Icon(ft.Icons.IMAGE), ft.Text("صورة")], tight=True),
-                on_click=self._on_share_statement_image,
+                on_click=self._share_statement_image_async,
             ),
             ft.TextButton(
                 content=ft.Row([ft.Icon(ft.Icons.CHAT), ft.Text("واتساب")], tight=True),
@@ -288,16 +288,13 @@ class CompanyDetailsMobileView(ft.Column):
             self._show_snackbar(f"خطأ في مشاركة كشف المطابقة: {str(ex)}", True)
 
 
-    def _on_share_statement_image(self, e=None):
+    async def _share_statement_image_async(self, e=None):
         self._show_snackbar("جارٍ إنشاء صورة كشف المطابقة...", False)
-        run_async_task(self._page, self._share_statement_image_async)
-
-    async def _share_statement_image_async(self):
         try:
             import asyncio
             from reports.image_export import export_statement_image
             from reports.share import share_file_async
-            path = await asyncio.to_thread(lambda: export_statement_image(self.company_name, self.records, reconciliation=True))
+            path = await asyncio.to_thread(lambda: export_statement_image(self.company_name, self.records, reconciliation=True, max_rows=50))
             message = f"صورة كشف مطابقة - {self.company_name}"
             result = await share_file_async(self._page, path, message, open_whatsapp=False, title="مشاركة صورة كشف المطابقة")
             self._show_snackbar(result.message if result.ok else result.message or f"تم إنشاء صورة الكشف: {path}", not result.ok)

@@ -180,7 +180,7 @@ class ReportsCenterMobileView(ft.Column):
                 content=ft.Row([
                     primary_button("عرض", ft.Icons.VISIBILITY, self._on_view_report),
                     ft.OutlinedButton(content=ft.Row([ft.Icon(ft.Icons.PRINT, color=PRIMARY), ft.Text("HTML", color=PRIMARY, weight=ft.FontWeight.BOLD)], tight=True), on_click=self._on_export_html),
-                    ft.OutlinedButton(content=ft.Row([ft.Icon(ft.Icons.IMAGE, color=PRIMARY), ft.Text("PNG", color=PRIMARY, weight=ft.FontWeight.BOLD)], tight=True), on_click=self._on_export_png),
+                    ft.OutlinedButton(content=ft.Row([ft.Icon(ft.Icons.IMAGE, color=PRIMARY), ft.Text("PNG", color=PRIMARY, weight=ft.FontWeight.BOLD)], tight=True), on_click=self._export_png_async),
                     ft.OutlinedButton(content=ft.Row([ft.Icon(ft.Icons.TABLE_VIEW, color=PRIMARY), ft.Text("CSV", color=PRIMARY, weight=ft.FontWeight.BOLD)], tight=True), on_click=self._on_export_csv),
                     ft.OutlinedButton(content=ft.Row([ft.Icon(ft.Icons.SHARE, color=PRIMARY), ft.Text("مشاركة", color=PRIMARY, weight=ft.FontWeight.BOLD)], tight=True), on_click=self._on_share_html),
                 ], spacing=8, run_spacing=8, wrap=True),
@@ -322,19 +322,12 @@ class ReportsCenterMobileView(ft.Column):
             self._show_snackbar(f"تعذر إنشاء HTML: {ex}", True)
 
 
-    def _on_export_png(self, e=None):
-        try:
-            self._require_report()
-            self._show_snackbar("جارٍ إنشاء صورة PNG للتقرير...", False)
-            run_async_task(self._page, self._export_png_async)
-        except Exception as ex:
-            self._show_snackbar(f"تعذر إنشاء PNG: {ex}", True)
-
-    async def _export_png_async(self):
+    async def _export_png_async(self, e=None):
         try:
             import asyncio
             report = self._require_report()
-            path = await asyncio.to_thread(lambda: export_report_image(report))
+            self._show_snackbar("جارٍ إنشاء صورة PNG للتقرير...", False)
+            path = await asyncio.to_thread(lambda: export_report_image(report, max_rows=40))
             await self._open_path(path, f"PNG — {report.title}")
         except Exception as ex:
             self._show_snackbar(f"تعذر إنشاء PNG: {ex}", True)

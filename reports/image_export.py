@@ -111,9 +111,17 @@ def _draw_text(draw, xy, text: object, font, fill=TEXT, *, anchor: str = "ra", r
         kwargs["direction"] = "rtl"
     try:
         draw.text(xy, "" if text is None else str(text), **kwargs)
-    except TypeError:
+    except Exception:
+        # Several Android Pillow builds ship without libraqm or with a default
+        # bitmap font that rejects the ``direction`` keyword.  PNG export must
+        # never look like a dead button because text shaping failed.  Retry with
+        # plain drawing; the report remains usable and the UI can still share it.
         kwargs.pop("direction", None)
-        draw.text(xy, "" if text is None else str(text), **kwargs)
+        try:
+            draw.text(xy, "" if text is None else str(text), **kwargs)
+        except Exception:
+            # Last resort: avoid aborting the entire image because of one label.
+            pass
 
 
 def _wrap_text(draw, text: object, font, max_width: int, *, rtl: bool = True, max_lines: int | None = None) -> List[str]:
@@ -199,13 +207,14 @@ def _draw_table_header(draw, y: int, columns: List[str], widths: List[int]) -> i
     return y + h
 
 
-def _draw_statement_rows(draw, y: int, rows: List[Dict[str, str]]) -> int:
+def _draw_statement_rows(draw, y: int, rows: List[Dict[str, str]], *, max_rows: int = 60) -> int:
     columns = ["التاريخ", "البيان", "لنا", "له", "الرصيد"]
     widths = [150, 430, 180, 180, 172]
     y = _draw_table_header(draw, y, columns, widths)
     row_font = _font(18)
     small_font = _font(15)
-    for idx, row in enumerate(rows):
+    clipped = len(rows) > max_rows
+    for idx, row in enumerate(rows[:max_rows]):
         desc = row.get("notes", "")
         details = []
         if row.get("reference"):
@@ -241,10 +250,14 @@ def _draw_statement_rows(draw, y: int, rows: List[Dict[str, str]]) -> int:
         _rounded_rect(draw, (MARGIN, y, PAGE_W - MARGIN, y + 120), radius=20, fill=WHITE, outline=BORDER)
         _draw_text(draw, (PAGE_W - MARGIN - 28, y + 70), "لا توجد قيود ضمن الكشف", _font(22), MUTED)
         y += 130
+    if clipped:
+        _rounded_rect(draw, (MARGIN, y + 14, PAGE_W - MARGIN, y + 88), radius=20, fill="#FFF7E3", outline=None)
+        _draw_text(draw, (PAGE_W - MARGIN - 24, y + 60), f"تم عرض أول {max_rows} قيد في الصورة. HTML وCSV يحتويان كل القيود.", _font(18), WARNING)
+        y += 104
     return y
 
 
-def export_statement_image(company_name: str, records: Iterable[Dict], output_path: str | None = None, *, reconciliation: bool = True) -> str:
+def export_statement_image(company_name: str, records: Iterable[Dict], output_path: str | None = None, *, reconciliation: bool = True, max_rows: int = 60) -> str:
     """Export an account/reconciliation statement as a PNG image."""
     _require_pillow()
     display_currency = currency.get_display_currency()
@@ -255,9 +268,13 @@ def export_statement_image(company_name: str, records: Iterable[Dict], output_pa
     total_credit = currency.format_amount_full(currency.convert(float(totals.get("total_credit_usd") or 0), "USD", display_currency), display_currency)
     balance_value = float(totals.get("balance_usd") or 0)
     balance = currency.format_amount_full(currency.convert(balance_value, "USD", display_currency), display_currency)
-    # Dynamic height: enough for all rows but bounded to avoid invalid huge bitmaps on old phones.
-    approx_height = 470 + max(1, len(rows)) * 118 + 110
-    img = _make_canvas(min(max(approx_height, 1100), 24000))
+    # PNG is for quick mobile sharing, not an archival full ledger.  Old phones
+    # can silently kill the Python runtime on very tall bitmaps, making the
+    # button appear unresponsive.  Keep the image compact and point users to
+    # HTML/CSV for the full report.
+    display_rows = rows[:max_rows]
+    approx_height = 560 + max(1, len(display_rows)) * 118 + (120 if len(rows) > max_rows else 0)
+    img = _make_canvas(min(max(approx_height, 1100), 9000))
     draw = ImageDraw.Draw(img)
     y = 44
     subtitle = f"العملة: {display_currency} · تاريخ الإنشاء: {generated}"
@@ -272,7 +289,7 @@ def export_statement_image(company_name: str, records: Iterable[Dict], output_pa
         note = "هذا الكشف مخصص للمطابقة ولا يُعد مخالصة نهائية إلا بعد التأكيد."
         _draw_text(draw, (PAGE_W - MARGIN - 22, y + 45), note, _font(18), PRIMARY)
         y += 94
-    y = _draw_statement_rows(draw, y, rows)
+    y = _draw_statement_rows(draw, y, rows, max_rows=max_rows)
     footer = "تم إنشاء الصورة بواسطة نظام هوى الشام"
     _draw_text(draw, (PAGE_W - MARGIN, y + 50), footer, _font(16), MUTED)
     final_h = min(y + 90, img.height)
@@ -282,7 +299,8 @@ def export_statement_image(company_name: str, records: Iterable[Dict], output_pa
     filename = f"{'reconciliation' if reconciliation else 'statement'}_{company_name}_{_dt.datetime.now().strftime('%Y%m%d_%H%M%S')}.png"
     output_path = output_path or _report_path(filename)
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
-    img.save(output_path, format="PNG", optimize=True)
+    # ``optimize=True`` is CPU-heavy on Android and can make export feel dead.
+    img.save(output_path, format="PNG", optimize=False, compress_level=3)
     return output_path
 
 
@@ -338,12 +356,12 @@ def _draw_report_rows(draw, y: int, report, *, max_rows: int = 180) -> int:
     return y
 
 
-def export_report_image(report, output_path: str | None = None, *, max_rows: int = 180) -> str:
+def export_report_image(report, output_path: str | None = None, *, max_rows: int = 40) -> str:
     """Export a ReportingCenterService result as a PNG image."""
     _require_pillow()
     rows = list(getattr(report, "rows", []) or [])
-    approx_height = 470 + max(1, min(len(rows), max_rows)) * 86 + 130
-    img = _make_canvas(min(max(approx_height, 1100), 24000))
+    approx_height = 560 + max(1, min(len(rows), max_rows)) * 86 + (140 if len(rows) > max_rows else 0)
+    img = _make_canvas(min(max(approx_height, 1100), 9000))
     draw = ImageDraw.Draw(img)
     y = 44
     subtitle = f"{getattr(report, 'period_label', '')} · العملة: {getattr(report, 'display_currency', '')} · {getattr(report, 'generated_at', '')}"
@@ -358,5 +376,6 @@ def export_report_image(report, output_path: str | None = None, *, max_rows: int
     filename = f"{getattr(report, 'filename_slug', 'report')}_{_dt.datetime.now().strftime('%Y%m%d_%H%M%S')}.png"
     output_path = output_path or _report_path(filename)
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
-    img.save(output_path, format="PNG", optimize=True)
+    # ``optimize=True`` is CPU-heavy on Android and can make export feel dead.
+    img.save(output_path, format="PNG", optimize=False, compress_level=3)
     return output_path
