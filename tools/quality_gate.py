@@ -101,6 +101,7 @@ def main() -> int:
         "tools/company_details_route_safearea_smoke_test.py",
         "tools/company_details_nameerror_runtime_smoke_test.py",
         "tools/company_card_tap_details_smoke_test.py",
+        "tools/searchable_form_fields_smoke_test.py",
         "tools/unified_financial_date_picker_smoke_test.py",
         "tools/backup_restore_smoke_test.py",
         "tools/backup_restore_button_nonblocking_smoke_test.py",

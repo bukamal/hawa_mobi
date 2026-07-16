@@ -13,6 +13,8 @@ from services.ledger_operation_service import SERVICE_TYPES
 from services.direct_customer_service import validate_direct_service_payload
 from views.flet_compat import close_control, run_async_task
 from views.financial_date_field import FinancialDateField
+from views.searchable_field import SearchableTextField
+from services.form_suggestions_service import list_company_names, list_person_names
 from views.dialogs.dialog_kit import (
     dialog_title,
     dialog_body,
@@ -46,12 +48,12 @@ class DirectServiceDialog(ft.AlertDialog):
         dialog_height = min(570, page_height - 90)
 
         default_service = "تذكرة سفر" if "تذكرة سفر" in SERVICE_TYPES else ("تأشيرة سياحية" if "تأشيرة سياحية" in SERVICE_TYPES else "أخرى")
-        self.company_field = ft.TextField(label="الشركة / الحساب", value=self.service.get("company_name") or company_name or "", width=dialog_width - 20, hint_text="مثال: أبو تيم")
-        self.person_field = ft.TextField(label="اسم الزبون / المسافر", value=self.service.get("person_name") or "", width=dialog_width - 20, hint_text="مثال: أحمد محمد")
+        self.company_field = SearchableTextField(label="الشركة / الحساب", value=self.service.get("company_name") or company_name or "", width=dialog_width - 20, hint_text="ابحث عن شركة أو اكتب اسمًا جديدًا", suggestions_provider=list_company_names)
+        self.person_field = SearchableTextField(label="اسم الزبون / المسافر", value=self.service.get("person_name") or "", width=dialog_width - 20, hint_text="ابحث عن زبون سابق أو اكتب اسمًا جديدًا", suggestions_provider=lambda: list_person_names(self.company_field.value))
         self.service_dropdown = ft.Dropdown(label="نوع الخدمة", value=self.service.get("service_type") or default_service, options=[ft.dropdown.Option(s) for s in SERVICE_TYPES], width=dialog_width - 20)
         self.sale_field = ft.TextField(label="سعر البيع على الزبون", value=str(self.service.get("sale_amount_original") or ""), keyboard_type=ft.KeyboardType.NUMBER, width=dialog_width - 20)
         self.cost_field = ft.TextField(label="التكلفة الداخلية / تكلفة المورد", value=str(self.service.get("cost_amount_original") or ""), keyboard_type=ft.KeyboardType.NUMBER, width=dialog_width - 20, hint_text="اتركها 0 إذا لم توجد تكلفة")
-        self.supplier_field = ft.TextField(label="المورد / حساب التكلفة (اختياري)", value=self.service.get("supplier_company_name") or "", width=dialog_width - 20, hint_text="إذا أُدخل مع تكلفة، ينشئ قيدًا له على المورد")
+        self.supplier_field = SearchableTextField(label="المورد / حساب التكلفة (اختياري)", value=self.service.get("supplier_company_name") or "", width=dialog_width - 20, hint_text="ابحث عن مورد سابق أو اكتب اسمًا جديدًا", suggestions_provider=list_company_names)
         self.currency_dropdown = ft.Dropdown(label="العملة", value=self.service.get("currency_original") or currency.get_display_currency(), options=[ft.dropdown.Option(c) for c in ["USD","SAR","SYP","EUR","GBP","AED","QAR","KWD","OMR"]], width=120)
         self.operation_date = FinancialDateField(page, label="تاريخ الخدمة المباشرة", value=self.service.get("date"), width=dialog_width - 20)
         self.notes_field = ft.TextField(label="ملاحظات", value=self.service.get("notes") or "", multiline=True, min_lines=2, max_lines=3, width=dialog_width - 20)

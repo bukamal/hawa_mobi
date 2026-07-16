@@ -11,6 +11,8 @@ from services.ledger_operation_service import SERVICE_TYPES
 from services.service_case_service import validate_service_case_payload
 from views.flet_compat import close_control, run_async_task
 from views.financial_date_field import FinancialDateField
+from views.searchable_field import SearchableTextField
+from services.form_suggestions_service import list_company_names, list_person_names
 from views.dialogs.dialog_kit import (
     dialog_title,
     dialog_body,
@@ -63,17 +65,17 @@ class ServiceCaseDialog(ft.AlertDialog):
         if not base_component and existing_components:
             base_component = existing_components[0]
 
-        self.client_field = ft.TextField(label="الشركة العميلة", value=self.service_case.get("client_company_name") or client_company_name or "", width=dialog_width - 20, hint_text="مثال: بلو ستار")
-        self.supplier_field = ft.TextField(label="الشركة المورّدة", value=base_component.get("supplier_company_name") or self.service_case.get("supplier_company_name") or supplier_company_name or "", width=dialog_width - 20, hint_text="مثال: سيف الشام")
-        self.person_field = ft.TextField(label="اسم الزبون / المسافر", value=self.service_case.get("person_name") or "", width=dialog_width - 20, hint_text="مثال: أحمد محمد")
+        self.client_field = SearchableTextField(label="الشركة العميلة", value=self.service_case.get("client_company_name") or client_company_name or "", width=dialog_width - 20, hint_text="ابحث عن شركة عميلة أو اكتب اسمًا جديدًا", suggestions_provider=list_company_names)
+        self.supplier_field = SearchableTextField(label="الشركة المورّدة", value=base_component.get("supplier_company_name") or self.service_case.get("supplier_company_name") or supplier_company_name or "", width=dialog_width - 20, hint_text="ابحث عن شركة مورّدة أو اكتب اسمًا جديدًا", suggestions_provider=list_company_names)
+        self.person_field = SearchableTextField(label="اسم الزبون / المسافر", value=self.service_case.get("person_name") or "", width=dialog_width - 20, hint_text="ابحث عن زبون سابق أو اكتب اسمًا جديدًا", suggestions_provider=lambda: list_person_names(self.client_field.value))
         default_service = "تأشيرة سياحية" if "تأشيرة سياحية" in SERVICE_TYPES else "فيزا"
         self.service_dropdown = ft.Dropdown(label="نوع الخدمة", value=base_component.get("service_type") or self.service_case.get("primary_service_type") or self.service_case.get("service_type") or default_service, options=[ft.dropdown.Option(s) for s in SERVICE_TYPES], width=dialog_width - 20)
         self.sale_field = ft.TextField(label="سعر البيع على الشركة العميلة", value=str(base_component.get("sale_amount_original") or (self.service_case.get("sale_amount_original") if not existing_components else "") or ""), keyboard_type=ft.KeyboardType.NUMBER, width=dialog_width - 20)
         self.cost_field = ft.TextField(label="تكلفة الشركة المورّدة الأساسية", value=str(base_component.get("cost_amount_original") or (self.service_case.get("cost_amount_original") if not existing_components else "") or ""), keyboard_type=ft.KeyboardType.NUMBER, width=dialog_width - 20)
-        self.embassy_supplier_field = ft.TextField(label="حساب السفارة / رسوم السفارة", value=embassy_component.get("supplier_company_name") or "", width=dialog_width - 20, hint_text="مثال: رسوم سفارات أو سفارة الأردن")
+        self.embassy_supplier_field = SearchableTextField(label="حساب السفارة / رسوم السفارة", value=embassy_component.get("supplier_company_name") or "", width=dialog_width - 20, hint_text="ابحث عن حساب سفارة/رسوم أو اكتب اسمًا جديدًا", suggestions_provider=list_company_names)
         self.embassy_sale_field = ft.TextField(label="بيع رسوم السفارة على العميل", value=str(embassy_component.get("sale_amount_original") or ""), keyboard_type=ft.KeyboardType.NUMBER, width=(dialog_width - 34) / 2)
         self.embassy_cost_field = ft.TextField(label="تكلفة رسوم السفارة", value=str(embassy_component.get("cost_amount_original") or ""), keyboard_type=ft.KeyboardType.NUMBER, width=(dialog_width - 34) / 2)
-        self.transport_supplier_field = ft.TextField(label="شركة النقل البري", value=transport_component.get("supplier_company_name") or "", width=dialog_width - 20, hint_text="مثال: شركة نقل الشام")
+        self.transport_supplier_field = SearchableTextField(label="شركة النقل البري", value=transport_component.get("supplier_company_name") or "", width=dialog_width - 20, hint_text="ابحث عن شركة نقل أو اكتب اسمًا جديدًا", suggestions_provider=list_company_names)
         self.transport_sale_field = ft.TextField(label="بيع النقل على العميل", value=str(transport_component.get("sale_amount_original") or ""), keyboard_type=ft.KeyboardType.NUMBER, width=(dialog_width - 34) / 2)
         self.transport_cost_field = ft.TextField(label="تكلفة النقل", value=str(transport_component.get("cost_amount_original") or ""), keyboard_type=ft.KeyboardType.NUMBER, width=(dialog_width - 34) / 2)
         self.currency_dropdown = ft.Dropdown(label="العملة", value=self.service_case.get("currency_original") or currency.get_display_currency(), options=[ft.dropdown.Option(c) for c in ["USD","SAR","SYP","EUR","GBP","AED","QAR","KWD","OMR"]], width=120)

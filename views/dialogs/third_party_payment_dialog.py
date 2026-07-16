@@ -10,6 +10,8 @@ from database import ThirdPartyPaymentRepository
 from i18n.translator import translate
 from views.flet_compat import close_control, ALIGN_CENTER
 from views.financial_date_field import FinancialDateField
+from views.searchable_field import SearchableTextField
+from services.form_suggestions_service import list_company_names
 from views.dialogs.dialog_kit import (
     dialog_title,
     dialog_body,
@@ -41,16 +43,20 @@ class ThirdPartyPaymentDialog(ft.AlertDialog):
         dialog_width = min(390, page_width - 36)
         dialog_height = min(540, page_height - 90)
 
-        self.payer_field = ft.TextField(
+        self.payer_field = SearchableTextField(
             label=translate("payer_company"),
             value=self.payment.get("payer_company_name") or payer_company_name or "",
             width=dialog_width - 20,
+            hint_text="ابحث عن الشركة التي سدّدت أو اكتب اسمها",
+            suggestions_provider=list_company_names,
         )
-        self.paid_to_field = ft.TextField(
+        self.paid_to_field = SearchableTextField(
             label=translate("paid_to_company"),
             value=self.payment.get("paid_to_company_name") or paid_to_company_name or "",
             disabled=(bool(paid_to_company_name) and not self.edit_mode),
             width=dialog_width - 20,
+            hint_text="ابحث عن الشركة المدفوع لها أو اكتب اسمها",
+            suggestions_provider=list_company_names,
         )
         self.amount_field = ft.TextField(
             label=translate("amount"),

@@ -36,6 +36,7 @@ from reports.image_export import export_report_image
 from services.file_export_service import FileExportService
 from views.flet_compat import run_async_task
 from views.financial_date_field import FinancialDateField, today_iso
+from views.searchable_field import SearchableTextField
 from views.ui_kit import (
     BORDER,
     CARD_BG,
@@ -120,18 +121,15 @@ class ReportsCenterMobileView(ft.Column):
             border_color=BORDER,
             focused_border_color=PRIMARY,
         )
-        self.company_dropdown = ft.Dropdown(
+        self.company_dropdown = SearchableTextField(
             label="الشركة",
             value="الكل",
-            options=[ft.dropdown.Option("الكل", "كل الشركات")],
-            on_change=self._on_filter_changed,
             width=220,
-            border_radius=16,
-            filled=True,
-            bgcolor=CARD_BG,
-            border_color=BORDER,
-            focused_border_color=PRIMARY,
+            hint_text="الكل أو ابحث عن شركة",
+            suggestions_provider=lambda: ["الكل"] + self._company_suggestions,
+            on_change=self._on_filter_changed,
         )
+        self._company_suggestions = []
         self.currency_dropdown = ft.Dropdown(
             label="العملة الأصلية",
             value="الكل",
@@ -200,12 +198,11 @@ class ReportsCenterMobileView(ft.Column):
 
     def _load_companies(self):
         try:
-            companies = self._service.list_companies()
-            self.company_dropdown.options = [ft.dropdown.Option("الكل", "كل الشركات")] + [ft.dropdown.Option(c, c) for c in companies]
+            self._company_suggestions = list(self._service.list_companies() or [])
         except Exception:
             # Reporting must still open even if company loading fails; the view
             # button will surface the detailed error.
-            self.company_dropdown.options = [ft.dropdown.Option("الكل", "كل الشركات")]
+            self._company_suggestions = []
 
     def _on_period_changed(self, e=None):
         self.custom_dates.visible = self.period_dropdown.value == PERIOD_CUSTOM
@@ -220,7 +217,7 @@ class ReportsCenterMobileView(ft.Column):
             "period": self.period_dropdown.value or PERIOD_THIS_MONTH,
             "start_date": self.start_date.value if self.period_dropdown.value == PERIOD_CUSTOM else None,
             "end_date": self.end_date.value if self.period_dropdown.value == PERIOD_CUSTOM else None,
-            "company_name": None if self.company_dropdown.value == "الكل" else self.company_dropdown.value,
+            "company_name": None if not str(self.company_dropdown.value or "").strip() or self.company_dropdown.value == "الكل" else self.company_dropdown.value,
             "currency_code": None if self.currency_dropdown.value == "الكل" else self.currency_dropdown.value,
             "detail_mode": self.detail_dropdown.value or "summary",
         }
