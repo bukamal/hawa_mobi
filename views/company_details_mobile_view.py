@@ -425,25 +425,20 @@ class CompanyDetailsMobileView(ft.Column):
                 from database import ServiceCaseRepository
                 repo = ServiceCaseRepository()
                 repo.reverse(ref, reason=reason)
-                self._show_snackbar("تم عكس ملف الخدمة", False)
+                self._show_snackbar("تم عكس ملف الخدمة وإخفاء أثره من الحسابات والتقارير", False)
                 self._reload()
                 self._close_dialog(dlg)
-            except TypeError:
-                try:
-                    from database import ServiceCaseRepository
-                    ServiceCaseRepository().reverse(ref)
-                    self._show_snackbar("تم عكس ملف الخدمة", False)
-                    self._reload()
-                    self._close_dialog(dlg)
-                except Exception as ex:
-                    self._show_snackbar(f"خطأ: {str(ex)}", True)
             except Exception as ex:
                 self._show_snackbar(f"خطأ: {str(ex)}", True)
 
         dlg = ft.AlertDialog(
             title=ft.Text("عكس ملف خدمة"),
             content=ft.Column([
-                ft.Text(f"سيتم إنشاء قيود عكسية لملف الخدمة {ref}."),
+                ft.Text(
+                    f"سيتم إنشاء قيود عكسية لملف الخدمة {ref}. "
+                    "سيختفي القيد الأصلي والعكسي من حسابات الشركات والطباعة والتقارير التشغيلية، "
+                    "مع بقائهما في سجل التدقيق."
+                ),
                 reason_field,
             ], tight=True, spacing=10),
             actions=[ft.TextButton("عكس", on_click=confirm), ft.TextButton("إلغاء", on_click=lambda e: self._close_dialog(dlg))],
@@ -484,16 +479,20 @@ class CompanyDetailsMobileView(ft.Column):
                 from database import DirectServiceRepository
                 repo = DirectServiceRepository()
                 repo.reverse(ref, UserSession.get_current().get('id') if UserSession.get_current() else None, reason=reason)
-                self._show_snackbar("تم عكس الخدمة المباشرة", False)
+                self._show_snackbar("تم عكس الخدمة السريعة وإخفاء أثرها من الحسابات والتقارير", False)
                 self._reload()
                 self._close_dialog(dlg)
             except Exception as ex:
                 self._show_snackbar(f"خطأ: {str(ex)}", True)
 
         dlg = ft.AlertDialog(
-            title=ft.Text("عكس خدمة مباشرة"),
+            title=ft.Text("عكس خدمة سريعة / مباشرة"),
             content=ft.Column([
-                ft.Text(f"سيتم إنشاء قيود عكسية للخدمة المباشرة {ref}."),
+                ft.Text(
+                    f"سيتم إنشاء قيود عكسية للخدمة {ref}. "
+                    "سيختفي القيد الأصلي والعكسي من حسابات الشركات والطباعة والتقارير التشغيلية، "
+                    "مع بقائهما في سجل التدقيق."
+                ),
                 reason_field,
             ], tight=True, spacing=10),
             actions=[ft.TextButton("عكس", on_click=confirm), ft.TextButton("إلغاء", on_click=lambda e: self._close_dialog(dlg))],

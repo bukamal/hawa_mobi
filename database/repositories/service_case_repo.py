@@ -451,57 +451,72 @@ class ServiceCaseRepository(BaseRepository):
         if not reference:
             raise ValueError("مرجع ملف الخدمة مطلوب")
         clean_reason = str(reason or "").strip()
+        if not clean_reason:
+            raise ValueError("سبب عكس ملف الخدمة مطلوب")
         if self.data.is_remote():
-            return self.db.get_rest_client().reverse_service_case(reference, {"reason": clean_reason} if clean_reason else None)
+            return self.db.get_rest_client().reverse_service_case(reference, {"reason": clean_reason})
         conn = self.db.get_connection()
-        row = conn.execute("SELECT * FROM service_cases WHERE reference=?", (reference,)).fetchone()
-        if not row:
-            raise ValueError("لم يتم العثور على ملف الخدمة")
-        row = dict(row)
-        if row.get("status") == SERVICE_CASE_STATUS_REVERSED:
-            raise ValueError("ملف الخدمة معكوس مسبقاً")
-        components = [dict(r) for r in conn.execute("SELECT * FROM service_case_components WHERE service_case_ref=? ORDER BY component_index", (reference,)).fetchall()]
-        if not components:
-            components = [{
-                "service_type": row.get("service_type"),
-                "supplier_company_name": row.get("supplier_company_name"),
-                "cost_amount_original": row.get("cost_amount_original"),
-                "currency_original": row.get("currency_original"),
-                "print_description_supplier": row.get("print_description_supplier"),
-            }]
-        user = UserSession.get_current() or {}
-        uid = user.get("id") or 1
-        date = datetime.datetime.now().strftime("%Y-%m-%d")
-        now = datetime.datetime.now().isoformat()
-        reversal_ref = f"REV-{reference}"
-        client_rev = self.ledger.normalize_expense_payload({
-            "company_name": row["client_company_name"], "amount": row["sale_amount_original"], "type": "outgoing", "date": date,
-            "notes": f"عكس ملف خدمة {reference}" + (f". السبب: {clean_reason}" if clean_reason else ""), "currency": row["currency_original"], "created_by": uid, "created_at": now, "updated_by": uid, "updated_at": now,
-            "source_type": SERVICE_CASE_REVERSAL, "source_ref": reference, "counterparty_company_name": row["supplier_company_name"],
-            "person_name": row["person_name"], "service_type": row["service_type"], "operation_type": SERVICE_CASE_OPERATION_REVERSAL,
-            "is_locked": 1, "print_description": f"عكس {row.get('print_description_client') or row.get('service_type')}", "service_case_role": "client_reversal", "linked_company_name": row["supplier_company_name"], "internal_note": f"عكس ملف خدمة {reference}",
-        })
-        supplier_revs = []
-        for comp in components:
-            cost = float(comp.get("cost_amount_original") or 0)
-            if cost <= 0 or not comp.get("supplier_company_name"):
-                continue
-            supplier_revs.append(self.ledger.normalize_expense_payload({
-                "company_name": comp["supplier_company_name"], "amount": cost, "type": "incoming", "date": date,
-                "notes": f"عكس ملف خدمة {reference}" + (f". السبب: {clean_reason}" if clean_reason else ""), "currency": row["currency_original"], "created_by": uid, "created_at": now, "updated_by": uid, "updated_at": now,
-                "source_type": SERVICE_CASE_REVERSAL, "source_ref": reference, "counterparty_company_name": row["client_company_name"],
-                "person_name": row["person_name"], "service_type": comp.get("service_type") or row["service_type"], "operation_type": SERVICE_CASE_OPERATION_REVERSAL,
-                "is_locked": 1, "print_description": f"عكس {comp.get('print_description_supplier') or comp.get('service_type') or row.get('service_type')}", "service_case_role": "supplier_reversal", "linked_company_name": row["client_company_name"], "internal_note": f"عكس ملف خدمة {reference}",
-            }))
         try:
+            # Lock before the status check so concurrent devices/threads cannot
+            # create duplicate reversal groups for the same service reference.
             conn.execute("BEGIN IMMEDIATE")
-            self._insert_expense(conn, client_rev)
-            for supplier_rev in supplier_revs:
-                self._insert_expense(conn, supplier_rev)
-            conn.execute("UPDATE service_cases SET status=?, reversed_at=?, reversal_ref=? WHERE reference=?", (SERVICE_CASE_STATUS_REVERSED, now, reversal_ref, reference))
-            self.db._log_audit_local(uid, user.get("username", ""), "عكس ملف خدمة", "service_cases", row.get("id"), f"{reference}" + (f" | السبب: {clean_reason}" if clean_reason else ""))
+            row = conn.execute("SELECT * FROM service_cases WHERE reference=?", (reference,)).fetchone()
+            if not row:
+                raise ValueError("لم يتم العثور على ملف الخدمة")
+            row = dict(row)
+            if row.get("status") == SERVICE_CASE_STATUS_REVERSED:
+                raise ValueError("ملف الخدمة معكوس مسبقاً")
+            components = [dict(r) for r in conn.execute("SELECT * FROM service_case_components WHERE service_case_ref=? ORDER BY component_index", (reference,)).fetchall()]
+            if not components:
+                components = [{
+                    "service_type": row.get("service_type"),
+                    "supplier_company_name": row.get("supplier_company_name"),
+                    "cost_amount_original": row.get("cost_amount_original"),
+                    "currency_original": row.get("currency_original"),
+                    "print_description_supplier": row.get("print_description_supplier"),
+                }]
+            user = UserSession.get_current() or {}
+            uid = user.get("id") or 1
+            date = datetime.datetime.now().strftime("%Y-%m-%d")
+            now = datetime.datetime.now().isoformat()
+            reversal_ref = f"REV-{reference}"
+            client_rev = self.ledger.normalize_expense_payload({
+                "company_name": row["client_company_name"], "amount": row["sale_amount_original"], "type": "outgoing", "date": date,
+                "notes": f"عكس ملف خدمة {reference}. السبب: {clean_reason}", "currency": row["currency_original"], "created_by": uid, "created_at": now, "updated_by": uid, "updated_at": now,
+                "source_type": SERVICE_CASE_REVERSAL, "source_ref": reference, "counterparty_company_name": row["supplier_company_name"],
+                "person_name": row["person_name"], "service_type": row["service_type"], "operation_type": SERVICE_CASE_OPERATION_REVERSAL,
+                "is_locked": 1, "print_description": f"عكس {row.get('print_description_client') or row.get('service_type')}", "service_case_role": "client_reversal", "linked_company_name": row["supplier_company_name"], "internal_note": f"عكس ملف خدمة {reference}: {clean_reason}",
+            })
+            supplier_revs = []
+            for comp in components:
+                cost = float(comp.get("cost_amount_original") or 0)
+                if cost <= 0 or not comp.get("supplier_company_name"):
+                    continue
+                supplier_revs.append(self.ledger.normalize_expense_payload({
+                    "company_name": comp["supplier_company_name"], "amount": cost, "type": "incoming", "date": date,
+                    "notes": f"عكس ملف خدمة {reference}. السبب: {clean_reason}", "currency": row["currency_original"], "created_by": uid, "created_at": now, "updated_by": uid, "updated_at": now,
+                    "source_type": SERVICE_CASE_REVERSAL, "source_ref": reference, "counterparty_company_name": row["client_company_name"],
+                    "person_name": row["person_name"], "service_type": comp.get("service_type") or row["service_type"], "operation_type": SERVICE_CASE_OPERATION_REVERSAL,
+                    "is_locked": 1, "print_description": f"عكس {comp.get('print_description_supplier') or comp.get('service_type') or row.get('service_type')}", "service_case_role": "supplier_reversal", "linked_company_name": row["client_company_name"], "internal_note": f"عكس ملف خدمة {reference}: {clean_reason}",
+                }))
+            client_reversal_id = self._insert_expense(conn, client_rev)
+            supplier_reversal_ids = [self._insert_expense(conn, payload) for payload in supplier_revs]
+            changed = conn.execute(
+                "UPDATE service_cases SET status=?, reversed_at=?, reversal_ref=? WHERE reference=? AND status<>?",
+                (SERVICE_CASE_STATUS_REVERSED, now, reversal_ref, reference, SERVICE_CASE_STATUS_REVERSED),
+            )
+            if changed.rowcount != 1:
+                raise ValueError("تعذر عكس ملف الخدمة؛ ربما عُكس من جهاز آخر")
+            self.db._log_audit_local(
+                uid, user.get("username", ""), "عكس ملف خدمة", "service_cases", row.get("id"),
+                f"{reference} | السبب: {clean_reason} | قيود العكس: {client_reversal_id}/" + ",".join(str(x) for x in supplier_reversal_ids),
+            )
             conn.commit()
-            return {"ok": True, "reference": reference, "reversal_ref": reversal_ref}
+            return {
+                "ok": True, "reference": reference, "reversal_ref": reversal_ref,
+                "client_reversal_expense_id": client_reversal_id,
+                "supplier_reversal_expense_ids": supplier_reversal_ids,
+            }
         except Exception:
             try:
                 conn.rollback()

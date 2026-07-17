@@ -54,7 +54,7 @@ try:
     assert "سيف الشام" not in html or "الشركة المرتبطة" not in html  # do not expose internal report structure
     profit = export_service_profit_report_html(service_repo.list_cases())
     assert "تقرير أرباح الخدمات الداخلي" in Path(profit).read_text(encoding="utf-8")
-    reversed_payload = service_repo.reverse(result["reference"])
+    reversed_payload = service_repo.reverse(result["reference"], reason="إلغاء ملف الاختبار")
     assert reversed_payload["reversal_ref"].startswith("REV-")
     print("service_case_workflow_smoke_test passed")
 finally:

@@ -18,6 +18,7 @@ from config import get_company_info
 from currency import currency
 from reports.config import get_report_settings
 from services.company_logo_service import image_to_data_uri
+from services.ledger_operation_service import filter_operational_expenses
 
 LAYOUT_FULL = "full_table"
 LAYOUT_COMPACT = "compact_table"
@@ -193,7 +194,12 @@ def build_rows(records: Iterable[Dict], display_currency: str | None = None) -> 
     total_debit_usd = 0.0
     total_credit_usd = 0.0
 
-    sorted_records = sorted(list(records), key=lambda r: (str(r.get("date", "")), int(r.get("id") or 0)))
+    # Defensive filtering at the rendering boundary.  Company screens already
+    # request operational rows, but exports can also be called directly with a
+    # raw repository/API payload.  Never leak reversed service/direct-service
+    # rows into statements, CSV, images or their running balances.
+    operational_records = filter_operational_expenses(list(records))
+    sorted_records = sorted(operational_records, key=lambda r: (str(r.get("date", "")), int(r.get("id") or 0)))
     for r in sorted_records:
         is_waiting = r.get("status") == "waiting_payment"
         amount_usd = float(r.get("amount") or r.get("amount_base") or 0)
@@ -519,10 +525,12 @@ def export_service_profit_report_html(cases: Iterable[Dict], output_path: str | 
     rows = []
     total_profit = 0.0
     for c in cases:
+        if str(c.get("status") or "open") == "reversed":
+            continue
         sale = float(c.get("sale_amount_base") or 0)
         cost = float(c.get("cost_amount_base") or 0)
         profit = sale - cost
-        total_profit += profit if (c.get("status") or "open") != "reversed" else 0
+        total_profit += profit
         component_summary = c.get("components_summary") or ""
         if not component_summary and c.get("components"):
             try:

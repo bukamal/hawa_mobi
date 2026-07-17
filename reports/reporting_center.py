@@ -53,7 +53,7 @@ REPORT_DEFINITIONS: Dict[str, Dict[str, str]] = {
     REPORT_OPEN_SERVICES: {"title": "تقرير الخدمات المفتوحة", "category": "تقارير الخدمات", "icon": "pending_actions"},
     REPORT_LOW_MARGIN: {"title": "تقرير الخدمات منخفضة الربح", "category": "تقارير الأرباح", "icon": "warning"},
     REPORT_LOCKED_ENTRIES: {"title": "تقرير القيود المقفلة", "category": "تقارير التدقيق", "icon": "lock"},
-    REPORT_REVERSALS: {"title": "تقرير العمليات المعكوسة", "category": "تقارير التدقيق", "icon": "undo"},
+    REPORT_REVERSALS: {"title": "تقرير تدقيق العمليات المعكوسة", "category": "تقارير التدقيق", "icon": "undo"},
     REPORT_OPERATION_SUMMARY: {"title": "ملخص أنواع العمليات", "category": "تقارير مالية", "icon": "donut_large"},
     REPORT_DIRECT_SERVICES: {"title": "تقرير أرباح الخدمات المباشرة", "category": "تقارير الأرباح", "icon": "person_add_alt"},
 }
@@ -188,12 +188,12 @@ class ReportingCenterService:
         names = {str(r.get("company_name") or "").strip() for r in self.expense_repo.get_all(convert_to_display=False)}
         return sorted(n for n in names if n)
 
-    def _filtered_expenses(self, *, period: str = PERIOD_THIS_MONTH, start_date: str | None = None, end_date: str | None = None, company_name: str | None = None, currency_code: str | None = None, include_waiting: bool = False) -> Tuple[List[Dict], str, str | None, str | None]:
+    def _filtered_expenses(self, *, period: str = PERIOD_THIS_MONTH, start_date: str | None = None, end_date: str | None = None, company_name: str | None = None, currency_code: str | None = None, include_waiting: bool = False, include_reversed: bool = False) -> Tuple[List[Dict], str, str | None, str | None]:
         start, end, label = resolve_period(period, start_date, end_date)
         company_name = str(company_name or "").strip()
         currency_code = str(currency_code or "").upper().strip()
         rows = []
-        for r in self.expense_repo.get_all(convert_to_display=False):
+        for r in self.expense_repo.get_all(convert_to_display=False, include_reversed=include_reversed):
             if not include_waiting and r.get("status", "approved") == "waiting_payment":
                 continue
             if not _in_range(r.get("date"), start, end):
@@ -355,12 +355,14 @@ class ReportingCenterService:
         summary.insert(0, {"label": "الصافي", "value": _fmt_usd_to_display(net_total), "class": "balance"})
         return self._result(REPORT_AGING, label, columns, rows, summary)
 
-    def _filtered_service_cases(self, *, period: str = PERIOD_THIS_MONTH, start_date: str | None = None, end_date: str | None = None, company_name: str | None = None, currency_code: str | None = None) -> Tuple[List[Dict], str]:
+    def _filtered_service_cases(self, *, period: str = PERIOD_THIS_MONTH, start_date: str | None = None, end_date: str | None = None, company_name: str | None = None, currency_code: str | None = None, include_reversed: bool = False) -> Tuple[List[Dict], str]:
         start, end, label = resolve_period(period, start_date, end_date)
         company_name = str(company_name or "").strip()
         currency_code = str(currency_code or "").upper().strip()
         cases = []
         for c in self.service_repo.list_cases():
+            if not include_reversed and str(c.get("status") or "open") == "reversed":
+                continue
             if not _in_range(c.get("date"), start, end):
                 continue
             if company_name and company_name != "الكل" and company_name not in {c.get("client_company_name"), c.get("supplier_company_name")}:
@@ -373,12 +375,14 @@ class ReportingCenterService:
             cases.append(c)
         return cases, label
 
-    def _filtered_direct_services(self, *, period: str = PERIOD_THIS_MONTH, start_date: str | None = None, end_date: str | None = None, company_name: str | None = None, currency_code: str | None = None) -> Tuple[List[Dict], str]:
+    def _filtered_direct_services(self, *, period: str = PERIOD_THIS_MONTH, start_date: str | None = None, end_date: str | None = None, company_name: str | None = None, currency_code: str | None = None, include_reversed: bool = False) -> Tuple[List[Dict], str]:
         start, end, label = resolve_period(period, start_date, end_date)
         company_name = str(company_name or "").strip()
         currency_code = str(currency_code or "").upper().strip()
         rows = []
         for d in self.direct_repo.list_services():
+            if not include_reversed and str(d.get("status") or "open") == "reversed":
+                continue
             if not _in_range(d.get("date"), start, end):
                 continue
             if company_name and company_name != "الكل" and company_name not in {d.get("company_name"), d.get("supplier_company_name")}:
@@ -458,8 +462,8 @@ class ReportingCenterService:
         for c in cases:
             sale = float(c.get("sale_amount_base") or 0)
             cost = float(c.get("cost_amount_base") or 0)
-            total_sale += sale if str(c.get("status") or "open") != "reversed" else 0
-            total_cost += cost if str(c.get("status") or "open") != "reversed" else 0
+            total_sale += sale
+            total_cost += cost
             components = c.get("components_summary") or ""
             if not components and c.get("components"):
                 components = " ؛ ".join(f"{x.get('service_type')} / {x.get('supplier_company_name') or '-'}" for x in c.get("components") or [])
@@ -472,9 +476,8 @@ class ReportingCenterService:
         for d in direct_services:
             sale = float(d.get("sale_amount_base") or 0)
             cost = float(d.get("cost_amount_base") or 0)
-            if str(d.get("status") or "open") != "reversed":
-                total_sale += sale
-                total_cost += cost
+            total_sale += sale
+            total_cost += cost
             rows.append({
                 "date": d.get("date") or "", "reference": d.get("reference") or "", "client": d.get("company_name") or "",
                 "supplier": d.get("supplier_company_name") or "تكلفة داخلية", "person": d.get("person_name") or "", "service": (d.get("service_type") or "") + " · مباشرة",
@@ -720,7 +723,7 @@ class ReportingCenterService:
         return self._result(REPORT_LOCKED_ENTRIES, label, columns, rows, summary)
 
     def reversal_operations(self, **filters) -> ReportResult:
-        expenses, label, _, _ = self._filtered_expenses(include_waiting=True, **filters)
+        expenses, label, _, _ = self._filtered_expenses(include_waiting=True, include_reversed=True, **filters)
         rows = []
         total = 0.0
         for r in expenses:
@@ -739,7 +742,8 @@ class ReportingCenterService:
                 "notes": r.get("notes") or r.get("internal_note") or "",
             })
         # Add service case headers that have been reversed, even if reversal entries were filtered by company/currency.
-        cases, _ = self._filtered_service_cases(**{k: v for k, v in filters.items() if k in {"period", "start_date", "end_date", "company_name", "currency_code"}})
+        audit_filters = {k: v for k, v in filters.items() if k in {"period", "start_date", "end_date", "company_name", "currency_code"}}
+        cases, _ = self._filtered_service_cases(include_reversed=True, **audit_filters)
         for c in cases:
             if str(c.get("status") or "") != "reversed":
                 continue
@@ -748,6 +752,21 @@ class ReportingCenterService:
                 "company": c.get("client_company_name") or "", "direction": "ملف خدمة", "amount": _fmt_original(float(c.get("sale_amount_original") or 0), str(c.get("currency_original") or "USD")),
                 "amount_display": _fmt_usd_to_display(float(c.get("sale_amount_base") or 0)), "operation": "عكس ملف خدمة", "counterparty": c.get("supplier_company_name") or "—",
                 "notes": c.get("reference") or "",
+            })
+        direct_services, _ = self._filtered_direct_services(include_reversed=True, **audit_filters)
+        for d in direct_services:
+            if str(d.get("status") or "") != "reversed":
+                continue
+            rows.append({
+                "date": str(d.get("reversed_at") or d.get("date") or "")[:10],
+                "reference": d.get("reversal_ref") or f"REV-{d.get('reference')}",
+                "company": d.get("company_name") or "",
+                "direction": "خدمة مباشرة",
+                "amount": _fmt_original(float(d.get("sale_amount_original") or 0), str(d.get("currency_original") or "USD")),
+                "amount_display": _fmt_usd_to_display(float(d.get("sale_amount_base") or 0)),
+                "operation": "عكس خدمة مباشرة",
+                "counterparty": d.get("supplier_company_name") or "تكلفة داخلية",
+                "notes": d.get("edit_reason") or d.get("reference") or "",
             })
         rows.sort(key=lambda r: (str(r.get("date") or ""), str(r.get("reference") or "")), reverse=True)
         columns = [

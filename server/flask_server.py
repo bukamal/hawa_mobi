@@ -654,11 +654,13 @@ def delete_expense(expense_id: int):
 def expense_summary():
     conn = _connect()
     try:
-        rows = conn.execute("SELECT company_name, amount, amount_base, type, status FROM expenses").fetchall()
-        approved = [r for r in rows if r["status"] != "waiting_payment"]
-        total_in = sum(float((r["amount_base"] if "amount_base" in r.keys() else r["amount"]) or 0) for r in approved if r["type"] == "incoming")
-        total_out = sum(float((r["amount_base"] if "amount_base" in r.keys() else r["amount"]) or 0) for r in approved if r["type"] == "outgoing")
-        return jsonify({"total_incoming": total_in, "total_outgoing": total_out, "net": total_in - total_out, "companies_count": len({r['company_name'] for r in rows})})
+        raw_rows = [dict(r) for r in conn.execute("SELECT * FROM expenses").fetchall()]
+        from services.ledger_operation_service import filter_operational_expenses
+        rows = filter_operational_expenses(raw_rows)
+        approved = [r for r in rows if r.get("status") != "waiting_payment"]
+        total_in = sum(float(r.get("amount_base", r.get("amount", 0)) or 0) for r in approved if r.get("type") == "incoming")
+        total_out = sum(float(r.get("amount_base", r.get("amount", 0)) or 0) for r in approved if r.get("type") == "outgoing")
+        return jsonify({"total_incoming": total_in, "total_outgoing": total_out, "net": total_in - total_out, "companies_count": len({r.get('company_name') for r in rows if r.get('company_name')})})
     finally:
         conn.close()
 
@@ -689,7 +691,9 @@ def search_company_ledger():
             ORDER BY e.date DESC, e.id DESC
         """).fetchall()
         from services.company_search_service import search_expense_rows
-        return jsonify(search_expense_rows([dict(r) for r in rows], query, limit=limit))
+        from services.ledger_operation_service import filter_operational_expenses
+        operational_rows = filter_operational_expenses([dict(r) for r in rows])
+        return jsonify(search_expense_rows(operational_rows, query, limit=limit))
     finally:
         conn.close()
 
@@ -1170,29 +1174,82 @@ def reverse_service_case(reference: str):
     from services.service_case_service import SERVICE_CASE_REVERSAL, SERVICE_CASE_OPERATION_REVERSAL, SERVICE_CASE_STATUS_REVERSED
     data = request.get_json(silent=True) or {}
     reason = str(data.get("reason") or data.get("edit_reason") or "").strip()
+    if not reason:
+        return _json_error("سبب عكس ملف الخدمة مطلوب", 400)
     reference = str(reference or "").strip()
     conn = _connect()
     try:
+        # Serialize the complete read-check-insert-update sequence.  Starting
+        # the write transaction before reading prevents two devices from
+        # reversing the same service case concurrently.
+        conn.execute("BEGIN IMMEDIATE")
         row = conn.execute("SELECT * FROM service_cases WHERE reference=?", (reference,)).fetchone()
         if not row:
             return _json_error("لم يتم العثور على ملف الخدمة", 404)
         row = dict(row)
         if row.get("status") == SERVICE_CASE_STATUS_REVERSED:
             return _json_error("ملف الخدمة معكوس مسبقاً", 409)
+        components = [dict(r) for r in conn.execute(
+            "SELECT * FROM service_case_components WHERE service_case_ref=? ORDER BY component_index",
+            (reference,),
+        ).fetchall()]
+        if not components:
+            components = [{
+                "service_type": row.get("service_type"),
+                "supplier_company_name": row.get("supplier_company_name"),
+                "cost_amount_original": row.get("cost_amount_original"),
+                "print_description_supplier": row.get("print_description_supplier"),
+            }]
         user = _current_user() or {}
         uid = user.get("id") or 1
         date = _now()[:10]
         now = _now()
-        client_rev = _expense_payload(conn, {"company_name": row["client_company_name"], "amount": row["sale_amount_original"], "type": "outgoing", "date": date, "notes": f"عكس ملف خدمة {reference}" + (f". السبب: {reason}" if reason else ""), "currency": row["currency_original"], "created_by": uid, "updated_by": uid, "source_type": SERVICE_CASE_REVERSAL, "source_ref": reference, "counterparty_company_name": row["supplier_company_name"], "person_name": row["person_name"], "service_type": row["service_type"], "operation_type": SERVICE_CASE_OPERATION_REVERSAL, "is_locked": 1, "print_description": f"عكس {row.get('print_description_client') or row.get('service_type')}", "service_case_role": "client_reversal", "linked_company_name": row["supplier_company_name"]})
-        supplier_rev = _expense_payload(conn, {"company_name": row["supplier_company_name"], "amount": row["cost_amount_original"], "type": "incoming", "date": date, "notes": f"عكس ملف خدمة {reference}" + (f". السبب: {reason}" if reason else ""), "currency": row["currency_original"], "created_by": uid, "updated_by": uid, "source_type": SERVICE_CASE_REVERSAL, "source_ref": reference, "counterparty_company_name": row["client_company_name"], "person_name": row["person_name"], "service_type": row["service_type"], "operation_type": SERVICE_CASE_OPERATION_REVERSAL, "is_locked": 1, "print_description": f"عكس {row.get('print_description_supplier') or row.get('service_type')}", "service_case_role": "supplier_reversal", "linked_company_name": row["client_company_name"]})
-        conn.execute("BEGIN IMMEDIATE")
-        _insert_expense_with_source(conn, client_rev)
-        _insert_expense_with_source(conn, supplier_rev)
+        client_rev = _expense_payload(conn, {
+            "company_name": row["client_company_name"], "amount": row["sale_amount_original"], "type": "outgoing", "date": date,
+            "notes": f"عكس ملف خدمة {reference}. السبب: {reason}", "currency": row["currency_original"], "created_by": uid, "updated_by": uid,
+            "source_type": SERVICE_CASE_REVERSAL, "source_ref": reference, "counterparty_company_name": row["supplier_company_name"],
+            "person_name": row["person_name"], "service_type": row["service_type"], "operation_type": SERVICE_CASE_OPERATION_REVERSAL,
+            "is_locked": 1, "print_description": f"عكس {row.get('print_description_client') or row.get('service_type')}",
+            "service_case_role": "client_reversal", "linked_company_name": row["supplier_company_name"], "internal_note": f"عكس ملف خدمة {reference}: {reason}",
+        })
+        supplier_reversals = []
+        for component in components:
+            supplier_name = str(component.get("supplier_company_name") or "").strip()
+            cost = float(component.get("cost_amount_original") or 0)
+            if not supplier_name or cost <= 0:
+                continue
+            supplier_reversals.append(_expense_payload(conn, {
+                "company_name": supplier_name, "amount": cost, "type": "incoming", "date": date,
+                "notes": f"عكس ملف خدمة {reference}. السبب: {reason}", "currency": row["currency_original"], "created_by": uid, "updated_by": uid,
+                "source_type": SERVICE_CASE_REVERSAL, "source_ref": reference, "counterparty_company_name": row["client_company_name"],
+                "person_name": row["person_name"], "service_type": component.get("service_type") or row["service_type"], "operation_type": SERVICE_CASE_OPERATION_REVERSAL,
+                "is_locked": 1, "print_description": f"عكس {component.get('print_description_supplier') or component.get('service_type') or row.get('service_type')}",
+                "service_case_role": "supplier_reversal", "linked_company_name": row["client_company_name"], "internal_note": f"عكس ملف خدمة {reference}: {reason}",
+            }))
+        client_reversal_id = _insert_expense_with_source(conn, client_rev)
+        supplier_reversal_ids = [_insert_expense_with_source(conn, payload) for payload in supplier_reversals]
         reversal_ref = f"REV-{reference}"
-        conn.execute("UPDATE service_cases SET status=?, reversed_at=?, reversal_ref=? WHERE reference=?", (SERVICE_CASE_STATUS_REVERSED, now, reversal_ref, reference))
-        _audit(conn, "عكس ملف خدمة", "service_cases", row.get("id"), f"{reference}" + (f" | السبب: {reason}" if reason else ""))
+        changed = conn.execute(
+            "UPDATE service_cases SET status=?, reversed_at=?, reversal_ref=? WHERE reference=? AND status<>?",
+            (SERVICE_CASE_STATUS_REVERSED, now, reversal_ref, reference, SERVICE_CASE_STATUS_REVERSED),
+        )
+        if changed.rowcount != 1:
+            raise ValueError("تعذر عكس ملف الخدمة؛ ربما عُكس من جهاز آخر")
+        _audit(
+            conn,
+            "عكس ملف خدمة",
+            "service_cases",
+            row.get("id"),
+            f"{reference} | السبب: {reason} | قيود العكس: {client_reversal_id}/" + ",".join(str(x) for x in supplier_reversal_ids),
+        )
         conn.commit()
-        return jsonify({"ok": True, "reference": reference, "reversal_ref": reversal_ref})
+        return jsonify({
+            "ok": True,
+            "reference": reference,
+            "reversal_ref": reversal_ref,
+            "client_reversal_expense_id": client_reversal_id,
+            "supplier_reversal_expense_ids": supplier_reversal_ids,
+        })
     except Exception as e:
         try:
             conn.rollback()

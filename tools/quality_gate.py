@@ -124,6 +124,7 @@ def main() -> int:
         "tools/direct_customer_profit_workflow_smoke_test.py",
         "tools/direct_supplier_only_service_workflow_smoke_test.py",
         "tools/direct_service_correction_smoke_test.py",
+        "tools/reversed_service_operational_visibility_smoke_test.py",
         "tools/flet_filepicker_runtime_pin_smoke_test.py",
         "tools/flet_build_command_smoke_test.py",
         "tools/flet_entrypoint_compat_smoke_test.py",

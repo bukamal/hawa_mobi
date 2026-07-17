@@ -369,18 +369,20 @@ class DirectServiceRepository(BaseRepository):
         uid = int(user_id or self._uid({}, "updated_by"))
         conn = self.db.get_connection()
         user = self._current_user()
-        row = conn.execute("SELECT * FROM direct_services WHERE reference=?", (reference,)).fetchone()
-        if not row:
-            raise ValueError("لم يتم العثور على الخدمة المباشرة")
-        service = dict(row)
-        if service.get("status") == DIRECT_SERVICE_STATUS_REVERSED:
-            raise ValueError("هذه الخدمة المباشرة معكوسة مسبقاً")
-        client_entry, supplier_entry = self._linked_rows(conn, service)
-        date = str(date or datetime.datetime.now().strftime("%Y-%m-%d")).strip()[:10]
-        now = datetime.datetime.now().isoformat()
-        reversal_ref = f"REV-{reference}"
         try:
+            # Lock before reading the status so a repeated tap or another
+            # device cannot create a second reversal for this reference.
             conn.execute("BEGIN IMMEDIATE")
+            row = conn.execute("SELECT * FROM direct_services WHERE reference=?", (reference,)).fetchone()
+            if not row:
+                raise ValueError("لم يتم العثور على الخدمة المباشرة")
+            service = dict(row)
+            if service.get("status") == DIRECT_SERVICE_STATUS_REVERSED:
+                raise ValueError("هذه الخدمة المباشرة معكوسة مسبقاً")
+            client_entry, supplier_entry = self._linked_rows(conn, service)
+            date = str(date or datetime.datetime.now().strftime("%Y-%m-%d")).strip()[:10]
+            now = datetime.datetime.now().isoformat()
+            reversal_ref = f"REV-{reference}"
             client_rev_id = None
             if client_entry:
                 client_rev = self.ledger.normalize_expense_payload({
@@ -405,7 +407,12 @@ class DirectServiceRepository(BaseRepository):
                     "service_case_role": "direct_supplier_reversal", "linked_company_name": service["company_name"], "internal_note": f"عكس خدمة مباشرة {reference}: {clean_reason}",
                 })
                 supplier_rev_id = self._insert_expense(conn, supplier_rev)
-            conn.execute("UPDATE direct_services SET status=?, reversed_at=?, reversal_ref=?, updated_by=?, updated_at=?, edit_reason=? WHERE reference=?", (DIRECT_SERVICE_STATUS_REVERSED, now, reversal_ref, uid, now, clean_reason, reference))
+            changed = conn.execute(
+                "UPDATE direct_services SET status=?, reversed_at=?, reversal_ref=?, updated_by=?, updated_at=?, edit_reason=? WHERE reference=? AND status<>?",
+                (DIRECT_SERVICE_STATUS_REVERSED, now, reversal_ref, uid, now, clean_reason, reference, DIRECT_SERVICE_STATUS_REVERSED),
+            )
+            if changed.rowcount != 1:
+                raise ValueError("تعذر عكس الخدمة؛ ربما عُكست من جهاز آخر")
             conn.execute(
                 "INSERT INTO audit_log (user_id, username, action, table_name, record_id, details, ip_address, timestamp) VALUES (?,?,?,?,?,?,?,?)",
                 (uid, user.get("username", ""), "عكس خدمة مباشرة", "direct_services", service.get("id"), f"{reference} | السبب: {clean_reason} | عكس القيود: {client_rev_id or '-'}/{supplier_rev_id or '-'}", "127.0.0.1", now),

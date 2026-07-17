@@ -69,7 +69,7 @@ try:
         "date": "2026-07-04",
         "notes": "سيتم عكسها",
     })["reference"]
-    service_cases.reverse(reversed_ref)
+    service_cases.reverse(reversed_ref, reason="إلغاء لأغراض اختبار تقرير العكس")
     tpp_ref = third_party.add_payment_on_behalf("شركة دفعت", "شركة دُفع لها", 40, "USD", "2026-07-05", "سداد للاختبار", 1)["reference"]
     third_party.reverse_payment_on_behalf(tpp_ref, user_id=1, date="2026-07-06")
 

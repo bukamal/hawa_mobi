@@ -90,7 +90,7 @@ try:
     rev = repo.reverse(ref, reason="إلغاء مباشر عبر المورد", date="2026-07-22")
     assert rev["client_reversal_expense_id"] in (None, ""), rev
     assert rev["supplier_reversal_expense_id"], rev
-    rev_rows = [r for r in expenses.get_by_company("أدهم", convert_to_display=False) if r.get("source_ref") == ref and r.get("source_type") == "direct_service_reversal"]
+    rev_rows = [r for r in expenses.get_by_company("أدهم", convert_to_display=False, include_reversed=True) if r.get("source_ref") == ref and r.get("source_type") == "direct_service_reversal"]
     assert len(rev_rows) == 1 and rev_rows[0]["type"] == "incoming", rev_rows
 
     audit = "\n".join(str(r) for r in AuditRepository().get_all())

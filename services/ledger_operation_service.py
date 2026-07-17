@@ -7,7 +7,7 @@ normal posted entries; new rows can carry person/service/operation metadata.
 """
 from __future__ import annotations
 
-from typing import Any, Dict
+from typing import Any, Dict, Iterable, List, Set
 
 from services.company_search_service import normalize_search_text
 
@@ -21,6 +21,25 @@ SERVICE_CASE_REVERSAL_OPERATION = "service_case_reversal"
 DIRECT_SERVICE_CLIENT_OPERATION = "direct_service_client"
 DIRECT_SERVICE_SUPPLIER_OPERATION = "direct_service_supplier"
 DIRECT_SERVICE_REVERSAL_OPERATION = "direct_service_reversal"
+
+# Operational visibility groups.  A reversed service operation is preserved in
+# SQLite for audit, but the original and reversal ledger rows must disappear
+# together from company screens, statements, normal reports and balance totals.
+SERVICE_CASE_SOURCE_TYPES = {
+    SERVICE_CASE_CLIENT_OPERATION,
+    SERVICE_CASE_SUPPLIER_OPERATION,
+    SERVICE_CASE_REVERSAL_OPERATION,
+}
+DIRECT_SERVICE_SOURCE_TYPES = {
+    DIRECT_SERVICE_CLIENT_OPERATION,
+    DIRECT_SERVICE_SUPPLIER_OPERATION,
+    DIRECT_SERVICE_REVERSAL_OPERATION,
+}
+SERVICE_OPERATION_SOURCE_TYPES = SERVICE_CASE_SOURCE_TYPES | DIRECT_SERVICE_SOURCE_TYPES
+SERVICE_OPERATION_REVERSAL_TYPES = {
+    SERVICE_CASE_REVERSAL_OPERATION,
+    DIRECT_SERVICE_REVERSAL_OPERATION,
+}
 
 SERVICE_TYPES = [
     "غير محدد",
@@ -151,3 +170,54 @@ def normalize_expense_metadata(data: Dict[str, Any]) -> Dict[str, Any]:
 
 def operation_label(value: Any) -> str:
     return OPERATION_LABELS.get(clean_text(value), clean_text(value) or OPERATION_LABELS[NORMAL_OPERATION])
+
+def is_service_operation_source(source_type: Any) -> bool:
+    """Return True for generated service/direct-service ledger rows."""
+    return clean_text(source_type) in SERVICE_OPERATION_SOURCE_TYPES
+
+
+def reversed_service_references(rows: Iterable[Dict[str, Any]]) -> Set[str]:
+    """Collect service references that have a generated reversal ledger row.
+
+    This works in local and REST/client modes because the reversal marker lives
+    in the expenses payload itself.  It also supports historical databases that
+    predate explicit ``reversed_by`` links.
+    """
+    refs: Set[str] = set()
+    for row in rows or []:
+        source_type = clean_text((row or {}).get("source_type"))
+        source_ref = clean_text((row or {}).get("source_ref"))
+        if source_ref and source_type in SERVICE_OPERATION_REVERSAL_TYPES:
+            refs.add(source_ref)
+    return refs
+
+
+def is_operationally_hidden_service_entry(row: Dict[str, Any], reversed_refs: Set[str] | None = None) -> bool:
+    """Whether a ledger row belongs to a fully reversed service operation."""
+    row = row or {}
+    source_type = clean_text(row.get("source_type"))
+    source_ref = clean_text(row.get("source_ref"))
+    if not source_ref or source_type not in SERVICE_OPERATION_SOURCE_TYPES:
+        return False
+    refs = reversed_refs or set()
+    return source_ref in refs
+
+
+def filter_operational_expenses(rows: Iterable[Dict[str, Any]], *, include_reversed: bool = False) -> List[Dict[str, Any]]:
+    """Return expense rows suitable for operational screens and totals.
+
+    When a service case or direct/quick service is reversed, both its original
+    rows and its reversal rows are omitted.  The raw rows remain available by
+    passing ``include_reversed=True`` for the dedicated audit/reversal report.
+    Third-party payment reversals are intentionally unchanged.
+    """
+    materialized = list(rows or [])
+    if include_reversed:
+        return materialized
+    refs = reversed_service_references(materialized)
+    if not refs:
+        return materialized
+    return [
+        row for row in materialized
+        if not is_operationally_hidden_service_entry(row, refs)
+    ]

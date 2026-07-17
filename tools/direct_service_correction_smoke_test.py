@@ -76,7 +76,7 @@ try:
     assert rev["reversal_ref"] == f"REV-{ref}", rev
     after = repo.get_by_reference(ref)
     assert after["status"] == "reversed"
-    rev_rows = [r for r in expenses.get_by_company("عميل مباشر معدل", convert_to_display=False) if r.get("source_type") == "direct_service_reversal" and r.get("source_ref") == ref]
+    rev_rows = [r for r in expenses.get_by_company("عميل مباشر معدل", convert_to_display=False, include_reversed=True) if r.get("source_type") == "direct_service_reversal" and r.get("source_ref") == ref]
     assert len(rev_rows) == 1 and rev_rows[0]["type"] == "outgoing", rev_rows
 
     direct_report_after = rc.build_report(REPORT_DIRECT_SERVICES, period=PERIOD_ALL)

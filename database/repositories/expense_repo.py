@@ -3,7 +3,11 @@ from auth.session import UserSession
 import datetime
 from typing import List, Dict, Optional
 from services.currency_ledger_service import CurrencyLedgerService
-from services.ledger_operation_service import normalize_expense_metadata, is_generated_source
+from services.ledger_operation_service import (
+    filter_operational_expenses,
+    normalize_expense_metadata,
+    is_generated_source,
+)
 
 class ExpenseRepository(BaseRepository):
     def __init__(self):
@@ -13,15 +17,26 @@ class ExpenseRepository(BaseRepository):
     def _base_amount(self, row: Dict) -> float:
         return float(row.get('amount_base', row.get('amount', 0)) or 0)
 
-    def get_all(self, convert_to_display: bool = True) -> List[Dict]:
-        expenses = self.data.get_expenses()
+    def get_all(self, convert_to_display: bool = True, include_reversed: bool = False) -> List[Dict]:
+        """Return ledger rows used by operational screens and totals.
+
+        Reversed service/direct-service operations are hidden as a complete
+        group by default: the original generated rows and their reversal rows.
+        They remain physically stored and can be requested explicitly for the
+        dedicated audit/reversal report with ``include_reversed=True``.
+        """
+        expenses = filter_operational_expenses(
+            self.data.get_expenses(),
+            include_reversed=include_reversed,
+        )
         if convert_to_display:
             for e in expenses:
                 e['amount_display'] = e.get('amount_original', e['amount'])
                 e['currency_display'] = e.get('currency_original', e.get('currency', 'SAR'))
         return expenses
-    def get_by_company(self, company_name: str, convert_to_display: bool = True) -> List[Dict]:
-        all_exp = self.get_all(convert_to_display=False)
+
+    def get_by_company(self, company_name: str, convert_to_display: bool = True, include_reversed: bool = False) -> List[Dict]:
+        all_exp = self.get_all(convert_to_display=False, include_reversed=include_reversed)
         filtered = [e for e in all_exp if e['company_name'] == company_name]
         if convert_to_display:
             for e in filtered:
@@ -29,14 +44,19 @@ class ExpenseRepository(BaseRepository):
                 e['currency_display'] = e.get('currency_original', e.get('currency', 'SAR'))
         return filtered
 
-    def search_company_ledger(self, query: str, limit: int = 100) -> List[Dict]:
+    def search_company_ledger(self, query: str, limit: int = 100, include_reversed: bool = False) -> List[Dict]:
         query = (query or '').strip()
         if not query:
             return []
         if hasattr(self.data, 'search_company_ledger'):
-            return self.data.search_company_ledger(query, limit=limit)
+            rows = self.data.search_company_ledger(query, limit=max(int(limit or 100) * 4, int(limit or 100)))
+            return filter_operational_expenses(rows, include_reversed=include_reversed)[:int(limit or 100)]
         from services.company_search_service import search_expense_rows
-        return search_expense_rows(self.get_all(convert_to_display=False), query, limit=limit)
+        return search_expense_rows(
+            self.get_all(convert_to_display=False, include_reversed=include_reversed),
+            query,
+            limit=limit,
+        )
 
     def add(self, company_name: str, amount: float, type_val: str, date: str, notes: str, currency_code: str, user_id: int, payment_due_date: Optional[str] = None, payment_note: Optional[str] = None, person_name: str = '', service_type: str = 'غير محدد', operation_type: str = 'normal') -> int:
         amount = float(amount or 0)
