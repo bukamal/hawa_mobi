@@ -87,25 +87,25 @@ class SplashView(ft.Container):
     async def _load_sequence(self):
         try:
             self._set_status(0.10, 'فحص قاعدة البيانات...', mode='قاعدة البيانات')
-            await asyncio.sleep(0.12)
-            db_path = get_local_db_path()
-            conn = sqlite3.connect(db_path)
-            try:
-                conn.execute('SELECT 1')
-                conn.execute('SELECT key, value FROM settings LIMIT 1')
-            finally:
-                conn.close()
+            def _check_local_db():
+                db_path = get_local_db_path()
+                conn = sqlite3.connect(db_path)
+                try:
+                    conn.execute('SELECT 1')
+                    conn.execute('SELECT key, value FROM settings LIMIT 1')
+                finally:
+                    conn.close()
+            await asyncio.to_thread(_check_local_db)
 
             self._set_status(0.34, 'قراءة إعدادات التشغيل...', mode='الإعدادات')
-            await asyncio.sleep(0.12)
             db = DatabaseConnection()
-            db.refresh_mode()
+            await asyncio.to_thread(db.refresh_mode)
             mode = 'عميل شبكة' if db.is_remote() else 'محلي'
 
             if db.is_remote():
                 self._set_status(0.55, 'فحص الاتصال بالخادم...', db.server_url, mode='عميل شبكة')
                 try:
-                    health = db.get_rest_client().health()
+                    health = await asyncio.to_thread(db.get_rest_client().health)
                     if not isinstance(health, dict) or not health.get('ok'):
                         raise RuntimeError('استجابة الخادم غير صالحة')
                 except Exception as exc:
@@ -115,19 +115,17 @@ class SplashView(ft.Container):
                 self._set_status(0.55, 'وضع التشغيل المحلي جاهز', mode, mode='محلي')
 
             self._set_status(0.72, 'التحقق من الترخيص...', mode='الترخيص')
-            await asyncio.sleep(0.12)
-            activated, msg = check_activation()
+            activated, msg = await asyncio.to_thread(check_activation)
             if not activated:
                 self._set_status(1.0, 'يتطلب التفعيل', msg, mode='تفعيل مطلوب')
-                await asyncio.sleep(0.2)
+                await asyncio.sleep(0.05)
                 self.on_complete({'activated': False, 'session': False, 'mode': mode})
                 return
 
             self._set_status(0.88, 'فحص الجلسة الحالية...', mode='الجلسة')
-            await asyncio.sleep(0.12)
-            has_session = UserSession.is_authenticated()
+            has_session = await asyncio.to_thread(UserSession.is_authenticated)
             self._set_status(1.0, 'اكتمل التحميل', 'سيتم استعادة الجلسة' if has_session else 'جاهز لتسجيل الدخول', mode='جاهز')
-            await asyncio.sleep(0.25)
+            await asyncio.sleep(0.08)
             self.on_complete({'activated': True, 'session': has_session, 'mode': mode})
         except Exception as exc:
             self.on_error(f'فشل فحص بدء التشغيل: {exc}')

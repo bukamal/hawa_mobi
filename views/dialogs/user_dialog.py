@@ -4,6 +4,7 @@ from views.flet_compat import open_control, close_control
 from views.dialogs.dialog_kit import dialog_title, dialog_body, cancel_button, save_button, show_snackbar, set_button_busy, normalize_text
 from database import UserRepository
 from auth.session import UserSession
+from auth.password_policy import evaluate_password
 from i18n.translator import translate
 
 class UserDialog(ft.AlertDialog):
@@ -35,12 +36,17 @@ class UserDialog(ft.AlertDialog):
             ],
             width=dialog_width - 20
         )
+        self.password_hint = ft.Text(
+            "8 أحرف على الأقل، مع رقم وحروف متنوعة. يفضّل إضافة رمز خاص.",
+            size=11, color=ft.Colors.GREY_600, visible=not user_id,
+        )
         self.password = ft.TextField(
             label=translate('password'),
             password=True,
             can_reveal_password=True,
             width=dialog_width - 20,
-            visible=not user_id
+            visible=not user_id,
+            on_change=self._password_changed,
         )
         self.confirm_password = ft.TextField(
             label="تأكيد " + translate('password'),
@@ -64,6 +70,7 @@ class UserDialog(ft.AlertDialog):
                 self.fullname,
                 self.role,
                 self.password,
+                self.password_hint,
                 self.confirm_password,
                 self.change_pwd_btn
             ],
@@ -99,6 +106,23 @@ class UserDialog(ft.AlertDialog):
         except Exception as ex:
             self._show_snackbar(f"خطأ في تحميل البيانات: {str(ex)}", True)
 
+
+    def _password_changed(self, e):
+        policy = evaluate_password(self.password.value or "")
+        if not self.password.value:
+            self.password_hint.value = "8 أحرف على الأقل، مع رقم وحروف متنوعة. يفضّل إضافة رمز خاص."
+            self.password_hint.color = ft.Colors.GREY_600
+        elif policy.get('ok'):
+            self.password_hint.value = f"القوة: {policy.get('label')}"
+            self.password_hint.color = ft.Colors.GREEN
+        else:
+            self.password_hint.value = "المطلوب: " + "، ".join(policy.get('problems') or [])
+            self.password_hint.color = ft.Colors.RED
+        try:
+            self._page.update()
+        except Exception:
+            pass
+
     def _save(self, e):
         if self._saving:
             return
@@ -124,7 +148,11 @@ class UserDialog(ft.AlertDialog):
                     self._show_snackbar("كلمة المرور مطلوبة")
                     return
                 if password != confirm:
-                    self._show_snackbar("كلمتا المرور غير متطابقتين")
+                    self._show_snackbar("كلمتا المرور غير متطابقتين", True)
+                    return
+                policy = evaluate_password(password)
+                if not policy.get('ok'):
+                    self._show_snackbar("كلمة المرور لا تحقق السياسة: " + "، ".join(policy.get('problems') or []), True)
                     return
                 repo.create(username, password, full_name, role)
                 self._show_snackbar("تمت الإضافة بنجاح", is_error=False)

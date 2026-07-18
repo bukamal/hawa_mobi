@@ -3,7 +3,7 @@
 
 The PNG path used to look unresponsive on phones because it depended on an
 extra scheduling wrapper and could allocate very tall bitmaps.  This test keeps
-button handlers direct-async, image height bounded, and text drawing tolerant of
+button handlers explicitly scheduled from the unified export menu, image height bounded, and text drawing tolerant of
 Android Pillow builds without libraqm/default-font RTL support.
 """
 from __future__ import annotations
@@ -21,10 +21,10 @@ company_view = (ROOT / "views" / "company_details_mobile_view.py").read_text(enc
 reports_view = (ROOT / "views" / "reports_center_mobile_view.py").read_text(encoding="utf-8")
 image_export = (ROOT / "reports" / "image_export.py").read_text(encoding="utf-8")
 
-assert "on_click=self._share_statement_image_async" in company_view, "company PNG button must be a direct async event handler"
-assert "def _on_share_statement_image" not in company_view, "avoid silent run_async_task wrapper for company PNG"
-assert "on_click=self._export_png_async" in reports_view, "report PNG button must be a direct async event handler"
-assert "def _on_export_png" not in reports_view, "avoid silent run_async_task wrapper for report PNG"
+assert "run_async_task(self._page, self._share_statement_image_async, ev)" in company_view, "company PNG menu action must schedule the async renderer"
+assert "جارٍ إنشاء صورة كشف المطابقة" in company_view, "company PNG action must provide immediate feedback"
+assert "run_async_task(self._page, self._export_png_async, ev)" in reports_view, "report PNG menu action must schedule the async renderer"
+assert "جارٍ إنشاء صورة PNG للتقرير" in reports_view, "report PNG action must provide immediate feedback"
 assert "max_rows: int = 60" in image_export, "statement PNG must be capped for Android memory"
 assert "max_rows: int = 40" in image_export, "report PNG must be capped for Android memory"
 assert "optimize=False" in image_export and "compress_level=3" in image_export, "PNG save must be fast on Android"
@@ -60,3 +60,12 @@ finally:
         sys.stdout.flush(); sys.stderr.flush()
     except Exception:
         pass
+
+# Pillow/Flet helper resources can keep inherited descriptors open in a long
+# quality-gate session. This file is a CLI verifier, so terminate explicitly
+# after all assertions and cleanup complete.
+try:
+    sys.stdout.flush(); sys.stderr.flush()
+except Exception:
+    pass
+os._exit(0)

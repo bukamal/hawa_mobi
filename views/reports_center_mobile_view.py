@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from typing import Dict, List
+from datetime import datetime
 
 import flet as ft
 
@@ -55,9 +56,12 @@ from views.ui_kit import (
     page_header,
     pill,
     primary_button,
+    secondary_button,
+    modern_action_button,
     show_snackbar,
     stat_card,
 )
+from views.design_system.responsive import responsive_grid
 
 
 _PERIOD_OPTIONS = [
@@ -85,6 +89,12 @@ _REPORT_ORDER = [
     REPORT_OPERATION_SUMMARY,
 ]
 
+_CATEGORY_REPORTS = {}
+for _report_id in _REPORT_ORDER:
+    _category = str(REPORT_DEFINITIONS[_report_id].get("category") or "أخرى")
+    _CATEGORY_REPORTS.setdefault(_category, []).append(_report_id)
+_REPORT_CATEGORIES = list(_CATEGORY_REPORTS.keys())
+
 
 class ReportsCenterMobileView(ft.Column):
     """A unified preview/export surface for accounting and operational reports."""
@@ -97,11 +107,26 @@ class ReportsCenterMobileView(ft.Column):
         self.scroll = ft.ScrollMode.AUTO
         self._service = ReportingCenterService()
         self._current_report = None
+        self._filters_dirty = False
+        self._preview_page_size = 20
+        self._preview_limit = self._preview_page_size
 
+        first_category = _REPORT_CATEGORIES[0]
+        self.category_dropdown = ft.Dropdown(
+            label="فئة التقرير",
+            value=first_category,
+            options=[ft.dropdown.Option(category, category) for category in _REPORT_CATEGORIES],
+            on_change=self._on_category_changed,
+            border_radius=16,
+            filled=True,
+            bgcolor=CARD_BG,
+            border_color=BORDER,
+            focused_border_color=PRIMARY,
+        )
         self.report_dropdown = ft.Dropdown(
             label="التقرير",
-            value=REPORT_COMPANY_BALANCES,
-            options=[ft.dropdown.Option(key, f"{REPORT_DEFINITIONS[key]['category']} — {REPORT_DEFINITIONS[key]['title']}") for key in _REPORT_ORDER],
+            value=_CATEGORY_REPORTS[first_category][0],
+            options=[ft.dropdown.Option(key, REPORT_DEFINITIONS[key]['title']) for key in _CATEGORY_REPORTS[first_category]],
             on_change=self._on_filter_changed,
             border_radius=16,
             filled=True,
@@ -165,30 +190,38 @@ class ReportsCenterMobileView(ft.Column):
         self.summary_container = ft.Column(spacing=6)
         self.preview_container = ft.Column(spacing=8)
         self.status_banner = ft.Container(visible=False)
+        self.pagination_text = ft.Text("", size=12, color=MUTED, text_align=ft.TextAlign.CENTER)
+        self.load_more_button = secondary_button("عرض المزيد", ft.Icons.EXPAND_MORE, self._load_more_rows)
+        self.pagination_bar = ft.Container(
+            content=ft.Column([self.pagination_text, self.load_more_button], spacing=6, horizontal_alignment=ft.CrossAxisAlignment.CENTER),
+            visible=False,
+            padding=ft.Padding(left=12, right=12, top=4, bottom=12),
+        )
 
+        filters_surface = data_card(
+            ft.Column([
+                ft.Row([self.category_dropdown, self.report_dropdown], spacing=8, run_spacing=8, wrap=True),
+                ft.Row([self.period_dropdown, self.company_dropdown, self.currency_dropdown, self.detail_dropdown], spacing=8, run_spacing=8, wrap=True),
+                self.custom_dates,
+            ], spacing=10),
+            elevation=0,
+        )
+        actions_surface = data_card(
+            ft.Row([
+                primary_button("تطبيق الفلاتر", ft.Icons.FILTER_ALT, self._on_view_report),
+                secondary_button("تصدير ومشاركة", ft.Icons.SHARE_OUTLINED, self._open_export_menu),
+            ], spacing=8, run_spacing=8, wrap=True),
+            elevation=0,
+        )
         self.controls = [
-            page_header("مركز التقارير", icon=ft.Icons.INSIGHTS, subtitle="تقارير مالية وتشغيلية موحّدة بنفس هوية هوى الشام"),
-            ft.Container(
-                content=ft.Column([
-                    ft.Row([self.report_dropdown], spacing=8),
-                    ft.Row([self.period_dropdown, self.company_dropdown, self.currency_dropdown, self.detail_dropdown], spacing=8, run_spacing=8, wrap=True),
-                ], spacing=8),
-                padding=ft.Padding(left=10, right=10, top=0, bottom=0),
-            ),
-            self.custom_dates,
-            ft.Container(
-                content=ft.Row([
-                    primary_button("عرض", ft.Icons.VISIBILITY, self._on_view_report),
-                    ft.OutlinedButton(content=ft.Row([ft.Icon(ft.Icons.PRINT, color=PRIMARY), ft.Text("HTML", color=PRIMARY, weight=ft.FontWeight.BOLD)], tight=True), on_click=self._on_export_html),
-                    ft.OutlinedButton(content=ft.Row([ft.Icon(ft.Icons.IMAGE, color=PRIMARY), ft.Text("PNG", color=PRIMARY, weight=ft.FontWeight.BOLD)], tight=True), on_click=self._export_png_async),
-                    ft.OutlinedButton(content=ft.Row([ft.Icon(ft.Icons.TABLE_VIEW, color=PRIMARY), ft.Text("CSV", color=PRIMARY, weight=ft.FontWeight.BOLD)], tight=True), on_click=self._on_export_csv),
-                    ft.OutlinedButton(content=ft.Row([ft.Icon(ft.Icons.SHARE, color=PRIMARY), ft.Text("مشاركة", color=PRIMARY, weight=ft.FontWeight.BOLD)], tight=True), on_click=self._on_share_html),
-                ], spacing=8, run_spacing=8, wrap=True),
-                padding=ft.Padding(left=10, right=10, top=0, bottom=0),
-            ),
+            page_header("مركز التقارير", icon=ft.Icons.INSIGHTS_OUTLINED, subtitle="تقارير مالية وتشغيلية موحّدة بنفس هوية هوى الشام"),
+            filters_surface,
+            actions_surface,
             self.status_banner,
             self.summary_container,
             self.preview_container,
+            self.pagination_bar,
+            ft.Container(height=24),
         ]
         self._load_companies()
         self._render_report()
@@ -204,12 +237,42 @@ class ReportsCenterMobileView(ft.Column):
             # button will surface the detailed error.
             self._company_suggestions = []
 
+    def _on_category_changed(self, e=None):
+        category = self.category_dropdown.value or _REPORT_CATEGORIES[0]
+        report_ids = _CATEGORY_REPORTS.get(category) or [REPORT_COMPANY_BALANCES]
+        self.report_dropdown.options = [ft.dropdown.Option(key, REPORT_DEFINITIONS[key]['title']) for key in report_ids]
+        self.report_dropdown.value = report_ids[0]
+        self._mark_filters_dirty()
+
     def _on_period_changed(self, e=None):
         self.custom_dates.visible = self.period_dropdown.value == PERIOD_CUSTOM
-        self._render_report()
+        self._mark_filters_dirty()
 
     def _on_filter_changed(self, e=None):
-        self._render_report()
+        self._mark_filters_dirty()
+
+    def _mark_filters_dirty(self):
+        self._filters_dirty = True
+        self.status_banner.visible = True
+        self.status_banner.content = info_banner(
+            "تم تعديل الفلاتر. اضغط «تطبيق الفلاتر» لتحديث التقرير.",
+            icon=ft.Icons.EDIT_NOTE,
+            color=WARNING,
+            bgcolor="#FFF7E3",
+        )
+        try:
+            self._page.update()
+        except Exception:
+            pass
+
+    def _load_more_rows(self, e=None):
+        self._preview_limit += self._preview_page_size
+        if self._current_report is not None:
+            self.preview_container.controls = self._preview_cards(self._current_report)
+        try:
+            self._page.update()
+        except Exception:
+            pass
 
     def _filters(self) -> Dict[str, object]:
         return {
@@ -223,13 +286,16 @@ class ReportsCenterMobileView(ft.Column):
         }
 
     def _render_report(self):
+        self._preview_limit = self._preview_page_size
         try:
             f = self._filters()
             report = self._service.build_report(**f)
             self._current_report = report
+            self._filters_dirty = False
             self.status_banner.visible = True
+            generated_at = datetime.now().strftime("%H:%M")
             self.status_banner.content = info_banner(
-                f"{report.category} · {report.period_label} · العملة المعروضة: {report.display_currency}",
+                f"{report.category} · {report.period_label} · العملة المعروضة: {report.display_currency} · آخر تحديث {generated_at}",
                 icon=ft.Icons.FILTER_ALT,
                 color=PRIMARY,
                 bgcolor=PRIMARY_SOFT,
@@ -238,6 +304,7 @@ class ReportsCenterMobileView(ft.Column):
             self.preview_container.controls = self._preview_cards(report)
         except Exception as ex:
             self._current_report = None
+            self.pagination_bar.visible = False
             self.summary_container.controls = []
             self.preview_container.controls = [empty_state("تعذر إنشاء التقرير", str(ex), icon=ft.Icons.ERROR_OUTLINE)]
         try:
@@ -253,7 +320,7 @@ class ReportsCenterMobileView(ft.Column):
         for item in report.summary[:8]:
             cls = str(item.get("class") or "balance")
             controls.append(stat_card(str(item.get("label") or ""), str(item.get("value") or ""), color=color_map.get(cls, PRIMARY), icon=ft.Icons.QUERY_STATS))
-        return controls
+        return [responsive_grid(controls, self._page, min_item_width=240)]
 
     def _row_primary_value(self, report, row: Dict[str, object]) -> str:
         for key in ("company", "reference", "client", "payer", "username", "service", "operation", "risk"):
@@ -264,9 +331,10 @@ class ReportsCenterMobileView(ft.Column):
 
     def _preview_cards(self, report):
         if not report.rows:
+            self.pagination_bar.visible = False
             return [empty_state("لا توجد بيانات", "غيّر الفترة أو الشركة أو العملة", icon=ft.Icons.FACT_CHECK_OUTLINED)]
         controls = [ft.Container(content=ft.Row([ft.Icon(ft.Icons.TABLE_CHART, color=PRIMARY), ft.Text(f"{report.title} — {len(report.rows)} صف", size=15, weight=ft.FontWeight.BOLD, color=TEXT, expand=True)], spacing=6), padding=ft.Padding(left=12, right=12, top=8, bottom=0))]
-        limit = 60 if self.detail_dropdown.value == "detail" else 25
+        limit = self._preview_limit
         for row in report.rows[:limit]:
             details = []
             for col in report.columns[:9]:
@@ -291,15 +359,19 @@ class ReportsCenterMobileView(ft.Column):
                     elevation=1,
                 )
             )
-        if len(report.rows) > limit:
-            controls.append(info_banner(f"يتم عرض أول {limit} صف فقط داخل التطبيق. التصدير يحتوي كل الصفوف.", icon=ft.Icons.INFO_OUTLINE, color=WARNING, bgcolor="#FFF7E3"))
+        shown = min(limit, len(report.rows))
+        self.pagination_text.value = f"عرض {shown} من {len(report.rows)} صف"
+        self.load_more_button.visible = shown < len(report.rows)
+        self.pagination_bar.visible = len(report.rows) > self._preview_page_size
+        if len(report.rows) > shown:
+            controls.append(info_banner("يمكن عرض المزيد داخل التطبيق، بينما يحتوي التصدير على جميع الصفوف.", icon=ft.Icons.INFO_OUTLINE, color=WARNING, bgcolor="#FFF7E3"))
         return controls
 
     def _on_view_report(self, e=None):
         self._render_report()
 
     def _require_report(self):
-        if self._current_report is None:
+        if self._current_report is None or self._filters_dirty:
             self._render_report()
         if self._current_report is None:
             raise ValueError("لا يوجد تقرير جاهز للتصدير")
@@ -312,6 +384,28 @@ class ReportsCenterMobileView(ft.Column):
     async def _share_path(self, path: str, title: str):
         result = await FileExportService.share_file_async(self._page, path, f"{title} من نظام هوى الشام", open_whatsapp=False, title=title)
         self._show_snackbar(result.message if result.ok else result.message or path, is_error=not result.ok)
+
+    def _open_export_menu(self, e=None):
+        from views.flet_compat import open_control, close_control
+        dlg = None
+
+        def run_and_close(callback):
+            def handler(event=None):
+                close_control(self._page, dlg)
+                callback(event)
+            return handler
+
+        dlg = ft.AlertDialog(
+            title=ft.Text("تصدير ومشاركة التقرير", weight=ft.FontWeight.BOLD),
+            content=ft.Column([
+                modern_action_button("فتح نسخة HTML / طباعة", ft.Icons.PRINT_OUTLINED, run_and_close(self._on_export_html)),
+                modern_action_button("فتح صورة PNG", ft.Icons.IMAGE_OUTLINED, run_and_close(lambda ev: run_async_task(self._page, self._export_png_async, ev))),
+                modern_action_button("فتح ملف CSV", ft.Icons.TABLE_VIEW_OUTLINED, run_and_close(self._on_export_csv)),
+                modern_action_button("مشاركة التقرير", ft.Icons.SHARE_OUTLINED, run_and_close(self._on_share_html), color=SUCCESS, bgcolor="#E9F8F0"),
+            ], spacing=10, tight=True),
+            actions=[ft.TextButton("إلغاء", on_click=lambda ev: close_control(self._page, dlg))],
+        )
+        open_control(self._page, dlg)
 
     def _on_export_html(self, e=None):
         try:

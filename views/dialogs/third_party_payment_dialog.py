@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import datetime
 import flet as ft
+from views.ui_kit import PRIMARY, PRIMARY_SOFT
 
 from auth.session import UserSession
 from currency import currency
@@ -95,14 +96,14 @@ class ThirdPartyPaymentDialog(ft.AlertDialog):
             visible=self.edit_mode,
         )
         self.exchange_rate_text = ft.Text("", size=12, color=ft.Colors.GREY_600)
-        self.preview_text = ft.Text("", size=12, color=ft.Colors.INDIGO, weight=ft.FontWeight.BOLD)
+        self.preview_text = ft.Text("", size=12, color=PRIMARY, weight=ft.FontWeight.BOLD)
         self.preview_box = ft.Container(
             content=ft.Column([
-                ft.Row([ft.Icon(ft.Icons.SWAP_HORIZ, size=18, color=ft.Colors.INDIGO), ft.Text(translate("preview"), weight=ft.FontWeight.BOLD, size=13)]),
+                ft.Row([ft.Icon(ft.Icons.SWAP_HORIZ, size=18, color=PRIMARY), ft.Text(translate("preview"), weight=ft.FontWeight.BOLD, size=13)]),
                 self.preview_text,
                 ft.Text("لا يتم لمس الصندوق أو البنك؛ يتم فقط نقل الذمة من شركة إلى شركة.", size=11, color=ft.Colors.GREY_600),
             ], spacing=6),
-            bgcolor=ft.Colors.INDIGO_50,
+            bgcolor=PRIMARY_SOFT,
             border_radius=12,
             padding=10,
         )

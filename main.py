@@ -17,6 +17,8 @@ from views.app_layout import AppLayout
 from database import SettingsRepository
 from database.connection import get_local_db_path
 from views.flet_compat import open_control, close_control, close_all_dialogs, clear_transient_ui, apply_arabic_ui_defaults, ALIGN_CENTER, run_async_task
+from views.design_system.theme import apply_app_theme
+from views.design_system.tokens import LIGHT_BACKGROUND
 
 print("[INFO] بدء تشغيل تطبيق هوى الشام")
 
@@ -88,11 +90,10 @@ def main(page: ft.Page):
 
     apply_arabic_ui_defaults(page)
     page.title = translate('app_title')
-    page.theme_mode = ft.ThemeMode.LIGHT
     page.rtl = True
     page.padding = 0
     page.spacing = 0
-    page.bgcolor = "#F6FAF9"
+    page.bgcolor = LIGHT_BACKGROUND
     # Android: do not intentionally draw under the native status bar.
     # Some Flet builds still render edge-to-edge, so AppLayout also applies
     # an explicit top safe spacer.  Keep these assignments defensive because
@@ -108,13 +109,38 @@ def main(page: ft.Page):
     page.rtl = is_rtl()
     page.title = translate('app_title')
     theme = repo.get('theme', 'light')
-    page.theme_mode = ft.ThemeMode.LIGHT if theme == 'light' else ft.ThemeMode.DARK
+    apply_app_theme(page, theme)
 
     def show_splash():
         clear_transient_ui(page, clear_fab=True)
         page.controls.clear()
-        splash = SplashView(page=page, on_complete=after_splash, on_error=lambda msg: show_error(msg, retry=show_splash))
+        splash = SplashView(page=page, on_complete=after_splash, on_error=handle_startup_error)
         page.add(splash)
+
+
+    def handle_startup_error(message):
+        """Keep a bad server URL from trapping the user outside the app."""
+        try:
+            from database.connection import DatabaseConnection
+            if DatabaseConnection().is_remote():
+                show_connection_recovery(message)
+                return
+        except Exception:
+            pass
+        show_error(message, retry=show_splash)
+
+    def show_connection_recovery(message):
+        clear_transient_ui(page, clear_fab=True)
+        page.controls.clear()
+        from views.connection_recovery_view import ConnectionRecoveryView
+        recovery = ConnectionRecoveryView(
+            page=page,
+            error_message=message,
+            on_retry=show_splash,
+            on_close=close_app,
+        )
+        page.add(recovery)
+        page.update()
 
     def after_splash(result=None):
         try:
@@ -141,6 +167,10 @@ def main(page: ft.Page):
 
     def show_login():
         clear_transient_ui(page, clear_fab=True)
+        try:
+            page.route = "/"
+        except Exception:
+            pass
         page.controls.clear()
         login = LoginView(page=page, on_login_success=on_login_success, on_exit=close_app)
         page.add(login)
@@ -171,7 +201,7 @@ def main(page: ft.Page):
             page.rtl = is_rtl()
             page.title = translate('app_title')
             page.controls.clear()
-            app = AppLayout(page=page, on_logout=logout)
+            app = AppLayout(page=page, on_logout=logout, on_exit=close_app)
             page.add(app)
             page.update()
 
@@ -191,6 +221,10 @@ def main(page: ft.Page):
         except Exception:
             pass
         UserSession.logout()
+        try:
+            page.route = "/"
+        except Exception:
+            pass
         show_login()
 
     def on_license_invalid():

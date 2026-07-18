@@ -1,8 +1,10 @@
 # -*- coding: utf-8 -*-
 import flet as ft
 from views.flet_compat import open_control, close_control, make_file_picker, attach_service_control, service_control_attached, filepicker_unavailable_message, run_async_task, make_expansion_tile, clear_transient_ui
-from views.ui_kit import page_header, data_card, show_snackbar, empty_state, info_banner, responsive_wrap
+from views.ui_kit import page_header, data_card, show_snackbar, empty_state, info_banner, responsive_wrap, PRIMARY, PRIMARY_SOFT, TEXT, MUTED, BORDER, SUCCESS, DANGER, WARNING
 from database import SettingsRepository
+from auth.session import UserSession
+from auth.permissions import can_access_settings_section, access_denied_message
 from currency import currency
 from i18n.translator import translate, set_language, language_code_from_label, language_label, is_rtl
 from config import get_company_info, save_company_info, default_company_info
@@ -15,11 +17,21 @@ import csv
 import asyncio
 
 class SettingsMobileView(ft.Column):
-    def __init__(self, page):
+    SECTION_META = {
+        "currency": ("العملات", ft.Icons.PAID_OUTLINED, "_currency_tab"),
+        "rates": ("أسعار الصرف", ft.Icons.CURRENCY_EXCHANGE, "_rates_tab"),
+        "company": ("بيانات الشركة", ft.Icons.BUSINESS_OUTLINED, "_company_tab"),
+        "reports": ("التقارير والطباعة", ft.Icons.PRINT_OUTLINED, "_reports_tab"),
+        "appearance": ("اللغة والمظهر", ft.Icons.PALETTE_OUTLINED, "_lang_theme_tab"),
+        "network": ("الاتصال والخادم", ft.Icons.LAN_OUTLINED, "_network_tab"),
+        "backup": ("النسخ الاحتياطي", ft.Icons.CLOUD_SYNC_OUTLINED, "_backup_tab"),
+    }
+
+    def __init__(self, page, section=None):
         super().__init__()
         self._page = page
         self.expand = True
-        self.spacing = 15
+        self.spacing = 12
         self.scroll = ft.ScrollMode.AUTO
         self.repo = SettingsRepository()
         self.rate_fields = {}
@@ -27,27 +39,71 @@ class SettingsMobileView(ft.Column):
         self._restore_picker_opened_at = None
         self._restore_picker_result_seen = False
         self._restore_operation_busy = False
+        self.section = section
 
-        self.controls = [
-            page_header(translate('settings'), ft.Icons.SETTINGS, subtitle="إعدادات النظام، الشبكة، النسخ الاحتياطي والعملات"),
-            self._settings_tile("💰 العملات", self._currency_tab(), expanded=True),
-            self._settings_tile("💱 أسعار الصرف", self._rates_tab()),
-            self._settings_tile("🏢 الشركة", self._company_tab()),
-            self._settings_tile("🖨️ التقارير والطباعة", self._reports_tab()),
-            self._settings_tile("🌐 اللغة والمظهر", self._lang_theme_tab()),
-            self._settings_tile("🌐 الشبكة", self._network_tab()),
-            self._settings_tile("🔄 النسخ الاحتياطي", self._backup_tab()),
+        if section:
+            self.controls = self._build_section_page(section)
+        elif UserSession.is_admin():
+            # Backward-compatible direct construction used by older smoke tests.
+            self.controls = [
+                page_header(translate('settings'), ft.Icons.SETTINGS_OUTLINED, subtitle="إعدادات النظام، الشبكة، النسخ الاحتياطي والعملات"),
+                self._settings_tile("العملات", self._currency_tab(), ft.Icons.PAID_OUTLINED, expanded=True),
+                self._settings_tile("أسعار الصرف", self._rates_tab(), ft.Icons.CURRENCY_EXCHANGE),
+                self._settings_tile("بيانات الشركة", self._company_tab(), ft.Icons.BUSINESS_OUTLINED),
+                self._settings_tile("التقارير والطباعة", self._reports_tab(), ft.Icons.PRINT_OUTLINED),
+                self._settings_tile("اللغة والمظهر", self._lang_theme_tab(), ft.Icons.PALETTE_OUTLINED),
+                self._settings_tile("الاتصال والخادم", self._network_tab(), ft.Icons.LAN_OUTLINED),
+                self._settings_tile("النسخ الاحتياطي", self._backup_tab(), ft.Icons.CLOUD_SYNC_OUTLINED),
+                ft.Container(height=24),
+            ]
+        else:
+            self.controls = self._build_section_page("appearance")
+
+    def _build_section_page(self, section):
+        meta = self.SECTION_META.get(section)
+        if not meta:
+            return [page_header("إعدادات غير معروفة", ft.Icons.ERROR_OUTLINE), empty_state("القسم غير موجود")]
+        title, icon, builder_name = meta
+        back_btn = ft.IconButton(icon=ft.Icons.ARROW_FORWARD, tooltip="العودة إلى الإعدادات", on_click=self._open_settings_hub)
+        if not can_access_settings_section(section):
+            return [
+                page_header(title, icon, trailing=back_btn, subtitle="قسم إداري محمي"),
+                empty_state("وصول غير مسموح", access_denied_message(), ft.Icons.LOCK_OUTLINE),
+            ]
+        content = getattr(self, builder_name)()
+        return [
+            page_header(title, icon, trailing=back_btn, subtitle="إعدادات موحدة وآمنة"),
+            data_card(content, elevation=0),
+            ft.Container(height=24),
         ]
 
-    def _settings_tile(self, title, content, expanded=False):
+    def _open_settings_hub(self, e=None):
+        opener = getattr(self._page, "_hawaa_open_page", None)
+        if callable(opener):
+            opener("settings")
+
+    def _require_admin(self):
+        if UserSession.is_admin():
+            return True
+        self._show_snackbar(access_denied_message(), True)
+        return False
+
+    def _settings_tile(self, title, content, icon=None, expanded=False):
+        title_control = ft.Row([
+            ft.Container(content=ft.Icon(icon or ft.Icons.SETTINGS_OUTLINED, color=PRIMARY, size=20), bgcolor=PRIMARY_SOFT, border_radius=12, padding=8),
+            ft.Column([
+                ft.Text(title, size=15, weight=ft.FontWeight.BOLD, color=TEXT),
+                ft.Text("اضغط لعرض الإعدادات", size=11, color=MUTED),
+            ], spacing=2, expand=True),
+        ], spacing=10, vertical_alignment=ft.CrossAxisAlignment.CENTER)
         return data_card(
             make_expansion_tile(
-                title=ft.Text(title, size=15, weight=ft.FontWeight.BOLD),
+                title=title_control,
                 expanded=expanded,
-                controls=[ft.Container(content=content, padding=ft.Padding(left=4, right=4, top=6, bottom=4))],
+                controls=[ft.Container(content=content, padding=ft.Padding(left=8, right=8, top=8, bottom=8))],
             ),
             padding=0,
-            elevation=1,
+            elevation=0,
         )
 
     def _show_snackbar(self, message, is_error=False, duration=3000):
@@ -99,7 +155,7 @@ class SettingsMobileView(ft.Column):
         )
         save_btn = ft.FilledButton(
             content=ft.Text("حفظ"),
-            bgcolor=ft.Colors.INDIGO,
+            bgcolor=PRIMARY,
             color=ft.Colors.WHITE,
             on_click=self._save_currency
         )
@@ -109,6 +165,8 @@ class SettingsMobileView(ft.Column):
         ], spacing=15)
 
     def _save_currency(self, e):
+        if not self._require_admin():
+            return
         previous_display = currency.get_display_currency()
         fmt = 'western' if self.format_dropdown.value == 'غربية' else 'arabic'
         currency.save_runtime_settings(
@@ -130,14 +188,14 @@ class SettingsMobileView(ft.Column):
             self._page.update()
 
     def _rates_tab(self):
-        self.rates_list = ft.Column(spacing=10, scroll=ft.ScrollMode.AUTO, expand=True)
+        self.rates_list = ft.Column(spacing=10)
         refresh_btn = ft.FilledButton(
             content=ft.Row([ft.Icon(ft.Icons.REFRESH), ft.Text("تحديث من الإنترنت")]),
             on_click=self._fetch_online_rates
         )
         save_all_btn = ft.FilledButton(
             content=ft.Text("حفظ جميع الأسعار", weight=ft.FontWeight.BOLD),
-            bgcolor=ft.Colors.INDIGO,
+            bgcolor=PRIMARY,
             color=ft.Colors.WHITE,
             on_click=self._save_all_rates
         )
@@ -161,7 +219,7 @@ class SettingsMobileView(ft.Column):
                                 ft.FilledButton(
                                     content=ft.Text("إضافة أسعار افتراضية"),
                                     on_click=self._insert_default_rates,
-                                    bgcolor=ft.Colors.INDIGO,
+                                    bgcolor=PRIMARY,
                                     color=ft.Colors.WHITE
                                 )
                             ], alignment=ft.MainAxisAlignment.CENTER, horizontal_alignment=ft.CrossAxisAlignment.CENTER),
@@ -218,6 +276,8 @@ class SettingsMobileView(ft.Column):
             self._page.update()
 
     def _insert_default_rates(self, e):
+        if not self._require_admin():
+            return
         try:
             default_rates = [
                 ('USD', 1.0), ('SAR', 3.75), ('SYP', 14000.0), ('EUR', 0.92),
@@ -233,6 +293,8 @@ class SettingsMobileView(ft.Column):
             self._show_snackbar(f"خطأ: {str(ex)}", True)
 
     def _save_all_rates(self, e):
+        if not self._require_admin():
+            return
         try:
             for code, field in self.rate_fields.items():
                 try:
@@ -250,6 +312,8 @@ class SettingsMobileView(ft.Column):
             self._show_snackbar(f"خطأ: {str(ex)}", True)
 
     def _fetch_online_rates(self, e):
+        if not self._require_admin():
+            return
         import requests
         try:
             resp = requests.get("https://api.exchangerate-api.com/v4/latest/USD", timeout=10)
@@ -277,7 +341,7 @@ class SettingsMobileView(ft.Column):
         logo_btn = ft.FilledButton(content=ft.Row([ft.Icon(ft.Icons.IMAGE), ft.Text("اختيار شعار")]), on_click=self._browse_logo)
         remove_logo_btn = ft.OutlinedButton(content=ft.Row([ft.Icon(ft.Icons.RESTART_ALT), ft.Text("إعادة الشعار الافتراضي")]), on_click=self._remove_company_logo)
         reset_defaults_btn = ft.OutlinedButton(content=ft.Row([ft.Icon(ft.Icons.SETTINGS_BACKUP_RESTORE), ft.Text("إعادة القيم الافتراضية")]), on_click=self._reset_company_defaults)
-        save_btn = ft.FilledButton(content=ft.Text("حفظ"), bgcolor=ft.Colors.INDIGO, color=ft.Colors.WHITE, on_click=self._save_company)
+        save_btn = ft.FilledButton(content=ft.Text("حفظ"), bgcolor=PRIMARY, color=ft.Colors.WHITE, on_click=self._save_company)
         return ft.Column([
             self.company_name,
             self.company_address,
@@ -309,6 +373,8 @@ class SettingsMobileView(ft.Column):
         ], alignment=ft.MainAxisAlignment.START)
 
     def _save_company(self, e):
+        if not self._require_admin():
+            return
         info = {
             'name': self.company_name.value,
             'address': self.company_address.value,
@@ -320,6 +386,8 @@ class SettingsMobileView(ft.Column):
         self._show_snackbar("تم حفظ معلومات الشركة", is_error=False)
 
     def _reset_company_defaults(self, e):
+        if not self._require_admin():
+            return
         defaults = default_company_info()
         self.company_name.value = defaults.get('name', '')
         self.company_address.value = defaults.get('address', '')
@@ -331,6 +399,8 @@ class SettingsMobileView(ft.Column):
         self._show_snackbar("تمت إعادة بيانات الشركة والشعار الافتراضي", False)
 
     def _browse_logo(self, e):
+        if not self._require_admin():
+            return
         picker = make_file_picker(self._on_logo_picked)
         attach_service_control(self._page, picker)
         if not service_control_attached(picker):
@@ -366,6 +436,8 @@ class SettingsMobileView(ft.Column):
             self._show_snackbar(f"فشل اختيار الشعار: {ex}", True)
 
     def _remove_company_logo(self, e):
+        if not self._require_admin():
+            return
         try:
             from services.company_logo_service import remove_logo
             remove_logo(self.company_logo.value)
@@ -425,7 +497,7 @@ class SettingsMobileView(ft.Column):
             label_field = ft.TextField(label="اسم العمود", value=str(col.get('label', '')), width=180)
             self.report_columns.append((str(col.get('key')), checkbox, label_field))
             column_controls.append(ft.Row([checkbox, label_field], spacing=8, wrap=True))
-        save_btn = ft.FilledButton(content=ft.Text("حفظ إعدادات التقارير"), bgcolor=ft.Colors.INDIGO, color=ft.Colors.WHITE, on_click=self._save_reports)
+        save_btn = ft.FilledButton(content=ft.Text("حفظ إعدادات التقارير"), bgcolor=PRIMARY, color=ft.Colors.WHITE, on_click=self._save_reports)
         return ft.Column([
             info_banner("القالب الجديد لا يحذف الأعمدة: في الجدول الكامل تظهر كأعمدة، وفي الجدول المدمج تظهر التفاصيل أسفل البيان، وفي البطاقات تظهر كحقول واضحة."),
             ft.Text("أنماط العرض", size=14, weight=ft.FontWeight.BOLD),
@@ -440,6 +512,8 @@ class SettingsMobileView(ft.Column):
         ], spacing=12)
 
     def _save_reports(self, e):
+        if not self._require_admin():
+            return
         from reports.config import get_report_settings, save_report_settings
         settings = get_report_settings()
         layout_code = {
@@ -488,8 +562,8 @@ class SettingsMobileView(ft.Column):
             options=[ft.dropdown.Option("فاتح"), ft.dropdown.Option("داكن")],
             width=250
         )
-        lang_btn = ft.FilledButton(content=ft.Text("تغيير اللغة"), bgcolor=ft.Colors.INDIGO, color=ft.Colors.WHITE, on_click=self._save_language)
-        theme_btn = ft.FilledButton(content=ft.Text("تطبيق المظهر"), bgcolor=ft.Colors.INDIGO, color=ft.Colors.WHITE, on_click=self._save_theme)
+        lang_btn = ft.FilledButton(content=ft.Text("تغيير اللغة"), bgcolor=PRIMARY, color=ft.Colors.WHITE, on_click=self._save_language)
+        theme_btn = ft.FilledButton(content=ft.Text("تطبيق المظهر"), bgcolor=PRIMARY, color=ft.Colors.WHITE, on_click=self._save_theme)
         return ft.Column([self.lang_dropdown, lang_btn, ft.Divider(), self.theme_dropdown, theme_btn], spacing=15)
 
     def _save_language(self, e):
@@ -534,7 +608,7 @@ class SettingsMobileView(ft.Column):
         )
         self.network_save_btn = ft.FilledButton(
             content=ft.Text("حفظ"),
-            bgcolor=ft.Colors.INDIGO,
+            bgcolor=PRIMARY,
             color=ft.Colors.WHITE,
             on_click=self._save_network
         )
@@ -568,6 +642,8 @@ class SettingsMobileView(ft.Column):
 
 
     def _open_qr_pairing_dialog(self, e):
+        if not self._require_admin():
+            return
         from views.dialogs.qr_pairing_dialog import open_qr_pairing_dialog
 
         def on_success(result):
@@ -624,6 +700,8 @@ class SettingsMobileView(ft.Column):
             self._show_snackbar(f"تعذر بناء التشخيص: {ex}", True)
 
     def _test_connection(self, e):
+        if not self._require_admin():
+            return
         try:
             if hasattr(self, 'network_test_btn'):
                 self.network_test_btn.disabled = True
@@ -651,6 +729,8 @@ class SettingsMobileView(ft.Column):
                 self._page.update()
 
     def _save_network(self, e):
+        if not self._require_admin():
+            return
         mode_map = {"محلي": "local", "عميل": "client"}
         new_mode = mode_map.get(self.mode_dropdown.value, "local")
         try:
@@ -736,6 +816,8 @@ class SettingsMobileView(ft.Column):
         ], spacing=15)
 
     async def _perform_backup(self, e):
+        if not self._require_admin():
+            return
         try:
             from services.file_export_service import FileExportService
             backup_path = FileExportService.create_backup_archive()
@@ -751,6 +833,8 @@ class SettingsMobileView(ft.Column):
             self._show_snackbar(f"فشل النسخ الاحتياطي: {str(ex)}", True)
 
     async def _export_csv(self, e):
+        if not self._require_admin():
+            return
         try:
             from services.file_export_service import FileExportService
             export_path = FileExportService.create_csv_archive(['expenses', 'users', 'audit_log'])
@@ -766,6 +850,8 @@ class SettingsMobileView(ft.Column):
             self._show_snackbar(f"فشل التصدير: {str(ex)}", True)
 
     def _pick_backup_to_restore(self, e):
+        if not self._require_admin():
+            return
         """Open Android FilePicker without blocking the click handler.
 
         Earlier phases requested storage permission before opening the picker.
@@ -849,6 +935,8 @@ class SettingsMobileView(ft.Column):
                 pass
 
     def _restore_from_public_downloads(self, e=None):
+        if not self._require_admin():
+            return
         """Start public-folder import scan in the background.
 
         The old implementation scanned Downloads synchronously and also tried to
@@ -913,6 +1001,8 @@ class SettingsMobileView(ft.Column):
             self._show_snackbar(f"فشل فحص النسخ الخارجية: {ex}", True)
 
     def _restore_latest_internal_backup(self, e=None):
+        if not self._require_admin():
+            return
         try:
             from database.connection import DatabaseConnection
             if DatabaseConnection().is_remote():
@@ -1285,6 +1375,8 @@ class SettingsMobileView(ft.Column):
         self._refresh_after_restore()
 
     def _show_restore_diagnostics(self, e=None):
+        if not self._require_admin():
+            return
         try:
             from services.file_export_service import FileExportService
             log_path = FileExportService.restore_log_path()
@@ -1316,6 +1408,8 @@ class SettingsMobileView(ft.Column):
             self._show_snackbar(f"تعذر عرض التشخيص: {ex}", True)
 
     def _vacuum_db(self, e):
+        if not self._require_admin():
+            return
         try:
             from database.connection import DatabaseConnection
             db = DatabaseConnection()
@@ -1329,20 +1423,101 @@ class SettingsMobileView(ft.Column):
             self._show_snackbar(f"فشل الضغط: {str(ex)}", True)
 
     def _reset_db_dialog(self, e):
-        def confirm_reset(e):
-            self._perform_reset()
-            self._close_dialog(dlg)
+        if not self._require_admin():
+            return
+        phrase = "حذف جميع بيانات هوى الشام"
+        password = ft.TextField(
+            label="كلمة مرور المدير الحالية", password=True, can_reveal_password=True,
+            autofocus=True,
+        )
+        confirmation = ft.TextField(
+            label="اكتب عبارة التأكيد", hint_text=phrase,
+        )
+        acknowledge = ft.Checkbox(
+            label="أفهم أن العملية ستحذف القيود والمستخدمين والإعدادات المحلية",
+            value=False,
+        )
+        progress = ft.Text("سيتم إنشاء نسخة أمان والتحقق منها قبل الحذف.", size=12, color=MUTED)
+
+        def start_reset(ev):
+            if confirmation.value.strip() != phrase:
+                progress.value = "عبارة التأكيد غير مطابقة."
+                progress.color = DANGER
+                self._page.update()
+                return
+            if not acknowledge.value:
+                progress.value = "يجب تأكيد فهم أثر العملية."
+                progress.color = DANGER
+                self._page.update()
+                return
+            if not (password.value or "").strip():
+                progress.value = "كلمة مرور المدير مطلوبة."
+                progress.color = DANGER
+                self._page.update()
+                return
+            confirm_btn.disabled = True
+            progress.value = "جاري التحقق وإنشاء نسخة الأمان..."
+            progress.color = PRIMARY
+            self._page.update()
+            run_async_task(self._page, self._secure_reset_async, password.value, dlg)
+
+        confirm_btn = ft.FilledButton(
+            "إنشاء نسخة أمان ثم الحذف",
+            bgcolor=DANGER, color=ft.Colors.WHITE, on_click=start_reset,
+        )
         dlg = ft.AlertDialog(
-            title=ft.Text("⚠️ تحذير نهائي", color=ft.Colors.RED),
-            content=ft.Text("سيتم حذف جميع القيود والمستخدمين وسجل التدقيق.\nلا يمكن التراجع عن هذا الإجراء.\nهل أنت متأكد؟"),
+            modal=True,
+            title=ft.Text("إعادة تهيئة النظام", color=DANGER, weight=ft.FontWeight.BOLD),
+            content=ft.Container(
+                width=500,
+                content=ft.Column([
+                    info_banner(
+                        "هذه العملية محلية ونهائية. لن تبدأ قبل نجاح نسخة الأمان والتحقق من كلمة مرور المدير.",
+                        icon=ft.Icons.GPP_MAYBE_OUTLINED, color=DANGER, bgcolor="#FDECEC",
+                    ),
+                    ft.Text(f"عبارة التأكيد المطلوبة: {phrase}", selectable=True, weight=ft.FontWeight.BOLD),
+                    password, confirmation, acknowledge, progress,
+                ], spacing=12, tight=True, scroll=ft.ScrollMode.AUTO),
+            ),
             actions=[
-                ft.TextButton("نعم", on_click=confirm_reset),
-                ft.TextButton("لا", on_click=lambda e: self._close_dialog(dlg))
-            ]
+                ft.TextButton("إلغاء", on_click=lambda ev: self._close_dialog(dlg)),
+                confirm_btn,
+            ],
         )
         open_control(self._page, dlg)
 
-    def _perform_reset(self):
+    async def _secure_reset_async(self, password_value, dialog):
+        try:
+            if not self._require_admin():
+                return
+            from database import UserRepository
+            from services.file_export_service import FileExportService
+            current = UserSession.get_current() or {}
+            username = current.get("username") or ""
+            try:
+                verified = await asyncio.to_thread(UserRepository().authenticate, username, password_value)
+            except AttributeError:
+                verified = UserRepository().authenticate(username, password_value)
+            if not verified:
+                self._show_snackbar("كلمة مرور المدير غير صحيحة. لم يتم حذف أي بيانات.", True)
+                return
+            try:
+                backup_path = await asyncio.to_thread(FileExportService.create_backup_archive)
+                FileExportService.inspect_backup_archive(backup_path)
+            except AttributeError:
+                backup_path = FileExportService.create_backup_archive()
+                FileExportService.inspect_backup_archive(backup_path)
+            self._perform_reset(safety_backup=backup_path)
+            self._close_dialog(dialog)
+        except Exception as ex:
+            self._show_snackbar(f"تم إيقاف إعادة التهيئة دون حذف البيانات: {ex}", True)
+
+    def _perform_reset(self, safety_backup=None):
+        if not self._require_admin():
+            return
+        if not safety_backup or not os.path.exists(safety_backup):
+            self._show_snackbar("تعذر إثبات نسخة الأمان؛ تم إلغاء الحذف.", True)
+            return
         try:
             from database.migrations import init_database
             from database.connection import DatabaseConnection
@@ -1351,17 +1526,24 @@ class SettingsMobileView(ft.Column):
                 self._show_snackbar("لا يمكن إعادة التهيئة في وضع العميل", True)
                 return
             conn = db.get_connection()
-            conn.execute("DROP TABLE IF EXISTS expenses")
-            conn.execute("DROP TABLE IF EXISTS users")
-            conn.execute("DROP TABLE IF EXISTS audit_log")
-            conn.execute("DROP TABLE IF EXISTS settings")
-            conn.execute("DROP TABLE IF EXISTS exchange_rates")
-            conn.execute("DROP TABLE IF EXISTS token_blacklist")
+            conn.execute("BEGIN IMMEDIATE")
+            for table in (
+                "expenses", "third_party_payments", "direct_services", "service_cases",
+                "users", "audit_log", "settings", "exchange_rates", "token_blacklist",
+            ):
+                conn.execute(f"DROP TABLE IF EXISTS {table}")
             conn.commit()
             init_database()
-            self._show_snackbar("تم إعادة تهيئة النظام بنجاح. يرجى إعادة تشغيل التطبيق.", is_error=False)
+            self._show_snackbar(
+                f"تمت إعادة التهيئة بعد حفظ نسخة أمان: {os.path.basename(safety_backup)}",
+                is_error=False, duration=6000,
+            )
             run_async_task(self._page, self._restart_app)
         except Exception as ex:
+            try:
+                conn.rollback()
+            except Exception:
+                pass
             self._show_snackbar(f"فشل إعادة التهيئة: {str(ex)}", True)
 
     async def _restart_app(self):

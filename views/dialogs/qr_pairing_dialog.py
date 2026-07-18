@@ -10,7 +10,7 @@ from __future__ import annotations
 import inspect
 import flet as ft
 from views.flet_compat import open_control, close_control, run_async_task
-from views.ui_kit import info_banner, show_snackbar
+from views.ui_kit import info_banner, show_snackbar, PRIMARY, PRIMARY_SOFT
 
 
 def _payload_server_url(payload: str) -> str:
@@ -112,7 +112,7 @@ def open_qr_pairing_dialog(page: ft.Page, *, on_success=None, initial_text: str 
 
     apply_btn = ft.FilledButton(
         content=ft.Row([ft.Icon(ft.Icons.LINK), ft.Text("ربط وحفظ")], alignment=ft.MainAxisAlignment.CENTER),
-        bgcolor=ft.Colors.INDIGO,
+        bgcolor=PRIMARY,
         color=ft.Colors.WHITE,
     )
 
@@ -125,7 +125,7 @@ def open_qr_pairing_dialog(page: ft.Page, *, on_success=None, initial_text: str 
                 return
             _set_button_loading(apply_btn, "جاري الربط", True)
             status.value = "جاري فحص الخادم ورمز الربط..."
-            status.color = ft.Colors.INDIGO
+            status.color = PRIMARY
             page.update()
             from services.pairing_service import MobilePairingService
             result = MobilePairingService.pair_from_qr_text(payload)
@@ -164,7 +164,7 @@ def open_qr_pairing_dialog(page: ft.Page, *, on_success=None, initial_text: str 
                 return
             _set_button_loading(code_pair_btn, "جاري الربط", True)
             status.value = "جاري فحص الخادم والرمز اليدوي..."
-            status.color = ft.Colors.INDIGO
+            status.color = PRIMARY
             page.update()
             from services.pairing_service import MobilePairingService
             result = MobilePairingService.pair_with_code(server_url, code)

@@ -5,7 +5,12 @@ from database import ExpenseRepository
 from auth.session import UserSession
 from i18n.translator import translate
 from currency import currency
-from views.ui_kit import show_snackbar, empty_state, data_card, action_text_button, amount_pill, key_value_tile, pill, summary_bar, metric_tile, info_banner, PRIMARY, PRIMARY_SOFT, SUCCESS, DANGER, WARNING
+from views.ui_kit import (
+    show_snackbar, empty_state, data_card, amount_pill, key_value_tile, pill,
+    summary_bar, metric_tile, info_banner, search_field, secondary_button,
+    modern_action_button, operation_menu_button, PRIMARY, PRIMARY_SOFT,
+    SUCCESS, DANGER, WARNING, MUTED, TEXT, BORDER,
+)
 from services.company_search_service import enrich_expense_match, normalize_search_text
 from services.ledger_operation_service import operation_label
 
@@ -19,14 +24,10 @@ class CompanyDetailsMobileView(ft.Column):
         # لا تستخدم القائمة الممرّرة كحقيقة بعد فتح النافذة؛ قد تكون snapshot قديمة
         # من شاشة الحسابات. اجلب دائماً من قاعدة البيانات عند بناء التفاصيل.
         repo = ExpenseRepository()
-        self.records = repo.get_by_company(company_name, convert_to_display=False)
-        self.records = sorted(self.records, key=lambda x: x['date'])
-        if normalize_search_text(self.search_query):
-            filtered = [r for r in self.records if enrich_expense_match(r, self.search_query)]
-            # If the query matched only the company name, every row may be valid;
-            # keep all rows in that case so the user can still inspect the account.
-            if filtered:
-                self.records = filtered
+        self._all_records = sorted(repo.get_by_company(company_name, convert_to_display=False), key=lambda x: x['date'])
+        self.records = list(self._all_records)
+        self._page_size = 20
+        self._visible_limit = self._page_size
         self.spacing = 10
         self.expand = True
         self.scroll = ft.ScrollMode.AUTO
@@ -43,7 +44,39 @@ class CompanyDetailsMobileView(ft.Column):
             metric_tile("انتظار", self.waiting_text),
         ], visible=True, bgcolor=ft.Colors.GREY_100)
         self.people_summary = ft.Column(spacing=6, visible=False)
-        self.records_list = ft.Column(spacing=8, scroll=ft.ScrollMode.AUTO)
+        self.records_list = ft.Column(spacing=8)
+        self.local_search = search_field("ابحث داخل الحساب", self._on_filter_changed)
+        self.local_search.value = self.search_query
+        self.direction_filter = ft.Dropdown(
+            label="نوع الحركة", value="الكل", width=170,
+            options=[ft.dropdown.Option("الكل"), ft.dropdown.Option("لنا"), ft.dropdown.Option("له"), ft.dropdown.Option("انتظار")],
+            on_change=self._on_filter_changed, border_radius=12, filled=True,
+            border_color=BORDER, focused_border_color=PRIMARY,
+        )
+        persons = sorted({str(r.get('person_name') or '').strip() for r in self._all_records if str(r.get('person_name') or '').strip()})
+        self.person_filter = ft.Dropdown(
+            label="الشخص", value="الكل", width=190,
+            options=[ft.dropdown.Option("الكل")] + [ft.dropdown.Option(name) for name in persons],
+            on_change=self._on_filter_changed, border_radius=12, filled=True,
+            border_color=BORDER, focused_border_color=PRIMARY,
+        )
+        self.sort_filter = ft.Dropdown(
+            label="الترتيب", value="الأحدث أولاً", width=170,
+            options=[ft.dropdown.Option("الأحدث أولاً"), ft.dropdown.Option("الأقدم أولاً")],
+            on_change=self._on_filter_changed, border_radius=12, filled=True,
+            border_color=BORDER, focused_border_color=PRIMARY,
+        )
+        self.filter_surface = data_card(ft.Column([
+            self.local_search,
+            ft.Row([self.direction_filter, self.person_filter, self.sort_filter], spacing=8, run_spacing=8, wrap=True),
+        ], spacing=10), elevation=0)
+        self.pagination_text = ft.Text("", size=12, color=MUTED, text_align=ft.TextAlign.CENTER)
+        self.load_more_button = secondary_button("عرض المزيد", ft.Icons.EXPAND_MORE, self._load_more)
+        self.pagination_bar = ft.Container(
+            content=ft.Column([self.pagination_text, self.load_more_button], spacing=6, horizontal_alignment=ft.CrossAxisAlignment.CENTER),
+            visible=False,
+            padding=ft.Padding(left=12, right=12, top=4, bottom=12),
+        )
 
         self.report_actions = ft.Row([
             ft.FilledButton(
@@ -53,34 +86,14 @@ class CompanyDetailsMobileView(ft.Column):
                 color=ft.Colors.WHITE,
             ),
             ft.FilledButton(
-                content=ft.Row([ft.Icon(ft.Icons.PRINT), ft.Text("كشف للطباعة")], tight=True),
+                content=ft.Row([ft.Icon(ft.Icons.PRINT), ft.Text("كشف الحساب")], tight=True),
                 on_click=self._export_printable_statement,
                 bgcolor=PRIMARY,
                 color=ft.Colors.WHITE,
             ),
-            ft.FilledButton(
-                content=ft.Row([ft.Icon(ft.Icons.FACT_CHECK), ft.Text("كشف مطابقة")], tight=True),
-                on_click=self._export_reconciliation_statement,
-                bgcolor=PRIMARY,
-                color=ft.Colors.WHITE,
-            ),
-            ft.FilledButton(
-                content=ft.Row([ft.Icon(ft.Icons.SHARE), ft.Text("مشاركة")], tight=True),
-                on_click=self._share_statement,
-                bgcolor=SUCCESS,
-                color=ft.Colors.WHITE,
-            ),
-            ft.TextButton(
-                content=ft.Row([ft.Icon(ft.Icons.IMAGE), ft.Text("صورة")], tight=True),
-                on_click=self._share_statement_image_async,
-            ),
-            ft.TextButton(
-                content=ft.Row([ft.Icon(ft.Icons.CHAT), ft.Text("واتساب")], tight=True),
-                on_click=self._share_statement_whatsapp,
-            ),
-            ft.TextButton(
-                content=ft.Row([ft.Icon(ft.Icons.TABLE_VIEW), ft.Text("CSV")], tight=True),
-                on_click=self._export_csv_statement,
+            ft.OutlinedButton(
+                content=ft.Row([ft.Icon(ft.Icons.SHARE_OUTLINED), ft.Text("تصدير ومشاركة")], tight=True),
+                on_click=self._open_export_menu,
             ),
         ], spacing=8, wrap=True)
         search_banner = info_banner(
@@ -89,12 +102,108 @@ class CompanyDetailsMobileView(ft.Column):
             color=PRIMARY,
             bgcolor=PRIMARY_SOFT,
         ) if normalize_search_text(self.search_query) else ft.Container(width=0, height=0)
-        self.controls = [self.summary_panel, search_banner, self.report_actions, self.people_summary, ft.Divider(height=1), self.records_list]
+        self.controls = [
+            self.summary_panel, search_banner, self.report_actions, self.people_summary,
+            self.filter_surface, ft.Divider(height=1), self.records_list,
+            self.pagination_bar, ft.Container(height=24),
+        ]
         self._load_data()
 
     def _show_snackbar(self, message, is_error=False):
         show_snackbar(self._page, message, is_error)
 
+
+    def _on_filter_changed(self, e=None):
+        self._visible_limit = self._page_size
+        self.search_query = str(self.local_search.value or '').strip()
+        self._load_data()
+
+    def _load_more(self, e=None):
+        self._visible_limit += self._page_size
+        self._load_data()
+
+    def _filtered_records(self):
+        query = str(self.local_search.value or '').strip()
+        direction = self.direction_filter.value or "الكل"
+        person = self.person_filter.value or "الكل"
+        rows = []
+        normalized_query = normalize_search_text(query)
+        company_query = normalized_query and normalized_query == normalize_search_text(self.company_name)
+        for record in self._all_records:
+            if normalized_query and not company_query and not enrich_expense_match(record, query):
+                continue
+            if person != "الكل" and str(record.get('person_name') or '').strip() != person:
+                continue
+            is_waiting = record.get('status') == 'waiting_payment'
+            if direction == "لنا" and (record.get('type') != 'incoming' or is_waiting):
+                continue
+            if direction == "له" and (record.get('type') != 'outgoing' or is_waiting):
+                continue
+            if direction == "انتظار" and not is_waiting:
+                continue
+            rows.append(record)
+        rows.sort(key=lambda item: str(item.get('date') or ''), reverse=self.sort_filter.value != "الأقدم أولاً")
+        return rows
+
+    def _open_export_menu(self, e=None):
+        dlg = None
+
+        def run_and_close(callback):
+            def handler(event=None):
+                self._close_dialog(dlg)
+                callback(event)
+            return handler
+
+        dlg = ft.AlertDialog(
+            title=ft.Text("تصدير ومشاركة كشف الحساب", weight=ft.FontWeight.BOLD),
+            content=ft.Column([
+                modern_action_button("كشف مطابقة", ft.Icons.FACT_CHECK, run_and_close(self._export_reconciliation_statement)),
+                modern_action_button("مشاركة HTML", ft.Icons.SHARE, run_and_close(self._share_statement), color=SUCCESS, bgcolor="#E9F8F0"),
+                modern_action_button("صورة PNG", ft.Icons.IMAGE, run_and_close(lambda ev: run_async_task(self._page, self._share_statement_image_async, ev))),
+                modern_action_button("واتساب", ft.Icons.CHAT, run_and_close(self._share_statement_whatsapp), color=SUCCESS, bgcolor="#E9F8F0"),
+                modern_action_button("ملف CSV", ft.Icons.TABLE_VIEW, run_and_close(self._export_csv_statement)),
+            ], spacing=10, tight=True),
+            actions=[ft.TextButton("إلغاء", on_click=lambda ev: self._close_dialog(dlg))],
+        )
+        open_control(self._page, dlg)
+
+    def _open_record_actions(self, record):
+        is_viewer = UserSession.get_current() and UserSession.get_current().get('role') == 'viewer'
+        if is_viewer:
+            self._show_snackbar("الحساب للعرض فقط", False)
+            return
+        source_type = record.get('source_type')
+        locked = int(record.get('is_locked') or 0)
+        actions = []
+        dlg = None
+
+        def add_action(label, icon, callback, color=PRIMARY, bgcolor=PRIMARY_SOFT):
+            def handler(event=None):
+                self._close_dialog(dlg)
+                callback(record)
+            actions.append(modern_action_button(label, icon, handler, color=color, bgcolor=bgcolor))
+
+        if not source_type and not locked:
+            add_action("تعديل القيد", ft.Icons.EDIT, self._edit_record)
+            add_action("حذف القيد", ft.Icons.DELETE, self._delete_record, color=DANGER, bgcolor="#FDECEC")
+        elif source_type == 'third_party_payment':
+            add_action("تعديل العملية", ft.Icons.EDIT_NOTE, self._edit_third_party)
+            add_action("عكس العملية", ft.Icons.UNDO, self._reverse_third_party, color=WARNING, bgcolor="#FFF7E3")
+        elif source_type in ('service_case_client', 'service_case_supplier'):
+            add_action("تعديل ملف الخدمة", ft.Icons.EDIT_NOTE, self._edit_service_case)
+            add_action("عكس ملف الخدمة", ft.Icons.UNDO, self._reverse_service_case, color=WARNING, bgcolor="#FFF7E3")
+        elif source_type in ('direct_service_client', 'direct_service_supplier'):
+            add_action("تعديل الخدمة", ft.Icons.EDIT_NOTE, self._edit_direct_service)
+            add_action("عكس الخدمة", ft.Icons.UNDO, self._reverse_direct_service, color=WARNING, bgcolor="#FFF7E3")
+        if not actions:
+            self._show_snackbar("لا توجد إجراءات متاحة لهذا القيد", False)
+            return
+        dlg = ft.AlertDialog(
+            title=ft.Text("إجراءات القيد", weight=ft.FontWeight.BOLD),
+            content=ft.Column(actions, spacing=10, tight=True),
+            actions=[ft.TextButton("إغلاق", on_click=lambda ev: self._close_dialog(dlg))],
+        )
+        open_control(self._page, dlg)
 
     def _match_chip(self, record):
         match = enrich_expense_match(record, self.search_query)
@@ -114,8 +223,8 @@ class CompanyDetailsMobileView(ft.Column):
 
     def _load_data(self):
         display_curr = currency.get_display_currency()
-        approved_records = [r for r in self.records if r.get('status', 'approved') != 'waiting_payment']
-        waiting_count = len([r for r in self.records if r.get('status') == 'waiting_payment'])
+        approved_records = [r for r in self._all_records if r.get('status', 'approved') != 'waiting_payment']
+        waiting_count = len([r for r in self._all_records if r.get('status') == 'waiting_payment'])
         total_in_usd = sum(float(r['amount']) for r in approved_records if r['type'] == 'incoming')
         total_out_usd = sum(float(r['amount']) for r in approved_records if r['type'] == 'outgoing')
         net_usd = total_in_usd - total_out_usd
@@ -131,7 +240,7 @@ class CompanyDetailsMobileView(ft.Column):
         self.waiting_text.value = str(waiting_count)
 
         person_buckets = {}
-        for rr in self.records:
+        for rr in self._all_records:
             person = (rr.get('person_name') or '').strip()
             if not person:
                 continue
@@ -153,33 +262,39 @@ class CompanyDetailsMobileView(ft.Column):
             self.people_summary.controls = []
             self.people_summary.visible = False
 
-        cards = []
+        filtered_records = self._filtered_records()
+        chronological = sorted(filtered_records, key=lambda item: str(item.get('date') or ''))
+        running_by_key = {}
         running_usd = 0.0
+        for item in chronological:
+            if item.get('status') != 'waiting_payment':
+                running_usd += float(item.get('amount') or 0) if item.get('type') == 'incoming' else -float(item.get('amount') or 0)
+            running_by_key[item.get('id') or id(item)] = running_usd
+
+        visible_records = filtered_records[:self._visible_limit]
+        cards = []
         is_viewer = UserSession.get_current() and UserSession.get_current().get('role') == 'viewer'
 
-        for idx, r in enumerate(self.records, 1):
+        for idx, r in enumerate(visible_records, 1):
             amount_str = currency.format_amount(float(r.get('amount_original') or 0), r.get('currency_original') or display_curr)
             is_waiting = r.get('status') == 'waiting_payment'
             if r['type'] == 'incoming':
                 inc_out = amount_str
                 out_txt = "—"
-                if not is_waiting:
-                    running_usd += float(r['amount'])
                 amount_color = WARNING if is_waiting else SUCCESS
                 icon = ft.Icons.PAYMENTS if is_waiting else ft.Icons.ARROW_DOWNWARD
                 amount_label = "بانتظار الدفع" if is_waiting else "لنا"
             else:
                 inc_out = "—"
                 out_txt = amount_str
-                if not is_waiting:
-                    running_usd -= float(r['amount'])
                 amount_color = WARNING if is_waiting else DANGER
                 icon = ft.Icons.PAYMENTS if is_waiting else ft.Icons.ARROW_UPWARD
                 amount_label = "بانتظار الدفع" if is_waiting else "له"
 
-            running_display = currency.convert(running_usd, 'USD', display_curr)
+            row_running_usd = running_by_key.get(r.get('id') or id(r), 0.0)
+            running_display = currency.convert(row_running_usd, 'USD', display_curr)
             running_str = currency.format_amount(running_display, display_curr)
-            running_color = SUCCESS if running_usd >= 0 else DANGER
+            running_color = SUCCESS if row_running_usd >= 0 else DANGER
 
             card = data_card(
                 ft.Column([
@@ -220,14 +335,8 @@ class CompanyDetailsMobileView(ft.Column):
                         bgcolor=PRIMARY_SOFT,
                     ) if r.get('source_type') in ('direct_service_client', 'direct_service_supplier', 'direct_service_reversal') else ft.Container(width=0, height=0),
                     ft.Row([
-                        action_text_button("تعديل", ft.Icons.EDIT, lambda e, rec=r: self._edit_record(rec), color=PRIMARY, visible=(not is_viewer and not r.get('source_type') and not int(r.get('is_locked') or 0))),
-                        action_text_button("حذف", ft.Icons.DELETE, lambda e, rec=r: self._delete_record(rec), color=DANGER, visible=(not is_viewer and not r.get('source_type') and not int(r.get('is_locked') or 0))),
-                        action_text_button("تعديل العملية", ft.Icons.EDIT_NOTE, lambda e, rec=r: self._edit_third_party(rec), color=PRIMARY, visible=(not is_viewer and r.get('source_type') == 'third_party_payment')),
-                        action_text_button("عكس", ft.Icons.UNDO, lambda e, rec=r: self._reverse_third_party(rec), color=WARNING, visible=(not is_viewer and r.get('source_type') == 'third_party_payment')),
-                        action_text_button("تعديل ملف الخدمة", ft.Icons.EDIT_NOTE, lambda e, rec=r: self._edit_service_case(rec), color=PRIMARY, visible=(not is_viewer and r.get('source_type') in ('service_case_client', 'service_case_supplier'))),
-                        action_text_button("عكس ملف الخدمة", ft.Icons.UNDO, lambda e, rec=r: self._reverse_service_case(rec), color=WARNING, visible=(not is_viewer and r.get('source_type') in ('service_case_client', 'service_case_supplier'))),
-                        action_text_button("تعديل الخدمة", ft.Icons.EDIT_NOTE, lambda e, rec=r: self._edit_direct_service(rec), color=PRIMARY, visible=(not is_viewer and r.get('source_type') in ('direct_service_client', 'direct_service_supplier'))),
-                        action_text_button("عكس الخدمة", ft.Icons.UNDO, lambda e, rec=r: self._reverse_direct_service(rec), color=WARNING, visible=(not is_viewer and r.get('source_type') in ('direct_service_client', 'direct_service_supplier'))),
+                        ft.Text("اضغط لعرض الإجراءات", size=11, color=MUTED, expand=True),
+                        operation_menu_button(lambda e, rec=r: self._open_record_actions(rec), tooltip="إجراءات القيد"),
                     ], alignment=ft.MainAxisAlignment.END)
                 ], spacing=8),
                 padding=12,
@@ -237,8 +346,15 @@ class CompanyDetailsMobileView(ft.Column):
             cards.append(card)
 
         if not cards:
-            cards.append(empty_state("لا توجد قيود", icon=ft.Icons.RECEIPT_LONG, padding=30))
+            cards.append(empty_state("لا توجد قيود مطابقة", "غيّر البحث أو الفلاتر", icon=ft.Icons.RECEIPT_LONG, padding=30))
+            self.pagination_bar.visible = False
+        else:
+            shown = min(len(visible_records), len(filtered_records))
+            self.pagination_text.value = f"عرض {shown} من {len(filtered_records)} قيد"
+            self.load_more_button.visible = shown < len(filtered_records)
+            self.pagination_bar.visible = len(filtered_records) > self._page_size
 
+        self.records = filtered_records
         self.records_list.controls = cards
         self._page.update()
 
@@ -502,12 +618,12 @@ class CompanyDetailsMobileView(ft.Column):
     def _reload(self):
         try:
             repo = ExpenseRepository()
-            self.records = repo.get_by_company(self.company_name, convert_to_display=False)
-            self.records = sorted(self.records, key=lambda x: x['date'])
-            if normalize_search_text(self.search_query):
-                filtered = [r for r in self.records if enrich_expense_match(r, self.search_query)]
-                if filtered:
-                    self.records = filtered
+            self._all_records = sorted(repo.get_by_company(self.company_name, convert_to_display=False), key=lambda x: x['date'])
+            self._visible_limit = self._page_size
+            persons = sorted({str(r.get('person_name') or '').strip() for r in self._all_records if str(r.get('person_name') or '').strip()})
+            self.person_filter.options = [ft.dropdown.Option("الكل")] + [ft.dropdown.Option(name) for name in persons]
+            if self.person_filter.value not in (["الكل"] + persons):
+                self.person_filter.value = "الكل"
             self._load_data()
             if self.on_changed:
                 self.on_changed()

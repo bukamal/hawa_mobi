@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 import datetime
 import flet as ft
+from views.ui_kit import PRIMARY, PRIMARY_SOFT
 from database import ExpenseRepository
 from auth.session import UserSession
 from i18n.translator import translate
@@ -143,7 +144,7 @@ class AddEditExpenseDialog(ft.AlertDialog):
         )
 
         self.exchange_rate_text = ft.Text("", size=12, color=ft.Colors.GREY_600, italic=True)
-        self.converted_amount_text = ft.Text("", size=14, weight=ft.FontWeight.BOLD, color=ft.Colors.INDIGO)
+        self.converted_amount_text = ft.Text("", size=14, weight=ft.FontWeight.BOLD, color=PRIMARY)
 
         content = dialog_body(
             controls=[

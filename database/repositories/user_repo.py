@@ -1,6 +1,7 @@
 from database.repositories.base_repo import BaseRepository
 from auth.password import hash_password, verify_password
 from auth.session import UserSession
+from auth.password_policy import evaluate_password
 import datetime
 from typing import List, Dict, Optional
 
@@ -33,6 +34,9 @@ class UserRepository(BaseRepository):
             return user
         return None
     def create(self, username: str, password: str, full_name: str, role: str) -> int:
+        policy = evaluate_password(password)
+        if not policy.get('ok'):
+            raise ValueError("كلمة المرور لا تحقق السياسة: " + "، ".join(policy.get('problems') or []))
         if self.data.is_remote():
             data = {'username': username, 'password': password, 'full_name': full_name, 'role': role}
             return self.data.add_user(data)
@@ -47,6 +51,13 @@ class UserRepository(BaseRepository):
         self.db._log_audit_local(curr['id'] if curr else None, curr['username'] if curr else '', "إضافة مستخدم", 'users', uid, f"المستخدم: {username}")
         return uid
     def update(self, user_id: int, full_name: str, role: str):
+        user = self.get_by_id(user_id)
+        if not user:
+            raise ValueError("المستخدم غير موجود")
+        if user.get('role') == 'admin' and role != 'admin':
+            admins = [u for u in self.get_all() if u.get('role') == 'admin']
+            if len(admins) <= 1:
+                raise ValueError("لا يمكن تخفيض صلاحية آخر مدير في النظام")
         if self.data.is_remote():
             self.db.get_rest_client().update_user(user_id, {'full_name': full_name, 'role': role})
             return
@@ -70,11 +81,29 @@ class UserRepository(BaseRepository):
         curr = UserSession.get_current()
         self.db._log_audit_local(curr['id'] if curr else None, curr['username'] if curr else '', "تغيير كلمة المرور", 'users', user_id, "")
         return True
+    def can_delete(self, user_id: int) -> tuple[bool, str]:
+        current = UserSession.get_current() or {}
+        try:
+            if int(current.get('id') or -1) == int(user_id):
+                return False, "لا يمكن حذف المستخدم المسجل دخوله حاليًا"
+        except Exception:
+            pass
+        user = self.get_by_id(user_id)
+        if not user:
+            return False, "المستخدم غير موجود"
+        if user.get('role') == 'admin':
+            admins = [u for u in self.get_all() if u.get('role') == 'admin']
+            if len(admins) <= 1:
+                return False, "لا يمكن حذف آخر مدير في النظام"
+        return True, ""
+
     def delete(self, user_id: int) -> bool:
-        if user_id == 1: return False
+        allowed, reason = self.can_delete(user_id)
+        if not allowed:
+            raise ValueError(reason)
         if self.data.is_remote():
-            try: self.db.get_rest_client().delete_user(user_id); return True
-            except: return False
+            self.db.get_rest_client().delete_user(user_id)
+            return True
         user = self.get_by_id(user_id)
         conn = self.db.get_connection()
         conn.execute("DELETE FROM users WHERE id=?", (user_id,))
@@ -82,6 +111,7 @@ class UserRepository(BaseRepository):
         curr = UserSession.get_current()
         self.db._log_audit_local(curr['id'] if curr else None, curr['username'] if curr else '', "حذف مستخدم", 'users', user_id, f"المستخدم: {user['username']}")
         return True
+
     def set_force_password_change(self, user_id: int, force: bool):
         if self.data.is_remote(): return
         val = 1 if force else 0

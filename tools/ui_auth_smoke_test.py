@@ -21,8 +21,8 @@ for path in required_files:
     ast.parse(path.read_text(encoding='utf-8'))
 
 splash = (ROOT / 'views' / 'splash_view.py').read_text(encoding='utf-8')
-assert 'get_rest_client().health()' in splash
-assert 'UserSession.is_authenticated()' in splash
+assert 'get_rest_client().health' in splash and 'asyncio.to_thread' in splash
+assert 'UserSession.is_authenticated' in splash
 assert "on_complete({'activated': False" in splash
 
 login = (ROOT / 'views' / 'login_view.py').read_text(encoding='utf-8')

@@ -1,6 +1,6 @@
 [project]
 name = "hawaa-accounting"
-version = "1.0.43"
+version = "1.0.48"
 description = "نظام حسابات هوى الشام الداخلي"
 requires-python = ">=3.10"
 dependencies = [
@@ -46,14 +46,14 @@ module = "main"
 "*" = ["assets/*.png", "assets/icons/*.png", "assets/brand/*.png", "assets/android_res/*/*.png"]
 
 [tool.flet.splash]
-color = "#0B5F57"
+color = "#0A3F70"
 dark_color = "#082040"
 android = true
 ios = true
 web = true
 
 [tool.flet.android]
-adaptive_icon_background = "#0B5F57"
+adaptive_icon_background = "#0A3F70"
 
 [tool.flet.android.manifest_application]
 allowBackup = "false"

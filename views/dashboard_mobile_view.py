@@ -6,14 +6,15 @@ from i18n.translator import translate
 from datetime import datetime, timedelta
 from collections import defaultdict
 from views.flet_compat import open_control
-from views.ui_kit import show_snackbar, page_header, stat_card, empty_state, data_card, section_label, summary_bar, metric_tile, money_text, PRIMARY, PRIMARY_SOFT, SUCCESS, DANGER, WARNING, MUTED, TEXT
+from views.ui_kit import show_snackbar, page_header, stat_card, empty_state, data_card, section_label, summary_bar, metric_tile, money_text, primary_button, secondary_button, PRIMARY, PRIMARY_SOFT, SUCCESS, DANGER, WARNING, MUTED, TEXT, BORDER
+from views.design_system.responsive import responsive_grid, form_width
 
 class DashboardMobileView(ft.Column):
     def __init__(self, page):
         super().__init__()
         self._page = page
         self.expand = True
-        self.spacing = 15
+        self.spacing = 12
         self.scroll = ft.ScrollMode.AUTO
 
         self.period_filter = ft.Dropdown(
@@ -26,7 +27,11 @@ class DashboardMobileView(ft.Column):
                 ft.dropdown.Option("السنة الحالية"),
                 ft.dropdown.Option("مخصص")
             ],
-            width=180
+            width=min(230, form_width(page, 230)),
+            border_radius=12,
+            filled=True,
+            border_color=BORDER,
+            focused_border_color=PRIMARY,
         )
         self.period_filter.on_change = self._on_period_change
 
@@ -44,7 +49,7 @@ class DashboardMobileView(ft.Column):
             read_only=True,
             suffix=ft.IconButton(ft.Icons.CALENDAR_MONTH, on_click=self._open_end_date_picker)
         )
-        self.custom_date_row = ft.Row([self.start_date_picker, self.end_date_picker], spacing=10, visible=False)
+        self.custom_date_row = ft.Row([self.start_date_picker, self.end_date_picker], spacing=10, run_spacing=10, wrap=True, visible=False)
 
         self.refresh_btn = ft.IconButton(ft.Icons.REFRESH, on_click=self._refresh, tooltip="تحديث")
         self.transactions_count_text = ft.Text("", size=12, color=ft.Colors.GREY_600)
@@ -54,21 +59,27 @@ class DashboardMobileView(ft.Column):
         self._page.overlay.append(self.start_date_picker_obj)
         self._page.overlay.append(self.end_date_picker_obj)
 
-        self.cards_container = ft.Column(spacing=10, scroll=ft.ScrollMode.AUTO)
+        self.cards_container = ft.Column(spacing=16)
         self.quick_actions = ft.Row([
-            ft.OutlinedButton(content=ft.Row([ft.Icon(ft.Icons.ACCOUNT_BALANCE), ft.Text("الحسابات")], tight=True), on_click=lambda e: self._open_page("accounts")),
-            ft.OutlinedButton(content=ft.Row([ft.Icon(ft.Icons.INSIGHTS), ft.Text("التقارير")], tight=True), on_click=lambda e: self._open_page("reports")),
-            ft.OutlinedButton(content=ft.Row([ft.Icon(ft.Icons.TRAVEL_EXPLORE), ft.Text("الأرباح")], tight=True), on_click=self._open_profit_report),
-        ], spacing=8, wrap=True)
+            secondary_button("الحسابات", ft.Icons.ACCOUNT_BALANCE_OUTLINED, lambda e: self._open_page("accounts")),
+            secondary_button("التقارير", ft.Icons.INSERT_CHART_OUTLINED, lambda e: self._open_page("reports")),
+            secondary_button("الأرباح", ft.Icons.TRENDING_UP, self._open_profit_report),
+        ], spacing=8, run_spacing=8, wrap=True)
 
+        filter_surface = data_card(
+            ft.Column([
+                ft.Row([self.period_filter, self.refresh_btn], spacing=8, wrap=True, alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
+                self.custom_date_row,
+                self.transactions_count_text,
+            ], spacing=10),
+            elevation=0,
+        )
         self.controls = [
-            page_header("لوحة تحكم هوى الشام", icon=ft.Icons.DASHBOARD, trailing=self.refresh_btn, subtitle="مؤشرات الذمم والخدمات والأرباح والتشغيل"),
-            ft.Container(content=self.quick_actions, padding=ft.Padding(left=10, right=10, top=0, bottom=0)),
-            ft.Container(content=self.period_filter, padding=ft.Padding(left=10, right=10, top=0, bottom=0)),
-            ft.Container(content=self.custom_date_row, padding=ft.Padding(left=10, right=10, top=0, bottom=0)),
-            ft.Row([self.transactions_count_text], alignment=ft.MainAxisAlignment.CENTER),
-            ft.Divider(),
-            self.cards_container
+            page_header("لوحة تحكم هوى الشام", icon=ft.Icons.DASHBOARD, subtitle="مؤشرات الذمم والخدمات والأرباح والتشغيل"),
+            ft.Container(content=self.quick_actions, padding=ft.Padding(left=8, right=8, top=0, bottom=0)),
+            filter_surface,
+            self.cards_container,
+            ft.Container(height=24),
         ]
 
         self._load_data()
@@ -146,7 +157,7 @@ class DashboardMobileView(ft.Column):
         else:
             return None, None
 
-    def _create_card(self, title, value, color=ft.Colors.INDIGO, icon=None):
+    def _create_card(self, title, value, color=PRIMARY, icon=None):
         resolved_icon = icon or (ft.Icons.TRENDING_UP if color == ft.Colors.GREEN else ft.Icons.TRENDING_DOWN)
         return stat_card(title, value, color=color, icon=resolved_icon)
 
@@ -288,46 +299,55 @@ class DashboardMobileView(ft.Column):
                 ft.Column([
                     ft.Row([
                         ft.Column([
-                            ft.Text('المؤشر العام', size=12, color=MUTED),
-                            money_text(currency.format_amount(base_net, display_curr), color=SUCCESS if historical_base['net'] >= 0 else DANGER, size=24),
-                            ft.Text('الصافي المحسوب بالأسعار التاريخية', size=11, color=MUTED),
-                        ], expand=True, spacing=3),
-                        ft.Container(content=ft.Icon(ft.Icons.ACCOUNT_BALANCE_WALLET, color=PRIMARY, size=28), bgcolor=PRIMARY_SOFT, border_radius=18, padding=12),
+                            ft.Text('صافي الذمم', size=12, color=MUTED),
+                            money_text(currency.format_amount(base_net, display_curr), color=SUCCESS if historical_base['net'] >= 0 else DANGER, size=28),
+                            ft.Text('محسوب بالأسعار التاريخية للقيود', size=11, color=MUTED),
+                        ], expand=True, spacing=4),
+                        ft.Container(content=ft.Icon(ft.Icons.ACCOUNT_BALANCE_WALLET_OUTLINED, color=PRIMARY, size=30), bgcolor=PRIMARY_SOFT, border_radius=18, padding=13),
                     ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
                     summary_bar([
-                        metric_tile('لنا', money_text(currency.format_amount(base_in, display_curr), color=SUCCESS, size=14)),
-                        metric_tile('له', money_text(currency.format_amount(base_out, display_curr), color=DANGER, size=14)),
-                        metric_tile('ربح الخدمات', money_text(currency.format_amount(total_profit_display, display_curr), color=SUCCESS if total_profit_display >= 0 else DANGER, size=14)),
+                        metric_tile('لنا', money_text(currency.format_amount(base_in, display_curr), color=SUCCESS, size=15)),
+                        metric_tile('له', money_text(currency.format_amount(base_out, display_curr), color=DANGER, size=15)),
+                        metric_tile('ربح الخدمات', money_text(currency.format_amount(total_profit_display, display_curr), color=SUCCESS if total_profit_display >= 0 else DANGER, size=15)),
                     ], visible=True, bgcolor=PRIMARY_SOFT),
-                ], spacing=10),
-                padding=14,
-                elevation=2,
+                ], spacing=12),
+                padding=18,
+                elevation=0,
             )
 
-            cards = [
-                hero,
-                ft.Container(content=section_label('مؤشرات مالية', ft.Icons.PIE_CHART), padding=ft.Padding(left=12, right=12, top=4, bottom=0)),
-                self._create_card('لنا حسب العملة', format_currency_lines('incoming'), ft.Colors.GREEN, ft.Icons.SOUTH_WEST),
-                self._create_card('له حسب العملة', format_currency_lines('outgoing'), ft.Colors.RED, ft.Icons.NORTH_EAST),
-                self._create_card('الصافي حسب العملة', format_currency_lines('net', with_direction=True), ft.Colors.GREEN if historical_base['net'] >= 0 else ft.Colors.RED, ft.Icons.ACCOUNT_BALANCE),
-                self._create_card(f'إجمالي تقريبي بـ {display_curr}', f"لنا: {currency.format_amount(base_in, display_curr)}\nله: {currency.format_amount(base_out, display_curr)}\nالصافي: {currency.format_amount(base_net, display_curr)}", ft.Colors.INDIGO, ft.Icons.CURRENCY_EXCHANGE),
-                ft.Container(content=section_label('تشغيل الخدمات والسفر', ft.Icons.TRAVEL_EXPLORE), padding=ft.Padding(left=12, right=12, top=8, bottom=0)),
-                self._create_card('أرباح الخدمات', currency.format_amount(total_profit_display, display_curr), ft.Colors.GREEN if total_profit_display >= 0 else ft.Colors.RED, ft.Icons.TRENDING_UP),
-                self._create_card('ملفات خدمة مفتوحة', f"عبر مورد: {len(open_service_cases)}\nمباشرة: {len(open_direct_services)}", ft.Colors.BLUE, ft.Icons.TRAVEL_EXPLORE),
-                self._create_card('خدمات منخفضة الربح', str(low_profit_count), ft.Colors.ORANGE if low_profit_count else ft.Colors.TEAL, ft.Icons.WARNING_AMBER),
-                self._create_card('سدد عني', str(len(third_party_payments)), ft.Colors.TEAL, ft.Icons.SWAP_HORIZ),
-                ft.Container(content=section_label('سلامة الدفتر', ft.Icons.VERIFIED), padding=ft.Padding(left=12, right=12, top=8, bottom=0)),
-                self._create_card('قيود مقفلة مترابطة', str(locked_entries), ft.Colors.INDIGO, ft.Icons.LOCK),
-                self._create_card('عمليات مركبة', str(composite_entries), ft.Colors.PURPLE, ft.Icons.LINK),
-                self._create_card("عدد الشركات", str(len(companies)), ft.Colors.BLUE, ft.Icons.BUSINESS),
-                self._create_card("بانتظار الدفع", str(len(waiting_payment)), ft.Colors.ORANGE, ft.Icons.PAYMENTS),
-                self._create_card("عدد المستخدمين", str(users_count), ft.Colors.ORANGE, ft.Icons.PEOPLE),
-                self._create_card("أعلى شركة تقريبياً", f"{top_company[0]}\n({currency.format_amount(top_display, display_curr)})", ft.Colors.TEAL, ft.Icons.EMOJI_EVENTS),
-                self._create_card("سعر الصرف الحالي", rate_text, ft.Colors.INDIGO, ft.Icons.MONEY),
+            financial_cards = [
+                self._create_card('لنا حسب العملة', format_currency_lines('incoming'), SUCCESS, ft.Icons.SOUTH_WEST),
+                self._create_card('له حسب العملة', format_currency_lines('outgoing'), DANGER, ft.Icons.NORTH_EAST),
+                self._create_card('الصافي حسب العملة', format_currency_lines('net', with_direction=True), SUCCESS if historical_base['net'] >= 0 else DANGER, ft.Icons.ACCOUNT_BALANCE),
+                self._create_card(f'إجمالي تقريبي بـ {display_curr}', f"لنا: {currency.format_amount(base_in, display_curr)}\nله: {currency.format_amount(base_out, display_curr)}\nالصافي: {currency.format_amount(base_net, display_curr)}", PRIMARY, ft.Icons.CURRENCY_EXCHANGE),
             ]
-            self.cards_container.controls = cards
+            service_cards = [
+                self._create_card('أرباح الخدمات', currency.format_amount(total_profit_display, display_curr), SUCCESS if total_profit_display >= 0 else DANGER, ft.Icons.TRENDING_UP),
+                self._create_card('ملفات خدمة مفتوحة', f"عبر مورد: {len(open_service_cases)}\nمباشرة: {len(open_direct_services)}", PRIMARY, ft.Icons.TRAVEL_EXPLORE),
+                self._create_card('خدمات منخفضة الربح', str(low_profit_count), WARNING if low_profit_count else SUCCESS, ft.Icons.WARNING_AMBER),
+                self._create_card('سدد عني', str(len(third_party_payments)), PRIMARY, ft.Icons.SWAP_HORIZ),
+            ]
+            integrity_cards = [
+                self._create_card('قيود مقفلة مترابطة', str(locked_entries), PRIMARY, ft.Icons.LOCK),
+                self._create_card('عمليات مركبة', str(composite_entries), PRIMARY, ft.Icons.LINK),
+                self._create_card('عدد الشركات', str(len(companies)), PRIMARY, ft.Icons.BUSINESS),
+                self._create_card('بانتظار الدفع', str(len(waiting_payment)), WARNING, ft.Icons.PAYMENTS),
+                self._create_card('عدد المستخدمين', str(users_count), PRIMARY, ft.Icons.PEOPLE),
+                self._create_card('أعلى شركة تقريبياً', f"{top_company[0]}\n({currency.format_amount(top_display, display_curr)})", SUCCESS, ft.Icons.EMOJI_EVENTS),
+                self._create_card('سعر الصرف الحالي', rate_text, PRIMARY, ft.Icons.MONEY),
+            ]
 
-            self.transactions_count_text.value = f"📊 عدد القيود في هذه الفترة: {len(filtered)} | ⏳ بانتظار الدفع: {len(waiting_payment)}"
+            self.cards_container.controls = [
+                hero,
+                ft.Container(content=section_label('مؤشرات مالية', ft.Icons.PIE_CHART_OUTLINE), padding=ft.Padding(left=8, right=8, top=4, bottom=0)),
+                responsive_grid(financial_cards, self._page, min_item_width=250),
+                ft.Container(content=section_label('تشغيل الخدمات والسفر', ft.Icons.TRAVEL_EXPLORE), padding=ft.Padding(left=8, right=8, top=8, bottom=0)),
+                responsive_grid(service_cards, self._page, min_item_width=250),
+                ft.Container(content=section_label('سلامة الدفتر', ft.Icons.VERIFIED_OUTLINED), padding=ft.Padding(left=8, right=8, top=8, bottom=0)),
+                responsive_grid(integrity_cards, self._page, min_item_width=250),
+            ]
+
+            self.transactions_count_text.value = f"عدد القيود: {len(filtered)} — بانتظار الدفع: {len(waiting_payment)}"
             self._page.update()
         except Exception as ex:
             self._show_snackbar(f"خطأ في تحديث لوحة التحكم: {str(ex)}", True)

@@ -6,8 +6,9 @@ from auth.session import UserSession
 from i18n.translator import translate
 from currency import currency
 from collections import defaultdict
-from views.ui_kit import show_snackbar, page_header, search_field, summary_bar, metric_tile, empty_state, action_text_button, data_card, amount_pill, key_value_tile, pill, info_banner, PRIMARY, PRIMARY_SOFT, SUCCESS, DANGER, WARNING, TEXT, MUTED, money_text, modern_action_button
+from views.ui_kit import show_snackbar, page_header, search_field, summary_bar, metric_tile, empty_state, action_text_button, data_card, amount_pill, key_value_tile, pill, info_banner, secondary_button, PRIMARY, PRIMARY_SOFT, SUCCESS, DANGER, WARNING, TEXT, MUTED, BORDER, money_text, modern_action_button
 from services.company_search_service import normalize_search_text
+from views.design_system.interaction import DebouncedAction
 
 
 class AccountsMobileView(ft.Column):
@@ -18,9 +19,25 @@ class AccountsMobileView(ft.Column):
         self.spacing = 10
         self.scroll = ft.ScrollMode.AUTO
         self._last_search_results = []
+        self._page_size = 20
+        self._visible_limit = self._page_size
+        self._filtered_company_count = 0
+        self._search_debouncer = DebouncedAction(page, self._apply_search, delay_seconds=0.30)
 
-        self.search_field = search_field(translate('company_deep_search_hint'), self._refresh_cards)
+        self.search_field = search_field(translate('company_deep_search_hint'), self._on_search_changed)
         self.search_status = ft.Container(visible=False)
+        self.balance_filter = ft.Dropdown(
+            label="حالة الرصيد", value="الكل", width=170,
+            options=[ft.dropdown.Option("الكل"), ft.dropdown.Option("لنا"), ft.dropdown.Option("له"), ft.dropdown.Option("بانتظار الدفع")],
+            border_radius=12, filled=True, border_color=BORDER, focused_border_color=PRIMARY,
+            on_change=self._on_filter_changed,
+        )
+        self.sort_field = ft.Dropdown(
+            label="الترتيب", value="الاسم", width=170,
+            options=[ft.dropdown.Option("الاسم"), ft.dropdown.Option("أكبر رصيد"), ft.dropdown.Option("آخر حركة")],
+            border_radius=12, filled=True, border_color=BORDER, focused_border_color=PRIMARY,
+            on_change=self._on_filter_changed,
+        )
 
         self.net_text = money_text("0", size=24, color=PRIMARY)
         self.companies_count_text = money_text("0", size=23, color=PRIMARY)
@@ -32,7 +49,14 @@ class AccountsMobileView(ft.Column):
             metric_tile("القيود", self.records_count_text),
         ], visible=False)
 
-        self.cards_container = ft.Column(spacing=10, scroll=ft.ScrollMode.AUTO, expand=True)
+        self.cards_container = ft.Column(spacing=10, expand=True)
+        self.pagination_text = ft.Text("", size=12, color=MUTED, text_align=ft.TextAlign.CENTER)
+        self.load_more_button = secondary_button("عرض المزيد", ft.Icons.EXPAND_MORE, self._load_more)
+        self.pagination_bar = ft.Container(
+            content=ft.Column([self.pagination_text, self.load_more_button], spacing=6, horizontal_alignment=ft.CrossAxisAlignment.CENTER),
+            visible=False,
+            padding=ft.Padding(left=12, right=12, top=4, bottom=12),
+        )
 
         self.fab = make_floating_action_button(
             icon=ft.Icons.ADD,
@@ -45,22 +69,47 @@ class AccountsMobileView(ft.Column):
             shape=ft.CircleBorder()
         )
 
+        filters = data_card(
+            ft.Column([
+                self.search_field,
+                ft.Row([self.balance_filter, self.sort_field], spacing=8, run_spacing=8, wrap=True),
+            ], spacing=10),
+            elevation=0,
+        )
         self.controls = [
-            page_header(translate('accounts'), icon=ft.Icons.ACCOUNT_BALANCE, subtitle=translate('accounts_search_subtitle')),
-            ft.Container(content=ft.Row([
-                ft.OutlinedButton(content=ft.Row([ft.Icon(ft.Icons.INSIGHTS, color=PRIMARY), ft.Text('تقرير أرباح الخدمات', color=PRIMARY, weight=ft.FontWeight.BOLD)], tight=True), on_click=self._export_service_profit_report),
-            ], alignment=ft.MainAxisAlignment.END), padding=ft.Padding(left=10, right=10, top=0, bottom=0)),
-            ft.Container(content=self.search_field, padding=ft.Padding(left=10, right=10, top=0, bottom=0)),
+            page_header(
+                translate('accounts'), icon=ft.Icons.ACCOUNT_BALANCE_OUTLINED,
+                subtitle=translate('accounts_search_subtitle'),
+                trailing=ft.IconButton(icon=ft.Icons.INSERT_CHART_OUTLINED, tooltip='تقرير أرباح الخدمات', on_click=self._export_service_profit_report, icon_color=PRIMARY),
+            ),
+            filters,
             self.search_status,
             self.summary_bar,
-            self.cards_container
+            self.cards_container,
+            self.pagination_bar,
+            ft.Container(height=88),
         ]
 
         self._page.floating_action_button = self.fab
-        self._refresh_cards(None)
+        self._refresh_cards(None, reset_page=True)
 
     def _show_snackbar(self, message, is_error=False):
         show_snackbar(self._page, message, is_error)
+
+    def _on_search_changed(self, e=None):
+        self._visible_limit = self._page_size
+        self._search_debouncer.trigger(e)
+
+    def _apply_search(self, e=None):
+        self._refresh_cards(e, reset_page=True)
+
+    def _on_filter_changed(self, e=None):
+        self._visible_limit = self._page_size
+        self._refresh_cards(e, reset_page=True)
+
+    def _load_more(self, e=None):
+        self._visible_limit += self._page_size
+        self._refresh_cards(e, reset_page=False)
 
     def _current_search(self) -> str:
         return (self.search_field.value or "").strip()
@@ -125,7 +174,9 @@ class AccountsMobileView(ft.Column):
             controls.append(ft.Text(f"+ {len(matches)-3} {translate('more_matches')}", size=11, color=ft.Colors.GREY_600))
         return controls
 
-    def _refresh_cards(self, e):
+    def _refresh_cards(self, e=None, reset_page=False):
+        if reset_page:
+            self._visible_limit = self._page_size
         try:
             repo = ExpenseRepository()
             expenses = repo.get_all(convert_to_display=False)
@@ -153,7 +204,7 @@ class AccountsMobileView(ft.Column):
             self._last_search_results = []
             self._search_banner('', 0)
 
-        groups = defaultdict(lambda: {'incoming': 0.0, 'outgoing': 0.0, 'records': [], 'waiting_payment': 0, 'persons': set()})
+        groups = defaultdict(lambda: {'incoming': 0.0, 'outgoing': 0.0, 'records': [], 'waiting_payment': 0, 'persons': set(), 'last_date': ''})
         for ex in expenses:
             company = ex.get('company_name') or ''
             if visible_companies is not None and company not in visible_companies:
@@ -165,18 +216,40 @@ class AccountsMobileView(ft.Column):
             if (ex.get('person_name') or '').strip():
                 groups[company]['persons'].add((ex.get('person_name') or '').strip())
             groups[company]['records'].append(ex)
+            groups[company]['last_date'] = max(str(groups[company].get('last_date') or ''), str(ex.get('date') or ''))
 
         display_curr = currency.get_display_currency()
         cards = []
         total_net = 0.0
         total_records = 0
 
-        for company, vals in sorted(groups.items()):
+        company_items = list(groups.items())
+        if self.sort_field.value == "أكبر رصيد":
+            company_items.sort(key=lambda item: abs(float(item[1].get('incoming') or 0) - float(item[1].get('outgoing') or 0)), reverse=True)
+        elif self.sort_field.value == "آخر حركة":
+            company_items.sort(key=lambda item: str(item[1].get('last_date') or ''), reverse=True)
+        else:
+            company_items.sort(key=lambda item: str(item[0]))
+
+        eligible_items = []
+        selected_filter = self.balance_filter.value or "الكل"
+        for company, vals in company_items:
             inc = currency.convert(vals['incoming'], 'USD', display_curr)
             out = currency.convert(vals['outgoing'], 'USD', display_curr)
             net = inc - out
+            if selected_filter == "لنا" and net <= 0:
+                continue
+            if selected_filter == "له" and net >= 0:
+                continue
+            if selected_filter == "بانتظار الدفع" and vals['waiting_payment'] <= 0:
+                continue
+            eligible_items.append((company, vals, inc, out, net))
             total_net += net
             total_records += len(vals['records'])
+
+        self._filtered_company_count = len(eligible_items)
+        visible_items = eligible_items[:self._visible_limit]
+        for company, vals, inc, out, net in visible_items:
             matches = matching_by_company.get(company, [])
 
             net_color = SUCCESS if net >= 0 else DANGER
@@ -198,16 +271,16 @@ class AccountsMobileView(ft.Column):
                 ], spacing=6),
                 ft.Divider(height=1, color=ft.Colors.GREY_200),
                 ft.Row([
-                    key_value_tile("📥 لنا", currency.format_amount(inc, display_curr), SUCCESS),
+                    key_value_tile("لنا", currency.format_amount(inc, display_curr), SUCCESS),
                     ft.VerticalDivider(width=1, color=ft.Colors.GREY_200),
-                    key_value_tile("📤 له", currency.format_amount(out, display_curr), DANGER),
+                    key_value_tile("له", currency.format_amount(out, display_curr), DANGER),
                     ft.VerticalDivider(width=1, color=ft.Colors.GREY_200),
-                    key_value_tile("📋 عدد", str(len(vals['records']))),
+                    key_value_tile("القيود", str(len(vals['records']))),
                     ft.VerticalDivider(width=1, color=ft.Colors.GREY_200),
-                    key_value_tile("👥 أشخاص", str(len(vals.get('persons') or []))),
+                    key_value_tile("الأشخاص", str(len(vals.get('persons') or []))),
                 ], alignment=ft.MainAxisAlignment.SPACE_AROUND),
                 pill(
-                    f"⏳ بانتظار الدفع: {vals['waiting_payment']}",
+                    f"بانتظار الدفع: {vals['waiting_payment']}",
                     color=WARNING,
                     bgcolor="#FFF7E3",
                 ) if vals['waiting_payment'] > 0 else ft.Container(width=0, height=0),
@@ -215,11 +288,9 @@ class AccountsMobileView(ft.Column):
             content_controls.extend(self._match_preview_controls(company, matches, raw_search))
             content_controls.append(
                 ft.Row([
-                    action_text_button("قيد", ft.Icons.ADD, lambda e, c=company: self._add_record(c), color=SUCCESS),
-                    action_text_button("سداد عني", ft.Icons.SWAP_HORIZ, lambda e, c=company: self._add_third_party_payment(paid_to_company=c), color=PRIMARY),
-                    action_text_button("خدمة", ft.Icons.TRAVEL_EXPLORE, lambda e, c=company: self._add_service_case(client_company=c), color=PRIMARY),
-                    action_text_button("مباشرة", ft.Icons.PERSON_ADD_ALT, lambda e, c=company: self._add_direct_service(company_name=c), color=WARNING),
-                ], alignment=ft.MainAxisAlignment.SPACE_AROUND, wrap=True)
+                    ft.Text(f"آخر حركة: {vals.get('last_date') or '—'}", size=11, color=MUTED, expand=True),
+                    modern_action_button("إضافة عملية", ft.Icons.ADD, lambda e, c=company: self._open_company_action_menu(c), color=PRIMARY, bgcolor=PRIMARY_SOFT),
+                ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN, vertical_alignment=ft.CrossAxisAlignment.CENTER)
             )
             card = data_card(
                 ft.Column(content_controls, spacing=10),
@@ -233,11 +304,16 @@ class AccountsMobileView(ft.Column):
         if cards:
             self.net_text.value = currency.format_amount(total_net, display_curr)
             self.net_text.color = SUCCESS if total_net >= 0 else DANGER
-            self.companies_count_text.value = str(len(cards))
+            self.companies_count_text.value = str(self._filtered_company_count)
             self.records_count_text.value = str(total_records)
             self.summary_bar.visible = True
+            shown = min(len(visible_items), self._filtered_company_count)
+            self.pagination_text.value = f"عرض {shown} من {self._filtered_company_count} شركة"
+            self.load_more_button.visible = shown < self._filtered_company_count
+            self.pagination_bar.visible = self._filtered_company_count > self._page_size
         else:
             self.summary_bar.visible = False
+            self.pagination_bar.visible = False
             title = "لا توجد نتائج" if normalized_query else "لا توجد بيانات"
             subtitle = "جرّب اسمًا آخر أو كلمة من الملاحظات" if normalized_query else "اضغط + لإضافة قيد جديد"
             cards.append(empty_state(title, subtitle, icon=ft.Icons.SEARCH_OFF))
@@ -269,7 +345,7 @@ class AccountsMobileView(ft.Column):
         from views.company_details_mobile_view import CompanyDetailsMobileView
         dialog = ft.AlertDialog(
             title=ft.Row([ft.Icon(ft.Icons.BUSINESS, color=PRIMARY), ft.Text(company_name, size=18, weight=ft.FontWeight.BOLD, expand=True)]),
-            content=ft.Container(content=CompanyDetailsMobileView(self._page, company_name, records, on_changed=lambda: self._refresh_cards(None), search_query=search_query), height=500, width=400),
+            content=ft.Container(content=CompanyDetailsMobileView(self._page, company_name, records, on_changed=lambda: self._refresh_cards(None, reset_page=True), search_query=search_query), height=500, width=400),
             actions=[ft.TextButton("إغلاق", on_click=lambda e: self._close_dialog(dialog))],
             inset_padding=20,
             scrollable=True
@@ -278,6 +354,30 @@ class AccountsMobileView(ft.Column):
 
     def _close_dialog(self, dialog):
         close_control(self._page, dialog)
+
+    def _open_company_action_menu(self, company_name):
+        if UserSession.get_current() and UserSession.get_current().get('role') == 'viewer':
+            self._show_snackbar("ليس لديك صلاحية لإضافة عمليات", True)
+            return
+        dlg = None
+
+        def close_then(callback):
+            def handler(_):
+                self._close_dialog(dlg)
+                callback()
+            return handler
+
+        dlg = ft.AlertDialog(
+            title=ft.Text(f"إضافة عملية — {company_name}", weight=ft.FontWeight.BOLD),
+            content=ft.Column([
+                modern_action_button("قيد عادي", ft.Icons.ADD, close_then(lambda: self._add_record(company_name)), color=SUCCESS, bgcolor="#E9F8F0"),
+                modern_action_button("ملف خدمة", ft.Icons.TRAVEL_EXPLORE, close_then(lambda: self._add_service_case(client_company=company_name))),
+                modern_action_button("خدمة مباشرة", ft.Icons.PERSON_ADD_ALT, close_then(lambda: self._add_direct_service(company_name=company_name)), color=WARNING, bgcolor="#FFF7E3"),
+                modern_action_button("سداد بالنيابة", ft.Icons.SWAP_HORIZ, close_then(lambda: self._add_third_party_payment(paid_to_company=company_name))),
+            ], spacing=10, tight=True),
+            actions=[ft.TextButton("إلغاء", on_click=lambda e: self._close_dialog(dlg))],
+        )
+        open_control(self._page, dlg)
 
     def _open_add_menu(self, e):
         if UserSession.get_current() and UserSession.get_current().get('role') == 'viewer':
@@ -341,7 +441,7 @@ class AccountsMobileView(ft.Column):
         from views.dialogs.direct_service_dialog import DirectServiceDialog
         dialog = DirectServiceDialog(
             page=self._page,
-            on_save=lambda _: self._refresh_cards(None),
+            on_save=lambda _: self._refresh_cards(None, reset_page=True),
             supplier_company_name=company_name,
         )
         open_control(self._page, dialog)
@@ -353,7 +453,7 @@ class AccountsMobileView(ft.Column):
         from views.dialogs.service_case_dialog import ServiceCaseDialog
         dialog = ServiceCaseDialog(
             page=self._page,
-            on_save=lambda _: self._refresh_cards(None),
+            on_save=lambda _: self._refresh_cards(None, reset_page=True),
             client_company_name=client_company,
             supplier_company_name=supplier_company,
         )
@@ -366,7 +466,7 @@ class AccountsMobileView(ft.Column):
         from views.dialogs.third_party_payment_dialog import ThirdPartyPaymentDialog
         dialog = ThirdPartyPaymentDialog(
             page=self._page,
-            on_save=lambda _: self._refresh_cards(None),
+            on_save=lambda _: self._refresh_cards(None, reset_page=True),
             payer_company_name=payer_company,
             paid_to_company_name=paid_to_company,
         )
@@ -378,7 +478,7 @@ class AccountsMobileView(ft.Column):
             return
         from views.dialogs.add_edit_expense_dialog import AddEditExpenseDialog
         try:
-            dialog = AddEditExpenseDialog(page=self._page, on_save=lambda _: self._refresh_cards(None), company_name=company_name)
+            dialog = AddEditExpenseDialog(page=self._page, on_save=lambda _: self._refresh_cards(None, reset_page=True), company_name=company_name)
             open_control(self._page, dialog)
         except Exception as e:
             self._show_snackbar(f"خطأ في إنشاء الحوار: {str(e)}", True)

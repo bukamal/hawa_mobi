@@ -1,0 +1,87 @@
+# -*- coding: utf-8 -*-
+"""Semantic design tokens.
+
+Views must use semantic tokens rather than raw colors and arbitrary dimensions.
+The legacy aliases are intentionally kept in ``views.ui_kit`` for backwards
+compatibility with older screens while Phase 100 migrates the complete project.
+"""
+from __future__ import annotations
+
+# Brand. Keep the supplied visual identity seed used by reports and launcher.
+BRAND_PRIMARY = "#0A3F70"
+BRAND_PRIMARY_DARK = "#062B4D"
+BRAND_PRIMARY_LIGHT = "#EAF4FF"
+BRAND_PRIMARY_TINT = "#F4F8FC"
+BRAND_ACCENT = "#168AAD"
+BRAND_GOLD = "#D9A441"
+
+# Light semantic surfaces.
+LIGHT_BACKGROUND = "#F5F7FA"
+LIGHT_SURFACE = "#FFFFFF"
+LIGHT_SURFACE_ALT = "#F8FAFC"
+LIGHT_SURFACE_RAISED = "#FFFFFF"
+LIGHT_TEXT_PRIMARY = "#17212B"
+LIGHT_TEXT_SECONDARY = "#64748B"
+LIGHT_BORDER = "#E2E8F0"
+LIGHT_DIVIDER = "#EDF2F7"
+
+# Dark semantic surfaces.
+DARK_BACKGROUND = "#0D141C"
+DARK_SURFACE = "#17212B"
+DARK_SURFACE_ALT = "#1E2A36"
+DARK_SURFACE_RAISED = "#243240"
+DARK_TEXT_PRIMARY = "#F1F5F9"
+DARK_TEXT_SECONDARY = "#94A3B8"
+DARK_BORDER = "#334155"
+DARK_DIVIDER = "#263646"
+
+# Financial and state colors.
+FINANCIAL_RECEIVABLE = "#2563EB"   # لنا
+FINANCIAL_PAYABLE = "#D97706"      # له
+STATE_SUCCESS = "#1FA56A"
+STATE_SUCCESS_SOFT = "#E9F8F0"
+STATE_DANGER = "#E54848"
+STATE_DANGER_SOFT = "#FDECEC"
+STATE_WARNING = "#D9A441"
+STATE_WARNING_SOFT = "#FFF7E3"
+STATE_INFO = "#0369A1"
+STATE_INFO_SOFT = "#E8F4FA"
+STATE_DISABLED = "#94A3B8"
+
+# Type scale.
+TEXT_CAPTION = 11
+TEXT_SECONDARY = 12
+TEXT_BODY = 14
+TEXT_BUTTON = 14
+TEXT_CARD_TITLE = 16
+TEXT_SECTION_TITLE = 18
+TEXT_PAGE_TITLE = 22
+TEXT_MONEY_HERO = 26
+
+# Spacing scale (4pt grid).
+SPACE_1 = 4
+SPACE_2 = 8
+SPACE_3 = 12
+SPACE_4 = 16
+SPACE_5 = 20
+SPACE_6 = 24
+SPACE_8 = 32
+
+# Shape and touch.
+RADIUS_FIELD = 10
+RADIUS_BUTTON = 10
+RADIUS_CARD = 14
+RADIUS_DIALOG = 18
+RADIUS_SHEET = 24
+TOUCH_TARGET = 48
+
+# Responsive dimensions.
+PHONE_MAX = 599
+TABLET_MAX = 1023
+DESKTOP_MIN = 1024
+CONTENT_MAX_WIDTH = 1360
+FORM_MAX_WIDTH = 720
+DIALOG_MAX_WIDTH = 560
+PHONE_GUTTER = 16
+TABLET_GUTTER = 24
+DESKTOP_GUTTER = 32
