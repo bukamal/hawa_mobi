@@ -18,6 +18,8 @@ import flet as ft
 
 ARABIC_FONT_FAMILY = "Arial"
 _STACK_ATTR = "_hawaa_dialog_stack"
+_HOST_ATTR = "_hawaa_modal_host"
+_SOURCE_ATTR = "_hawaa_modal_source"
 
 
 def _resolve_alignment(lower_name: str, upper_name: str, x: float, y: float):
@@ -176,66 +178,162 @@ def _ensure_overlay_contains(page, control) -> None:
         pass
 
 
-def _install_dialog_dismiss_cleanup(page, control) -> None:
-    """Ensure Android modal surfaces are purged when a dialog is dismissed.
-
-    Some Flet builds call ``on_dismiss`` when the user taps outside a dialog or
-    presses Android Back.  Wrap that callback so our app-managed stack/overlay is
-    also cleaned.  The explicit close buttons still call ``close_control``.
-    """
-    if page is None or control is None:
-        return
+def _dialog_host_for(control):
     try:
-        if getattr(control, "_hawaa_dismiss_cleanup_installed", False):
-            return
-        original = getattr(control, "on_dismiss", None)
+        return getattr(control, _HOST_ATTR, None)
+    except Exception:
+        return None
 
-        def _cleanup(ev=None):
-            try:
-                if callable(original):
-                    original(ev)
-            finally:
-                try:
-                    control.open = False
-                except Exception:
-                    pass
-                _remove_from_stack(page, control)
-                _remove_from_overlay(page, control)
-                try:
-                    if getattr(page, "dialog", None) is control:
-                        page.dialog = None
-                except Exception:
-                    pass
-                try:
-                    page.update()
-                except Exception:
-                    pass
 
-        control.on_dismiss = _cleanup
-        control._hawaa_dismiss_cleanup_installed = True
+def _set_dialog_host(control, host) -> None:
+    try:
+        setattr(control, _HOST_ATTR, host)
     except Exception:
         pass
+    try:
+        setattr(host, _SOURCE_ATTR, control)
+    except Exception:
+        pass
+
+
+def _remove_modal_host(page, control) -> None:
+    host = _dialog_host_for(control)
+    if host is not None:
+        _remove_from_overlay(page, host)
+    try:
+        setattr(control, _HOST_ATTR, None)
+    except Exception:
+        pass
+
+
+def _dialog_action_alignment(value):
+    mapping = {
+        getattr(ft.MainAxisAlignment, "START", None): ft.MainAxisAlignment.START,
+        getattr(ft.MainAxisAlignment, "CENTER", None): ft.MainAxisAlignment.CENTER,
+        getattr(ft.MainAxisAlignment, "SPACE_BETWEEN", None): ft.MainAxisAlignment.SPACE_BETWEEN,
+        getattr(ft.MainAxisAlignment, "SPACE_AROUND", None): ft.MainAxisAlignment.SPACE_AROUND,
+        getattr(ft.MainAxisAlignment, "SPACE_EVENLY", None): ft.MainAxisAlignment.SPACE_EVENLY,
+        getattr(ft.MainAxisAlignment, "END", None): ft.MainAxisAlignment.END,
+    }
+    return mapping.get(value, ft.MainAxisAlignment.END)
+
+
+def _build_alert_dialog_host(page, control):
+    """Render AlertDialog as a normal overlay tree, never a Flutter modal route.
+
+    Flet 0.28.3 can leave a native white dialog route after an AlertDialog is
+    visually closed.  A plain Container/Stack overlay has no Navigator route,
+    therefore explicit close, Android Back and page navigation all remove the
+    same Python control and cannot leave a blank surface behind.
+    """
+    width = 390.0
+    height = 760.0
+    try:
+        width = float(getattr(page, "width", 0) or width)
+    except Exception:
+        pass
+    try:
+        height = float(getattr(page, "height", 0) or height)
+    except Exception:
+        pass
+    card_width = min(560.0, max(280.0, width - 32.0))
+    max_content_height = max(180.0, min(560.0, height - 220.0))
+
+    title = getattr(control, "title", None)
+    icon = getattr(control, "icon", None)
+    content = getattr(control, "content", None)
+    actions = list(getattr(control, "actions", None) or [])
+    title_controls = []
+    if icon is not None:
+        title_controls.append(icon)
+    if title is not None:
+        if isinstance(title, str):
+            title = ft.Text(title, size=18, weight=ft.FontWeight.BOLD)
+        title_controls.append(ft.Container(content=title, expand=True))
+
+    body_controls = []
+    if title_controls:
+        body_controls.append(ft.Row(title_controls, spacing=10, vertical_alignment=ft.CrossAxisAlignment.CENTER))
+    if content is not None:
+        try:
+            declared_height = float(getattr(content, "height", 0) or 0)
+        except Exception:
+            declared_height = 0.0
+        needs_scroll = bool(getattr(control, "scrollable", False)) or declared_height > max_content_height
+        if declared_height > max_content_height:
+            try:
+                content.height = max_content_height
+            except Exception:
+                pass
+        if needs_scroll:
+            content = ft.Column([content], scroll=ft.ScrollMode.AUTO, height=max_content_height)
+        body_controls.append(content)
+    if actions:
+        body_controls.append(
+            ft.Row(
+                actions,
+                wrap=True,
+                run_spacing=8,
+                spacing=8,
+                alignment=_dialog_action_alignment(getattr(control, "actions_alignment", None)),
+                vertical_alignment=ft.CrossAxisAlignment.CENTER,
+            )
+        )
+
+    card = ft.Container(
+        content=ft.Column(body_controls, spacing=16, tight=True),
+        width=card_width,
+        bgcolor=getattr(control, "bgcolor", None) or ft.Colors.WHITE,
+        border_radius=20,
+        padding=20,
+        shadow=ft.BoxShadow(
+            spread_radius=0,
+            blur_radius=28,
+            color=ft.Colors.with_opacity(0.22, ft.Colors.BLACK),
+            offset=ft.Offset(0, 8),
+        ),
+        clip_behavior=ft.ClipBehavior.ANTI_ALIAS,
+    )
+
+    def _outside_tap(event=None):
+        if bool(getattr(control, "modal", False)):
+            return
+        original = getattr(control, "on_dismiss", None)
+        try:
+            if callable(original):
+                original(event)
+        finally:
+            close_control(page, control)
+
+    barrier = ft.Container(
+        left=0,
+        top=0,
+        right=0,
+        bottom=0,
+        bgcolor=getattr(control, "barrier_color", None) or ft.Colors.with_opacity(0.48, ft.Colors.BLACK),
+        on_click=_outside_tap,
+    )
+    centered = ft.Container(
+        left=0,
+        top=0,
+        right=0,
+        bottom=0,
+        alignment=ALIGN_CENTER,
+        padding=16,
+        content=card,
+    )
+    host = ft.Stack([barrier, centered], expand=True, clip_behavior=ft.ClipBehavior.NONE)
+    _set_dialog_host(control, host)
+    return host
 
 
 def _set_page_dialog_pointer(page, control) -> None:
-    """Best-effort legacy dialog pointer for Flet 0.28.x.
-
-    Native ``page.show_dialog``/``page.pop_dialog`` routes are intentionally not
-    used on Android in this project.  That route path is what produced the
-    persistent blank white surface that disappeared only after Android Back.
-
-    AlertDialog is attached to overlay on Flet 0.28.x because that is the path
-    that actually renders modals in the Android shell.  The prior page.dialog-only
-    route prevented windows from opening.  The blank white surface is avoided by
-    aggressive cleanup on close: clear open, remove from overlay, clear
-    page.dialog, and never call native page.close/pop_dialog/show_dialog.
-    """
+    """Expose the logical top dialog for Android Back without native routes."""
     try:
-        if isinstance(control, ft.AlertDialog):
+        if _is_alert_dialog(control):
             page.dialog = control
     except Exception:
         pass
-
 
 def _is_alert_dialog(control) -> bool:
     try:
@@ -245,60 +343,53 @@ def _is_alert_dialog(control) -> bool:
 
 
 def open_control(page: ft.Page, control):
-    """Open a dialog/transient control without native dialog routes.
+    """Open a transient control without creating an Android modal route.
 
-    Flet 0.28.x on Android can leave a blank native modal route when
-    ``page.show_dialog`` is used during login, save, edit or delete flows.  The
-    stable APK path avoids native modal routes. AlertDialog uses
-    ``page.dialog`` + ``open=True`` without overlay attachment; DatePicker and
-    service controls attach to overlay only when the pinned runtime requires it.
-    This keeps Android Back from being required to dismiss a hidden modal surface.
+    AlertDialog is converted to a normal full-screen overlay host.  DatePicker,
+    TimePicker, SnackBar and service controls retain the legacy overlay path.
     """
     if page is None or control is None:
         return None
 
     try:
-        if _is_dialog_like(control):
-            if _is_alert_dialog(control):
-                # Flet 0.28.x Android only renders AlertDialog reliably when it
-                # is also present in page.overlay.  Keep page.dialog as the
-                # legacy pointer, but make close_control remove the dialog from
-                # overlay immediately so no hidden white surface remains.
-                _ensure_overlay_contains(page, control)
-                _set_page_dialog_pointer(page, control)
-            else:
-                # DatePicker/TimePicker still need the overlay/service path on
-                # the pinned Flet line.  They are explicitly removed on close.
-                _ensure_overlay_contains(page, control)
+        if _is_alert_dialog(control):
+            # Defensive cleanup when a caller reuses the same dialog object.
+            _remove_modal_host(page, control)
+            _remove_from_overlay(page, control)
+            host = _build_alert_dialog_host(page, control)
+            _ensure_overlay_contains(page, host)
+            _set_page_dialog_pointer(page, control)
             try:
                 control.open = True
             except Exception:
                 pass
-            if _is_alert_dialog(control):
-                _install_dialog_dismiss_cleanup(page, control)
             stack = _get_stack(page)
             if control in stack:
                 stack.remove(control)
             stack.append(control)
-            try:
-                page.update()
-            except Exception:
-                pass
+            page.update()
             return control
 
-        # SnackBar and other transient controls use overlay/open as well.  Do
-        # not route them through native dialog APIs.
+        if _is_dialog_like(control):
+            _ensure_overlay_contains(page, control)
+            try:
+                control.open = True
+            except Exception:
+                pass
+            stack = _get_stack(page)
+            if control in stack:
+                stack.remove(control)
+            stack.append(control)
+            page.update()
+            return control
+
         _ensure_overlay_contains(page, control)
         try:
             control.open = True
         except Exception:
             pass
-        try:
-            page.update()
-        except Exception:
-            pass
+        page.update()
     except Exception:
-        # Last-resort Flet 0.28-compatible path.
         try:
             control.open = True
         except Exception:
@@ -308,7 +399,6 @@ def open_control(page: ft.Page, control):
         except Exception:
             pass
     return control
-
 
 def _restore_page_dialog_pointer(page, closed_control=None) -> None:
     """Point ``page.dialog`` to the last still-open AlertDialog, or clear it."""
@@ -337,29 +427,20 @@ def _restore_page_dialog_pointer(page, closed_control=None) -> None:
 
 
 def close_control(page: ft.Page, control):
-    """Close one exact control reliably on Android/Flet 0.28.x.
-
-    The function deliberately does not call ``page.pop_dialog``.  Closing happens
-    by clearing the control's ``open`` flag and removing it from the app-managed
-    stack/overlay.  This avoids creating or popping native routes that can leave
-    a white screen above the real app UI.
-    """
+    """Close the exact app-managed control and remove its complete visual host."""
     if page is None or control is None:
         return None
-
-    # Do not call page.close(control) here.  On the Android runtime used by the
-    # APK, closing native modal controls through Page.close can leave a blank
-    # white route above the app; the user then has to press Android Back.
-    # App dialogs are closed by clearing open/page.dialog/stack state only.
     try:
         control.open = False
     except Exception:
         pass
     _remove_from_stack(page, control)
+    if _is_alert_dialog(control):
+        _remove_modal_host(page, control)
     _remove_from_overlay(page, control)
     _restore_page_dialog_pointer(page, closed_control=control)
     try:
-        if _is_alert_dialog(control) and getattr(page, "dialog", None) is control:
+        if getattr(page, "dialog", None) is control:
             page.dialog = None
     except Exception:
         pass
@@ -367,29 +448,10 @@ def close_control(page: ft.Page, control):
         page.update()
     except Exception:
         pass
-    # Android/Flet can repaint one frame late after modal close.  Schedule a
-    # second best-effort cleanup/update without blocking the event handler.
-    try:
-        def _late_cleanup():
-            try:
-                _remove_from_overlay(page, control)
-                if getattr(page, "dialog", None) is control:
-                    page.dialog = None
-                page.update()
-            except Exception:
-                pass
-        threading.Timer(0.05, _late_cleanup).start()
-    except Exception:
-        pass
     return None
 
-
 def close_all_dialogs(page: ft.Page):
-    """Emergency cleanup of all app-managed modal/transient controls.
-
-    This closes overlay/dialog controls without using native route pop calls.
-    Any FilePicker/PermissionHandler service controls stay attached.
-    """
+    """Remove every app-managed modal host and transient dialog atomically."""
     if page is None:
         return None
     try:
@@ -399,20 +461,26 @@ def close_all_dialogs(page: ft.Page):
                 ctrl.open = False
             except Exception:
                 pass
+            if _is_alert_dialog(ctrl):
+                _remove_modal_host(page, ctrl)
             _remove_from_overlay(page, ctrl)
         stack.clear()
     except Exception:
         pass
     try:
-        current_dialog = getattr(page, "dialog", None)
-        if current_dialog is not None:
-            try:
-                current_dialog.open = False
-            except Exception:
-                pass
         ov = _overlay(page) or []
         for item in list(ov):
-            # Do not remove service controls such as FilePicker/PermissionHandler.
+            source = getattr(item, _SOURCE_ATTR, None)
+            if source is not None:
+                try:
+                    source.open = False
+                except Exception:
+                    pass
+                try:
+                    ov.remove(item)
+                except Exception:
+                    pass
+                continue
             if _is_dialog_like(item) or _is_snackbar(item):
                 try:
                     item.open = False
@@ -436,7 +504,6 @@ def close_all_dialogs(page: ft.Page):
     except Exception:
         pass
     return None
-
 
 def clear_transient_ui(page: ft.Page, *, clear_fab: bool = False):
     """Clear modal/drawer/transient UI before rebuilding or after save."""

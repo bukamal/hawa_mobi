@@ -61,7 +61,7 @@ from views.ui_kit import (
     show_snackbar,
     stat_card,
 )
-from views.design_system.responsive import responsive_grid
+from views.design_system.responsive import responsive_grid, bottom_safe_spacer
 
 
 _PERIOD_OPTIONS = [
@@ -198,7 +198,7 @@ class ReportsCenterMobileView(ft.Column):
             padding=ft.Padding(left=12, right=12, top=4, bottom=12),
         )
 
-        filters_surface = data_card(
+        self.filters_surface = data_card(
             ft.Column([
                 ft.Row([self.category_dropdown, self.report_dropdown], spacing=8, run_spacing=8, wrap=True),
                 ft.Row([self.period_dropdown, self.company_dropdown, self.currency_dropdown, self.detail_dropdown], spacing=8, run_spacing=8, wrap=True),
@@ -206,25 +206,37 @@ class ReportsCenterMobileView(ft.Column):
             ], spacing=10),
             elevation=0,
         )
-        actions_surface = data_card(
+        self.apply_filters_button = primary_button("تطبيق الفلاتر", ft.Icons.FILTER_ALT, self._on_view_report)
+        self.edit_filters_button = secondary_button("تعديل الفلاتر", ft.Icons.TUNE, self._show_filters)
+        self.edit_filters_button.visible = False
+        self.export_button = secondary_button("تصدير ومشاركة", ft.Icons.SHARE_OUTLINED, self._open_export_menu)
+        self.actions_surface = data_card(
             ft.Row([
-                primary_button("تطبيق الفلاتر", ft.Icons.FILTER_ALT, self._on_view_report),
-                secondary_button("تصدير ومشاركة", ft.Icons.SHARE_OUTLINED, self._open_export_menu),
+                self.apply_filters_button, self.edit_filters_button, self.export_button,
             ], spacing=8, run_spacing=8, wrap=True),
             elevation=0,
         )
         self.controls = [
             page_header("مركز التقارير", icon=ft.Icons.INSIGHTS_OUTLINED, subtitle="تقارير مالية وتشغيلية موحّدة بنفس هوية هوى الشام"),
-            filters_surface,
-            actions_surface,
+            self.filters_surface,
+            self.actions_surface,
             self.status_banner,
             self.summary_container,
             self.preview_container,
             self.pagination_bar,
-            ft.Container(height=24),
+            bottom_safe_spacer(self._page),
         ]
         self._load_companies()
         self._render_report()
+
+    def _show_filters(self, e=None):
+        self.filters_surface.visible = True
+        self.apply_filters_button.visible = True
+        self.edit_filters_button.visible = False
+        try:
+            self._page.update()
+        except Exception:
+            pass
 
     def _show_snackbar(self, message: str, is_error: bool = False):
         show_snackbar(self._page, message, is_error=is_error)
@@ -292,6 +304,9 @@ class ReportsCenterMobileView(ft.Column):
             report = self._service.build_report(**f)
             self._current_report = report
             self._filters_dirty = False
+            self.filters_surface.visible = False
+            self.apply_filters_button.visible = False
+            self.edit_filters_button.visible = True
             self.status_banner.visible = True
             generated_at = datetime.now().strftime("%H:%M")
             self.status_banner.content = info_banner(

@@ -237,7 +237,7 @@ class AppLayout(ft.Column):
             indicator_color=PRIMARY_SOFT,
             indicator_shape=ft.RoundedRectangleBorder(radius=14),
             elevation=4,
-            height=72,
+            height=76,
         )
 
     def _build_nav_rail(self):
@@ -294,6 +294,13 @@ class AppLayout(ft.Column):
         gutter = page_gutter(self._page)
         self.content_area.padding = ft.Padding(gutter, 8, gutter, 8)
         self.safe_top_spacer.height = safe_top_height(self._page)
+        try:
+            self._page.floating_action_button_location = (
+                ft.FloatingActionButtonLocation.END_FLOAT if not large
+                else ft.FloatingActionButtonLocation.END_FLOAT
+            )
+        except Exception:
+            pass
 
     def _refresh_status_bar(self):
         current = UserSession.get_current() or {}

@@ -353,9 +353,9 @@ class ServiceCaseDialog(ft.AlertDialog):
             code = self.currency_dropdown.value or currency.get_display_currency()
             profit = sale - cost
             self.profit_text.value = (
-                f"إجمالي البيع {currency.format_amount(sale, code)}  ·  "
-                f"التكلفة {currency.format_amount(cost, code)}  ·  "
-                f"الربح {currency.format_amount(profit, code)}"
+                f"إجمالي البيع {currency.format_amount_ui(sale, code)}  ·  "
+                f"التكلفة {currency.format_amount_ui(cost, code)}  ·  "
+                f"الربح {currency.format_amount_ui(profit, code)}"
             )
             self.profit_text.color = STATE_SUCCESS if profit >= 0 else STATE_DANGER
         except Exception:
@@ -441,9 +441,9 @@ class ServiceCaseDialog(ft.AlertDialog):
             financial_summary(
                 "الأثر المالي المتوقع",
                 [
-                    ("إجمالي البيع على العميل", currency.format_amount(sale, code), FINANCIAL_RECEIVABLE),
-                    ("إجمالي المستحق للموردين", currency.format_amount(cost, code), FINANCIAL_PAYABLE),
-                    ("الربح الداخلي", currency.format_amount(profit, code), margin_color),
+                    ("إجمالي البيع على العميل", currency.format_amount_ui(sale, code), FINANCIAL_RECEIVABLE),
+                    ("إجمالي المستحق للموردين", currency.format_amount_ui(cost, code), FINANCIAL_PAYABLE),
+                    ("الربح الداخلي", currency.format_amount_ui(profit, code), margin_color),
                 ],
                 tone_color=margin_color,
             ),

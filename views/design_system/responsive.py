@@ -83,3 +83,14 @@ def safe_top_height(page) -> int:
     # Flet 0.28 Android may still render edge-to-edge. Keep a small defensive
     # inset on phones; native desktop/tablet shells do not need the old 28px gap.
     return 24 if is_phone(page) else 8
+
+
+def bottom_safe_space(page, *, has_fab: bool = False) -> int:
+    """Scrollable-content clearance above the phone navigation bar and FAB."""
+    if not is_phone(page):
+        return 28
+    return 132 if has_fab else 104
+
+
+def bottom_safe_spacer(page, *, has_fab: bool = False):
+    return ft.Container(height=bottom_safe_space(page, has_fab=has_fab))

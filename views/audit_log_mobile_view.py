@@ -9,6 +9,7 @@ from auth.session import UserSession
 from database import AuditRepository, UserRepository
 from i18n.translator import translate
 from views.flet_compat import open_control, close_control
+from views.design_system.responsive import bottom_safe_spacer
 from views.ui_kit import (
     page_header, data_card, pill, empty_state, show_snackbar, search_field,
     info_banner, PRIMARY, SUCCESS, DANGER, WARNING, MUTED, TEXT, BORDER,
@@ -48,7 +49,7 @@ class AuditLogMobileView(ft.Column):
                 ft.Row([self.apply_btn], alignment=ft.MainAxisAlignment.END),
             ], spacing=10), elevation=0),
             self.logs_list,
-            ft.Container(height=24),
+            bottom_safe_spacer(self._page),
         ]
         self._load_users()
         self._refresh(None)

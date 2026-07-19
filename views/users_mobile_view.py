@@ -8,6 +8,7 @@ from auth.session import UserSession
 from database import UserRepository
 from i18n.translator import translate
 from views.flet_compat import open_control, close_control, make_floating_action_button
+from views.design_system.responsive import bottom_safe_spacer
 from views.ui_kit import (
     page_header, summary_bar, metric_tile, data_card, pill, empty_state,
     action_text_button, show_snackbar, search_field, info_banner,
@@ -37,6 +38,10 @@ class UsersMobileView(ft.Column):
             elevation=6, shape=ft.CircleBorder(),
         )
         self._page.floating_action_button = self.add_btn
+        try:
+            self._page.floating_action_button_location = ft.FloatingActionButtonLocation.END_FLOAT
+        except Exception:
+            pass
         self.search = search_field("بحث بالاسم أو اسم المستخدم", self._search_changed)
         self.summary = ft.Container()
         self.users_list = ft.Column(spacing=8)
@@ -46,7 +51,7 @@ class UsersMobileView(ft.Column):
             self.search,
             self.summary,
             self.users_list,
-            ft.Container(height=88),
+            bottom_safe_spacer(self._page, has_fab=True),
         ]
         self._load_users()
 
@@ -55,7 +60,7 @@ class UsersMobileView(ft.Column):
 
     def _role_meta(self, role):
         if role == 'admin':
-            return translate('admin'), DANGER, ft.Icons.ADMIN_PANEL_SETTINGS_OUTLINED
+            return translate('admin'), PRIMARY, ft.Icons.ADMIN_PANEL_SETTINGS_OUTLINED
         if role == 'user':
             return translate('user'), PRIMARY, ft.Icons.PERSON_OUTLINE
         return translate('viewer'), MUTED, ft.Icons.VISIBILITY_OUTLINED

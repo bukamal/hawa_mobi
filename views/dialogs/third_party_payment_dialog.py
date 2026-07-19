@@ -160,10 +160,10 @@ class ThirdPartyPaymentDialog(ft.AlertDialog):
             display_curr = currency.get_display_currency()
             base_usd = amount / rate if rate else amount
             display_amount = currency.convert(base_usd, "USD", display_curr)
-            self.exchange_rate_text.value = f"المخزّن محاسبياً: {base_usd:.4f} USD | المعروض: {currency.format_amount(display_amount, display_curr)}"
+            self.exchange_rate_text.value = f"المخزّن محاسبياً: {base_usd:.4f} USD | المعروض: {currency.format_amount_ui(display_amount, display_curr)}"
         except Exception:
             self.exchange_rate_text.value = ""
-        amount_str = currency.format_amount(amount, code) if amount else "—"
+        amount_str = currency.format_amount_ui(amount, code) if amount else "—"
         self.preview_text.value = f"{translate('will_decrease_paid_to')}: {paid_to} بمبلغ {amount_str}\n{translate('will_increase_payer')}: {payer} بمبلغ {amount_str}"
         try:
             self._page.update()

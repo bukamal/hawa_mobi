@@ -6,6 +6,7 @@ from i18n.translator import translate
 from datetime import datetime, timedelta
 from collections import defaultdict
 from views.flet_compat import open_control
+from views.design_system.responsive import bottom_safe_spacer
 from views.ui_kit import show_snackbar, page_header, stat_card, empty_state, data_card, section_label, summary_bar, metric_tile, money_text, primary_button, secondary_button, PRIMARY, PRIMARY_SOFT, SUCCESS, DANGER, WARNING, MUTED, TEXT, BORDER
 from views.design_system.responsive import responsive_grid, form_width
 
@@ -60,12 +61,6 @@ class DashboardMobileView(ft.Column):
         self._page.overlay.append(self.end_date_picker_obj)
 
         self.cards_container = ft.Column(spacing=16)
-        self.quick_actions = ft.Row([
-            secondary_button("الحسابات", ft.Icons.ACCOUNT_BALANCE_OUTLINED, lambda e: self._open_page("accounts")),
-            secondary_button("التقارير", ft.Icons.INSERT_CHART_OUTLINED, lambda e: self._open_page("reports")),
-            secondary_button("الأرباح", ft.Icons.TRENDING_UP, self._open_profit_report),
-        ], spacing=8, run_spacing=8, wrap=True)
-
         filter_surface = data_card(
             ft.Column([
                 ft.Row([self.period_filter, self.refresh_btn], spacing=8, wrap=True, alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
@@ -75,11 +70,17 @@ class DashboardMobileView(ft.Column):
             elevation=0,
         )
         self.controls = [
-            page_header("لوحة تحكم هوى الشام", icon=ft.Icons.DASHBOARD, subtitle="مؤشرات الذمم والخدمات والأرباح والتشغيل"),
-            ft.Container(content=self.quick_actions, padding=ft.Padding(left=8, right=8, top=0, bottom=0)),
+            page_header(
+                "لوحة تحكم هوى الشام", icon=ft.Icons.DASHBOARD,
+                subtitle="مؤشرات الذمم والخدمات والأرباح والتشغيل",
+                trailing=ft.IconButton(
+                    icon=ft.Icons.TRENDING_UP, tooltip="تقرير أرباح الخدمات",
+                    on_click=self._open_profit_report, icon_color=PRIMARY, width=48, height=48,
+                ),
+            ),
             filter_surface,
             self.cards_container,
-            ft.Container(height=24),
+            bottom_safe_spacer(self._page),
         ]
 
         self._load_data()
@@ -216,7 +217,7 @@ class DashboardMobileView(ft.Column):
                     val = totals_by_currency[curr][kind]
                     if abs(val) < 1e-9 and kind != 'net':
                         continue
-                    text = currency.format_amount(abs(val) if kind == 'net' else val, curr)
+                    text = currency.format_amount_ui(abs(val) if kind == 'net' else val, curr)
                     if with_direction:
                         side = 'لنا' if val >= 0 else 'له'
                         text = f"{text} {side}"
@@ -300,15 +301,15 @@ class DashboardMobileView(ft.Column):
                     ft.Row([
                         ft.Column([
                             ft.Text('صافي الذمم', size=12, color=MUTED),
-                            money_text(currency.format_amount(base_net, display_curr), color=SUCCESS if historical_base['net'] >= 0 else DANGER, size=28),
+                            money_text(currency.format_amount_ui(base_net, display_curr), color=SUCCESS if historical_base['net'] >= 0 else DANGER, size=28),
                             ft.Text('محسوب بالأسعار التاريخية للقيود', size=11, color=MUTED),
                         ], expand=True, spacing=4),
                         ft.Container(content=ft.Icon(ft.Icons.ACCOUNT_BALANCE_WALLET_OUTLINED, color=PRIMARY, size=30), bgcolor=PRIMARY_SOFT, border_radius=18, padding=13),
                     ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
                     summary_bar([
-                        metric_tile('لنا', money_text(currency.format_amount(base_in, display_curr), color=SUCCESS, size=15)),
-                        metric_tile('له', money_text(currency.format_amount(base_out, display_curr), color=DANGER, size=15)),
-                        metric_tile('ربح الخدمات', money_text(currency.format_amount(total_profit_display, display_curr), color=SUCCESS if total_profit_display >= 0 else DANGER, size=15)),
+                        metric_tile('لنا', money_text(currency.format_amount_ui(base_in, display_curr, compact=True), color=SUCCESS, size=15)),
+                        metric_tile('له', money_text(currency.format_amount_ui(base_out, display_curr, compact=True), color=DANGER, size=15)),
+                        metric_tile('ربح الخدمات', money_text(currency.format_amount_ui(total_profit_display, display_curr, compact=True), color=SUCCESS if total_profit_display >= 0 else DANGER, size=15)),
                     ], visible=True, bgcolor=PRIMARY_SOFT),
                 ], spacing=12),
                 padding=18,
@@ -319,10 +320,10 @@ class DashboardMobileView(ft.Column):
                 self._create_card('لنا حسب العملة', format_currency_lines('incoming'), SUCCESS, ft.Icons.SOUTH_WEST),
                 self._create_card('له حسب العملة', format_currency_lines('outgoing'), DANGER, ft.Icons.NORTH_EAST),
                 self._create_card('الصافي حسب العملة', format_currency_lines('net', with_direction=True), SUCCESS if historical_base['net'] >= 0 else DANGER, ft.Icons.ACCOUNT_BALANCE),
-                self._create_card(f'إجمالي تقريبي بـ {display_curr}', f"لنا: {currency.format_amount(base_in, display_curr)}\nله: {currency.format_amount(base_out, display_curr)}\nالصافي: {currency.format_amount(base_net, display_curr)}", PRIMARY, ft.Icons.CURRENCY_EXCHANGE),
+                self._create_card(f'إجمالي تقريبي بـ {display_curr}', f"لنا: {currency.format_amount_ui(base_in, display_curr)}\nله: {currency.format_amount_ui(base_out, display_curr)}\nالصافي: {currency.format_amount_ui(base_net, display_curr)}", PRIMARY, ft.Icons.CURRENCY_EXCHANGE),
             ]
             service_cards = [
-                self._create_card('أرباح الخدمات', currency.format_amount(total_profit_display, display_curr), SUCCESS if total_profit_display >= 0 else DANGER, ft.Icons.TRENDING_UP),
+                self._create_card('أرباح الخدمات', currency.format_amount_ui(total_profit_display, display_curr), SUCCESS if total_profit_display >= 0 else DANGER, ft.Icons.TRENDING_UP),
                 self._create_card('ملفات خدمة مفتوحة', f"عبر مورد: {len(open_service_cases)}\nمباشرة: {len(open_direct_services)}", PRIMARY, ft.Icons.TRAVEL_EXPLORE),
                 self._create_card('خدمات منخفضة الربح', str(low_profit_count), WARNING if low_profit_count else SUCCESS, ft.Icons.WARNING_AMBER),
                 self._create_card('سدد عني', str(len(third_party_payments)), PRIMARY, ft.Icons.SWAP_HORIZ),
@@ -333,7 +334,7 @@ class DashboardMobileView(ft.Column):
                 self._create_card('عدد الشركات', str(len(companies)), PRIMARY, ft.Icons.BUSINESS),
                 self._create_card('بانتظار الدفع', str(len(waiting_payment)), WARNING, ft.Icons.PAYMENTS),
                 self._create_card('عدد المستخدمين', str(users_count), PRIMARY, ft.Icons.PEOPLE),
-                self._create_card('أعلى شركة تقريبياً', f"{top_company[0]}\n({currency.format_amount(top_display, display_curr)})", SUCCESS, ft.Icons.EMOJI_EVENTS),
+                self._create_card('أعلى شركة تقريبياً', f"{top_company[0]}\n({currency.format_amount_ui(top_display, display_curr)})", SUCCESS, ft.Icons.EMOJI_EVENTS),
                 self._create_card('سعر الصرف الحالي', rate_text, PRIMARY, ft.Icons.MONEY),
             ]
 

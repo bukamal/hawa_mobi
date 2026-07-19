@@ -15,7 +15,7 @@ def require(path: str, text: str) -> None:
 
 
 def static_checks() -> None:
-    require("pyproject.toml", 'version = "1.0.48"')
+    require("pyproject.toml", 'version = "1.0.49"')
     require("views/design_system/interaction.py", "class DebouncedAction")
     require("views/accounts_mobile_view.py", "self._search_debouncer")
     require("views/accounts_mobile_view.py", "self._visible_limit")

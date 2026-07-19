@@ -18,7 +18,7 @@ assert 'container_kwargs["on_click"] = on_click' in uikit_src
 assert 'container_kwargs["ink"] = True' in uikit_src
 
 assert "on_click=lambda e, c=company, r=vals['records'], q=details_query: self._show_details(c, r, q)" in accounts_src
-assert "اضغط للتفاصيل" in accounts_src
+assert "اضغط على البطاقة لفتح الحساب" in accounts_src
 assert "layout.open_company_details(company_name, records=records, search_query=search_query)" in accounts_src
 
 # The crowded old details button should not be part of the quick-action row.

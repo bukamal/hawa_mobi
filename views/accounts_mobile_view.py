@@ -9,6 +9,7 @@ from collections import defaultdict
 from views.ui_kit import show_snackbar, page_header, search_field, summary_bar, metric_tile, empty_state, action_text_button, data_card, amount_pill, key_value_tile, pill, info_banner, secondary_button, PRIMARY, PRIMARY_SOFT, SUCCESS, DANGER, WARNING, TEXT, MUTED, BORDER, money_text, modern_action_button
 from services.company_search_service import normalize_search_text
 from views.design_system.interaction import DebouncedAction
+from views.design_system.responsive import bottom_safe_spacer
 
 
 class AccountsMobileView(ft.Column):
@@ -27,13 +28,13 @@ class AccountsMobileView(ft.Column):
         self.search_field = search_field(translate('company_deep_search_hint'), self._on_search_changed)
         self.search_status = ft.Container(visible=False)
         self.balance_filter = ft.Dropdown(
-            label="حالة الرصيد", value="الكل", width=170,
+            label="حالة الرصيد", value="الكل", expand=True,
             options=[ft.dropdown.Option("الكل"), ft.dropdown.Option("لنا"), ft.dropdown.Option("له"), ft.dropdown.Option("بانتظار الدفع")],
             border_radius=12, filled=True, border_color=BORDER, focused_border_color=PRIMARY,
             on_change=self._on_filter_changed,
         )
         self.sort_field = ft.Dropdown(
-            label="الترتيب", value="الاسم", width=170,
+            label="الترتيب", value="الاسم", expand=True,
             options=[ft.dropdown.Option("الاسم"), ft.dropdown.Option("أكبر رصيد"), ft.dropdown.Option("آخر حركة")],
             border_radius=12, filled=True, border_color=BORDER, focused_border_color=PRIMARY,
             on_change=self._on_filter_changed,
@@ -72,7 +73,7 @@ class AccountsMobileView(ft.Column):
         filters = data_card(
             ft.Column([
                 self.search_field,
-                ft.Row([self.balance_filter, self.sort_field], spacing=8, run_spacing=8, wrap=True),
+                ft.Row([self.balance_filter, self.sort_field], spacing=8),
             ], spacing=10),
             elevation=0,
         )
@@ -87,10 +88,14 @@ class AccountsMobileView(ft.Column):
             self.summary_bar,
             self.cards_container,
             self.pagination_bar,
-            ft.Container(height=88),
+            bottom_safe_spacer(self._page, has_fab=True),
         ]
 
         self._page.floating_action_button = self.fab
+        try:
+            self._page.floating_action_button_location = ft.FloatingActionButtonLocation.END_FLOAT
+        except Exception:
+            pass
         self._refresh_cards(None, reset_page=True)
 
     def _show_snackbar(self, message, is_error=False):
@@ -129,11 +134,11 @@ class AccountsMobileView(ft.Column):
 
     def _entry_amount_text(self, row):
         display_curr = currency.get_display_currency()
-        original = currency.format_amount(float(row.get('amount_original') or row.get('amount') or 0), row.get('currency_original') or row.get('currency') or display_curr)
+        original = currency.format_amount_ui(float(row.get('amount_original') or row.get('amount') or 0), row.get('currency_original') or row.get('currency') or display_curr)
         try:
             amount_base = float(row.get('amount_base', row.get('amount', 0)) or 0)
             display_amount = currency.convert(amount_base, 'USD', display_curr)
-            display = currency.format_amount(display_amount, display_curr)
+            display = currency.format_amount_ui(display_amount, display_curr)
         except Exception:
             display = original
         if (row.get('currency_original') or display_curr) == display_curr:
@@ -260,20 +265,21 @@ class AccountsMobileView(ft.Column):
                     ft.Text(company, size=16, weight=ft.FontWeight.BOLD, expand=True, max_lines=2, overflow=ft.TextOverflow.ELLIPSIS),
                     ft.Container(
                         content=ft.Row([
-                            ft.Icon(ft.Icons.TOUCH_APP, color=PRIMARY, size=14),
-                            ft.Text('اضغط للتفاصيل', size=10, color=PRIMARY, weight=ft.FontWeight.BOLD),
+                            ft.Icon(ft.Icons.MORE_VERT, color=PRIMARY, size=18),
                         ], spacing=3, tight=True),
                         bgcolor=PRIMARY_SOFT,
                         border_radius=999,
                         padding=ft.Padding(left=8, right=8, top=4, bottom=4),
+                        on_click=lambda e, c=company: self._open_company_action_menu(c),
+                        ink=True,
                     ),
-                    amount_pill(currency.format_amount(net, display_curr), net_color),
+                    amount_pill(currency.format_amount_ui(net, display_curr, compact=True), net_color),
                 ], spacing=6),
                 ft.Divider(height=1, color=ft.Colors.GREY_200),
                 ft.Row([
-                    key_value_tile("لنا", currency.format_amount(inc, display_curr), SUCCESS),
+                    key_value_tile("لنا", currency.format_amount_ui(inc, display_curr, compact=True), SUCCESS),
                     ft.VerticalDivider(width=1, color=ft.Colors.GREY_200),
-                    key_value_tile("له", currency.format_amount(out, display_curr), DANGER),
+                    key_value_tile("له", currency.format_amount_ui(out, display_curr, compact=True), DANGER),
                     ft.VerticalDivider(width=1, color=ft.Colors.GREY_200),
                     key_value_tile("القيود", str(len(vals['records']))),
                     ft.VerticalDivider(width=1, color=ft.Colors.GREY_200),
@@ -289,7 +295,7 @@ class AccountsMobileView(ft.Column):
             content_controls.append(
                 ft.Row([
                     ft.Text(f"آخر حركة: {vals.get('last_date') or '—'}", size=11, color=MUTED, expand=True),
-                    modern_action_button("إضافة عملية", ft.Icons.ADD, lambda e, c=company: self._open_company_action_menu(c), color=PRIMARY, bgcolor=PRIMARY_SOFT),
+                    ft.Text("اضغط على البطاقة لفتح الحساب", size=10, color=MUTED),
                 ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN, vertical_alignment=ft.CrossAxisAlignment.CENTER)
             )
             card = data_card(
@@ -302,7 +308,7 @@ class AccountsMobileView(ft.Column):
             cards.append(card)
 
         if cards:
-            self.net_text.value = currency.format_amount(total_net, display_curr)
+            self.net_text.value = currency.format_amount_ui(total_net, display_curr, compact=True)
             self.net_text.color = SUCCESS if total_net >= 0 else DANGER
             self.companies_count_text.value = str(self._filtered_company_count)
             self.records_count_text.value = str(total_records)

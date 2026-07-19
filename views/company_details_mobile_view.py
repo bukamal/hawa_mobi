@@ -5,6 +5,7 @@ from database import ExpenseRepository
 from auth.session import UserSession
 from i18n.translator import translate
 from currency import currency
+from views.design_system.responsive import bottom_safe_spacer
 from views.ui_kit import (
     show_snackbar, empty_state, data_card, amount_pill, key_value_tile, pill,
     summary_bar, metric_tile, info_banner, search_field, secondary_button,
@@ -105,7 +106,7 @@ class CompanyDetailsMobileView(ft.Column):
         self.controls = [
             self.summary_panel, search_banner, self.report_actions, self.people_summary,
             self.filter_surface, ft.Divider(height=1), self.records_list,
-            self.pagination_bar, ft.Container(height=24),
+            self.pagination_bar, bottom_safe_spacer(self._page),
         ]
         self._load_data()
 
@@ -232,10 +233,10 @@ class CompanyDetailsMobileView(ft.Column):
         total_out = currency.convert(total_out_usd, 'USD', display_curr)
         net = currency.convert(net_usd, 'USD', display_curr)
 
-        self.summary_text.value = f"📥 {currency.format_amount(total_in, display_curr)}   📤 {currency.format_amount(total_out, display_curr)}   💰 {currency.format_amount(net, display_curr)}   ⏳ {waiting_count}"
-        self.total_in_text.value = currency.format_amount(total_in, display_curr)
-        self.total_out_text.value = currency.format_amount(total_out, display_curr)
-        self.net_text.value = currency.format_amount(net, display_curr)
+        self.summary_text.value = f"📥 {currency.format_amount_ui(total_in, display_curr)}   📤 {currency.format_amount_ui(total_out, display_curr)}   💰 {currency.format_amount_ui(net, display_curr)}   ⏳ {waiting_count}"
+        self.total_in_text.value = currency.format_amount_ui(total_in, display_curr)
+        self.total_out_text.value = currency.format_amount_ui(total_out, display_curr)
+        self.net_text.value = currency.format_amount_ui(net, display_curr)
         self.net_text.color = SUCCESS if net_usd >= 0 else DANGER
         self.waiting_text.value = str(waiting_count)
 
@@ -255,7 +256,7 @@ class CompanyDetailsMobileView(ft.Column):
             chips = [ft.Text("الأشخاص داخل الحساب", size=13, weight=ft.FontWeight.BOLD, color=PRIMARY)]
             for person, item in sorted(person_buckets.items(), key=lambda kv: kv[0])[:8]:
                 net_p = currency.convert(item['incoming'] - item['outgoing'], 'USD', display_curr)
-                chips.append(pill(f"{person}: {currency.format_amount(net_p, display_curr)} · {item['count']} قيد", color=PRIMARY, bgcolor=PRIMARY_SOFT))
+                chips.append(pill(f"{person}: {currency.format_amount_ui(net_p, display_curr)} · {item['count']} قيد", color=PRIMARY, bgcolor=PRIMARY_SOFT))
             self.people_summary.controls = chips
             self.people_summary.visible = True
         else:
@@ -276,7 +277,7 @@ class CompanyDetailsMobileView(ft.Column):
         is_viewer = UserSession.get_current() and UserSession.get_current().get('role') == 'viewer'
 
         for idx, r in enumerate(visible_records, 1):
-            amount_str = currency.format_amount(float(r.get('amount_original') or 0), r.get('currency_original') or display_curr)
+            amount_str = currency.format_amount_ui(float(r.get('amount_original') or 0), r.get('currency_original') or display_curr)
             is_waiting = r.get('status') == 'waiting_payment'
             if r['type'] == 'incoming':
                 inc_out = amount_str
@@ -293,7 +294,7 @@ class CompanyDetailsMobileView(ft.Column):
 
             row_running_usd = running_by_key.get(r.get('id') or id(r), 0.0)
             running_display = currency.convert(row_running_usd, 'USD', display_curr)
-            running_str = currency.format_amount(running_display, display_curr)
+            running_str = currency.format_amount_ui(running_display, display_curr)
             running_color = SUCCESS if row_running_usd >= 0 else DANGER
 
             card = data_card(

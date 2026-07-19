@@ -7,6 +7,7 @@ business/database/network imports so it is safe for APK builds.
 """
 from __future__ import annotations
 
+import re
 import flet as ft
 from views.flet_compat import (
     ALIGN_CENTER, ALIGN_TOP_LEFT, ALIGN_BOTTOM_RIGHT,
@@ -236,11 +237,34 @@ def data_card(content, padding=15, elevation=2, margin=None, on_click=None):
     return container
 
 
+
+
+def _looks_financial(value) -> bool:
+    raw = str(value or "").replace("\u2066", "").replace("\u2069", "").strip()
+    markers = ("USD", "EUR", "SYP", "SAR", "AED", "QAR", "KWD", "OMR", "$", "€", "£", "ل.س", "﷼", "د.إ", "ر.ق", "د.ك", "ر.ع")
+    if not any(marker in raw for marker in markers) or not any(ch.isdigit() for ch in raw):
+        return False
+    remainder = raw
+    for marker in markers:
+        remainder = remainder.replace(marker, "")
+    remainder = re.sub(r"[0-9٠-٩,،.٫\-+()\sKMBTkmbt]", "", remainder)
+    return not remainder
+
+
+def financial_text_value(value) -> str:
+    raw = str(value or "").replace("\u2066", "").replace("\u2069", "").strip()
+    return "\u2066" + raw + "\u2069" if _looks_financial(raw) else raw
+
 def pill(text, color=PRIMARY, bgcolor=None, icon=None, size=12, padding=None):
     controls = []
     if icon:
         controls.append(ft.Icon(icon, size=14, color=color))
-    controls.append(ft.Text(str(text), size=size, weight=ft.FontWeight.BOLD, color=color))
+    financial = _looks_financial(text)
+    controls.append(ft.Text(
+        financial_text_value(text), size=size, weight=ft.FontWeight.BOLD, color=color,
+        rtl=False if financial else None, no_wrap=True if financial else None,
+        overflow=ft.TextOverflow.VISIBLE if financial else None,
+    ))
     return ft.Container(
         content=ft.Row(controls, spacing=4, tight=True),
         bgcolor=bgcolor or PRIMARY_SOFT,
@@ -262,12 +286,15 @@ def section_label(text, icon=None):
 
 
 def key_value_tile(label, value, color=None, expand=True):
-    raw = str(value)
-    if '$' in raw or '€' in raw or 'SYP' in raw or 'USD' in raw:
-        raw = '\u2066' + raw + '\u2069'
+    financial = _looks_financial(value)
     return ft.Column([
         ft.Text(label, size=11, color=MUTED, max_lines=1, overflow=ft.TextOverflow.ELLIPSIS),
-        ft.Text(raw, size=13, color=color or TEXT, weight=ft.FontWeight.BOLD, text_align=ft.TextAlign.CENTER, max_lines=1, overflow=ft.TextOverflow.ELLIPSIS),
+        ft.Text(
+            financial_text_value(value), size=13, color=color or TEXT, weight=ft.FontWeight.BOLD,
+            text_align=ft.TextAlign.CENTER, max_lines=1, no_wrap=True,
+            overflow=ft.TextOverflow.VISIBLE if financial else ft.TextOverflow.ELLIPSIS,
+            rtl=False if financial else None,
+        ),
     ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, expand=expand, spacing=3)
 
 
@@ -307,15 +334,17 @@ def financial_color(value: float) -> str:
 
 
 def money_text(value, color=None, size=18, weight=None, align=None):
-    """Keep currency and amount visually together in RTL layouts."""
+    """Render financial values as one LTR bidi-isolated unit without ellipsis."""
     return ft.Text(
-        str(value),
+        financial_text_value(value),
         size=size,
         weight=weight or ft.FontWeight.BOLD,
         color=color or TEXT,
         text_align=align,
         no_wrap=True,
-        overflow=ft.TextOverflow.ELLIPSIS,
+        max_lines=1,
+        overflow=ft.TextOverflow.VISIBLE,
+        rtl=False,
     )
 
 

@@ -6,6 +6,7 @@ import flet as ft
 
 from auth.permissions import is_admin
 from i18n.translator import translate
+from views.design_system.responsive import bottom_safe_spacer
 from views.ui_kit import (
     page_header, data_card, info_banner, PRIMARY, PRIMARY_SOFT, TEXT, MUTED,
 )
@@ -43,7 +44,7 @@ class SettingsHubMobileView(ft.Column):
                 icon=ft.Icons.ADMIN_PANEL_SETTINGS_OUTLINED,
             ))
         controls.extend(self._section_card(*section) for section in sections)
-        controls.append(ft.Container(height=24))
+        controls.append(bottom_safe_spacer(self._page))
         self.controls = controls
 
     def _section_card(self, section_id, title, subtitle, icon):

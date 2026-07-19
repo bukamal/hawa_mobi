@@ -158,6 +158,37 @@ class CurrencyManager:
         formatted = self._apply_number_format(formatted)
         return f"{formatted} {symbol}"
 
+    def format_amount_ui(self, amount: float, currency_code: str = None, decimals: int = None, compact: bool | None = None) -> str:
+        """Return a bidi-isolated amount for Android RTL controls.
+
+        Western symbols are prefixed and the minus sign always precedes the
+        whole amount.  Arabic currency abbreviations remain after the number.
+        LRI/PDI prevents Flutter from moving the minus sign to the far right.
+        """
+        if currency_code is None:
+            currency_code = self.get_display_currency()
+        currency_code = self._normalize_currency(currency_code, 'USD')
+        if decimals is None:
+            decimals = self.get_currency_decimals()
+        try:
+            value = float(amount or 0)
+        except Exception:
+            value = 0.0
+        sign = '-' if value < 0 else ''
+        absolute = abs(value)
+        use_compact = self.abbreviate_numbers() if compact is None else bool(compact)
+        if use_compact and absolute >= 1000:
+            number = self._compact_number(absolute)
+        else:
+            number = f"{absolute:,.{decimals}f}"
+        number = self._apply_number_format(number)
+        symbol = self.get_currency_symbol(currency_code)
+        if symbol in {'$', '€', '£'}:
+            body = f"{sign}{symbol}{number}"
+        else:
+            body = f"{sign}{number} {symbol}"
+        return '\u2066' + body + '\u2069'
+
     def format_amount_full(self, amount: float, currency_code: str = None, decimals: int = None) -> str:
         return self.format_amount(amount, currency_code, decimals, compact=False)
 

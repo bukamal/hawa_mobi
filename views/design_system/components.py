@@ -2,6 +2,7 @@
 """Reusable modern components used by every Hawaa screen."""
 from __future__ import annotations
 
+import re
 import flet as ft
 from .tokens import (
     BRAND_PRIMARY, BRAND_PRIMARY_LIGHT, BRAND_PRIMARY_TINT,
@@ -179,7 +180,22 @@ def semantic_chip(text, *, icon=None, tone="info"):
     )
 
 
+def _financial_value(value):
+    raw = str(value or "").replace("\u2066", "").replace("\u2069", "").strip()
+    markers = ("USD", "EUR", "SYP", "SAR", "AED", "QAR", "KWD", "OMR", "$", "€", "£", "ل.س", "﷼", "د.إ", "ر.ق", "د.ك", "ر.ع")
+    if not any(marker in raw for marker in markers) or not any(ch.isdigit() for ch in raw):
+        return raw, False
+    remainder = raw
+    for marker in markers:
+        remainder = remainder.replace(marker, "")
+    remainder = re.sub(r"[0-9٠-٩,،.٫\-+()\sKMBTkmbt]", "", remainder)
+    if remainder:
+        return raw, False
+    return "\u2066" + raw + "\u2069", True
+
+
 def metric_card(label, value, *, icon=None, color=BRAND_PRIMARY, subtitle=None, on_click=None, prominent=False):
+    display_value, financial = _financial_value(value)
     return app_surface(
         ft.Column(
             [
@@ -187,7 +203,12 @@ def metric_card(label, value, *, icon=None, color=BRAND_PRIMARY, subtitle=None, 
                     icon_badge(icon or ft.Icons.INSIGHTS, color=color, bgcolor=BRAND_PRIMARY_TINT, size=22),
                     ft.Text(label, size=TEXT_SECONDARY, color=LIGHT_TEXT_SECONDARY, expand=True),
                 ], spacing=SPACE_3),
-                ft.Text(str(value), size=26 if prominent else 20, weight=ft.FontWeight.BOLD, color=color, max_lines=3, overflow=ft.TextOverflow.ELLIPSIS),
+                ft.Text(
+                    display_value, size=26 if prominent else 20, weight=ft.FontWeight.BOLD, color=color,
+                    max_lines=1 if financial else 3, no_wrap=True if financial else None,
+                    overflow=ft.TextOverflow.VISIBLE if financial else ft.TextOverflow.ELLIPSIS,
+                    rtl=False if financial else None,
+                ),
                 ft.Text(subtitle or "", size=11, color=LIGHT_TEXT_SECONDARY, visible=bool(subtitle), max_lines=2, overflow=ft.TextOverflow.ELLIPSIS),
             ],
             spacing=SPACE_2,
