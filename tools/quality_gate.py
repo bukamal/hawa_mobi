@@ -105,6 +105,7 @@ def main() -> int:
         "tools/phase103_accounts_reports_performance_smoke_test.py",
         "tools/phase104_navigation_recovery_accessibility_smoke_test.py",
         "tools/phase105_visual_runtime_fixes_smoke_test.py",
+        "tools/company_inline_entry_segmented_direction_smoke_test.py",
         "tools/modern_dashboard_features_smoke_test.py",
         "tools/company_details_route_safearea_smoke_test.py",
         "tools/company_details_nameerror_runtime_smoke_test.py",

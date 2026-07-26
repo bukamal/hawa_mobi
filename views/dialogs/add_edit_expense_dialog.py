@@ -68,12 +68,28 @@ class AddEditExpenseDialog(ft.AlertDialog):
             width=120
         )
 
-        self.type_dropdown = ft.Dropdown(
-            label=translate('type'),
-            value=translate('incoming') if (not expense or expense['type']=='incoming') else translate('outgoing'),
-            options=[ft.dropdown.Option(translate('incoming')), ft.dropdown.Option(translate('outgoing'))],
-            width=120
+        current_type = "incoming" if (not expense or expense['type'] == 'incoming') else "outgoing"
+        self.type_selector = ft.SegmentedButton(
+            selected={current_type},
+            allow_empty_selection=False,
+            allow_multiple_selection=False,
+            segments=[
+                ft.Segment(
+                    value="incoming",
+                    icon=ft.Icon(ft.Icons.ARROW_DOWNWARD),
+                    label=ft.Text("لنا"),
+                ),
+                ft.Segment(
+                    value="outgoing",
+                    icon=ft.Icon(ft.Icons.ARROW_UPWARD),
+                    label=ft.Text("له"),
+                ),
+            ],
+            width=dialog_width - 20,
         )
+        # Name-only compatibility alias for extensions that inspect the dialog.
+        # Selection is intentionally read from SegmentedButton.selected.
+        self.type_dropdown = self.type_selector
 
         self.operation_date = FinancialDateField(
             self._page,
@@ -150,7 +166,10 @@ class AddEditExpenseDialog(ft.AlertDialog):
             controls=[
                 self.company_field,
                 ft.Row([self.amount_field, self.currency_dropdown], spacing=10, wrap=True),
-                ft.Row([self.type_dropdown, self.operation_date], spacing=10, wrap=True),
+                ft.Text("اتجاه القيد", size=13, weight=ft.FontWeight.BOLD, color=ft.Colors.GREY_700),
+                self.type_selector,
+                ft.Text("لنا: مبلغ مستحق للشركة · له: مبلغ مستحق على الشركة", size=11, color=ft.Colors.GREY_600),
+                self.operation_date,
                 self.person_field,
                 self.service_dropdown,
                 self.operation_text,
@@ -169,7 +188,7 @@ class AddEditExpenseDialog(ft.AlertDialog):
         self._saving = False
         self.save_btn = save_button(translate('save'), self._save)
         self.title = dialog_title(
-            translate('edit') if self.expense_id is not None else translate('add'),
+            "تعديل قيد" if self.expense_id is not None else "إضافة قيد",
             ft.Icons.EDIT_NOTE
         )
         self.content = content
@@ -235,6 +254,27 @@ class AddEditExpenseDialog(ft.AlertDialog):
             self.converted_amount_text.value = ""
         self._page.update()
 
+    def _selected_entry_type(self):
+        """Return the accounting direction selected by the user.
+
+        SegmentedButton.selected is a set in the pinned Flet runtime. Keep the
+        normalization defensive for tests or future runtimes that may expose a
+        list/tuple/string instead.
+        """
+        selected = getattr(self.type_selector, "selected", None)
+        if isinstance(selected, str):
+            values = {selected}
+        else:
+            try:
+                values = set(selected or [])
+            except Exception:
+                values = set()
+        if "incoming" in values:
+            return "incoming"
+        if "outgoing" in values:
+            return "outgoing"
+        return None
+
     def _save(self, e):
         if self._saving:
             return
@@ -248,7 +288,10 @@ class AddEditExpenseDialog(ft.AlertDialog):
             self._show_snackbar(f"{str(ex)}. يُسمح بالصفر فقط لحفظ العملية بانتظار الدفع.", True)
             return
 
-        type_val = 'incoming' if self.type_dropdown.value == translate('incoming') else 'outgoing'
+        type_val = self._selected_entry_type()
+        if type_val not in {"incoming", "outgoing"}:
+            self._show_snackbar("اختر اتجاه القيد: لنا أو له", True)
+            return
         try:
             date = self.operation_date.require_value("تاريخ العملية")
         except Exception as ex:

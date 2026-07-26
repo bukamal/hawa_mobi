@@ -81,6 +81,13 @@ class CompanyDetailsMobileView(ft.Column):
 
         self.report_actions = ft.Row([
             ft.FilledButton(
+                content=ft.Row([ft.Icon(ft.Icons.ADD_CARD), ft.Text("إضافة قيد")], tight=True),
+                on_click=self._add_record,
+                bgcolor=SUCCESS,
+                color=ft.Colors.WHITE,
+                tooltip=f"إضافة قيد داخل حساب {company_name}",
+            ),
+            ft.FilledButton(
                 content=ft.Row([ft.Icon(ft.Icons.PERSON_ADD_ALT), ft.Text("خدمة مباشرة")], tight=True),
                 on_click=self._add_direct_service,
                 bgcolor=WARNING,
@@ -359,6 +366,21 @@ class CompanyDetailsMobileView(ft.Column):
         self.records_list.controls = cards
         self._page.update()
 
+
+    def _add_record(self, e=None):
+        if UserSession.get_current() and UserSession.get_current().get('role') == 'viewer':
+            self._show_snackbar("ليس لديك صلاحية لإضافة قيود", True)
+            return
+        try:
+            from views.dialogs.add_edit_expense_dialog import AddEditExpenseDialog
+            dialog = AddEditExpenseDialog(
+                page=self._page,
+                on_save=lambda _: self._reload(),
+                company_name=self.company_name,
+            )
+            open_control(self._page, dialog)
+        except Exception as ex:
+            self._show_snackbar(f"خطأ في فتح إضافة القيد: {str(ex)}", True)
 
     def _add_direct_service(self, e=None):
         if UserSession.get_current() and UserSession.get_current().get('role') == 'viewer':
