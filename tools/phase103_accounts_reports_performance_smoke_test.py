@@ -27,18 +27,15 @@ def static_checks() -> None:
     require("views/company_details_mobile_view.py", "self.direction_filter")
     require("views/company_details_mobile_view.py", "self.person_filter")
     require("views/company_details_mobile_view.py", "_open_record_actions")
+    require("views/company_details_mobile_view.py", "_build_mobile_ledger_cards")
+    require("views/company_details_mobile_view.py", 'return "compact" if page_width(self._page) < 720 else "table"')
     require("views/company_details_mobile_view.py", "تصدير ومشاركة كشف الحساب")
 
 
 
 
 def _datatable_row_count(root_control) -> int:
-    """Return the number of rendered rows in the first nested Flet DataTable.
-
-    CompanyDetailsMobileView used to render one control per ledger record. Since
-    Phase 106 it renders a single responsive card containing a DataTable, so the
-    pagination regression must count DataTable.rows rather than wrapper controls.
-    """
+    """Return the number of rendered rows in the first nested wide DataTable."""
     stack = [root_control]
     visited = set()
     while stack:
@@ -127,16 +124,26 @@ def runtime_checks() -> None:
 
     from views.company_details_mobile_view import CompanyDetailsMobileView
     details = CompanyDetailsMobileView(page, "شركة كثيفة")
-    assert _datatable_row_count(details.records_list) == 20
+    assert details._last_ledger_layout_mode == "compact"
+    assert details._desktop_ledger_table is None
+    assert len(details._mobile_ledger_rows) == 20
     assert details.pagination_bar.visible
     details._load_more()
-    assert _datatable_row_count(details.records_list) == 25
+    assert len(details._mobile_ledger_rows) == 25
     details.direction_filter.value = "لنا"
     details._on_filter_changed()
     assert all(r.get("type") == "incoming" for r in details.records)
     details.person_filter.value = "أحمد"
     details._on_filter_changed()
     assert all((r.get("person_name") or "") == "أحمد" for r in details.records)
+
+    class FakeWidePage(FakePage):
+        width = 1024
+
+    wide_details = CompanyDetailsMobileView(FakeWidePage(), "شركة كثيفة")
+    assert wide_details._last_ledger_layout_mode == "table"
+    assert wide_details._mobile_ledger_rows == []
+    assert _datatable_row_count(wide_details.records_list) == 20
 
     from views.reports_center_mobile_view import ReportsCenterMobileView
     reports = ReportsCenterMobileView(page)

@@ -5,7 +5,7 @@ from database import ExpenseRepository
 from auth.session import UserSession
 from i18n.translator import translate
 from currency import currency
-from views.design_system.responsive import bottom_safe_spacer
+from views.design_system.responsive import bottom_safe_spacer, page_width
 from views.ui_kit import (
     show_snackbar, empty_state, data_card, amount_pill, key_value_tile, pill,
     summary_bar, metric_tile, info_banner, search_field, secondary_button,
@@ -29,6 +29,9 @@ class CompanyDetailsMobileView(ft.Column):
         self.records = list(self._all_records)
         self._page_size = 20
         self._visible_limit = self._page_size
+        self._last_ledger_layout_mode = None
+        self._mobile_ledger_rows = []
+        self._desktop_ledger_table = None
         self.spacing = 10
         self.expand = True
         self.scroll = ft.ScrollMode.AUTO
@@ -278,46 +281,190 @@ class CompanyDetailsMobileView(ft.Column):
         }
         return labels.get(source_type, operation_label(record.get("operation_type")))
 
+    def _ledger_layout_mode(self):
+        """Use compact ledger cards on narrow Android surfaces.
+
+        Flutter/Flet DataTable is intentionally reserved for wide layouts.  On
+        phones it can receive unbounded horizontal constraints when nested in
+        the page's vertical scroller, which renders as a large grey ErrorWidget
+        in release APKs.
+        """
+        return "compact" if page_width(self._page) < 720 else "table"
+
+    def _on_responsive_resize(self):
+        """Rebuild only when rotation crosses the compact/table breakpoint."""
+        mode = self._ledger_layout_mode()
+        if mode != self._last_ledger_layout_mode:
+            self._load_data()
+
+    @staticmethod
+    def _payment_label_and_color(record):
+        payment_status = str(record.get("payment_status") or "")
+        labels = {
+            "unpaid": "غير مدفوع",
+            "partial": "مدفوع جزئيًا",
+            "paid": "مدفوع بالكامل",
+            "not_applicable": "حركة مالية",
+        }
+        color = SUCCESS if payment_status == "paid" else (
+            WARNING if payment_status in ("partial", "unpaid") else MUTED
+        )
+        return labels.get(payment_status, payment_status or "حركة مالية"), color
+
+    def _record_display_values(self, record, running_by_key, display_curr):
+        original_currency = record.get("currency_original") or display_curr
+        amount_value = float(record.get("amount_original") or 0)
+        amount_str = currency.format_amount_ui(amount_value, original_currency)
+        settleable = int(record.get("is_settleable") or 0) == 1
+        remaining_amount = float(record.get("remaining_amount_original") or 0)
+        paid_amount = float(record.get("paid_amount_original") or 0)
+        is_waiting = settleable and remaining_amount > 0.005
+
+        running_usd = float(running_by_key.get(record.get("id") or id(record), 0.0) or 0.0)
+        running_display = currency.convert(abs(running_usd), "USD", display_curr)
+        running_text = currency.format_amount_ui(running_display, display_curr)
+        running_direction = "لنا" if running_usd >= 0 else "له"
+        running_color = SUCCESS if running_usd >= 0 else DANGER
+
+        description = (
+            str(record.get("print_description") or "").strip()
+            or str(record.get("notes") or "").strip()
+            or operation_label(record.get("operation_type"))
+        )
+        person = str(record.get("person_name") or "").strip()
+        service_type = str(record.get("service_type") or "غير محدد").strip()
+        subtitle_parts = [part for part in (person, service_type) if part and part != "غير محدد"]
+
+        payment_label, payment_color = self._payment_label_and_color(record)
+        direction = "لنا" if record.get("type") == "incoming" else "له"
+        direction_color = WARNING if is_waiting else (SUCCESS if direction == "لنا" else DANGER)
+        direction_bg = "#FFF4DE" if is_waiting else ("#E9F8F0" if direction == "لنا" else "#FDECEC")
+
+        return {
+            "currency": original_currency,
+            "amount": amount_str,
+            "settleable": settleable,
+            "paid": paid_amount,
+            "remaining": remaining_amount,
+            "payment_label": payment_label,
+            "payment_color": payment_color,
+            "direction": direction,
+            "direction_color": direction_color,
+            "direction_bg": direction_bg,
+            "running_text": running_text,
+            "running_direction": running_direction,
+            "running_color": running_color,
+            "description": description or "—",
+            "subtitle": " · ".join(subtitle_parts),
+        }
+
+    def _build_mobile_ledger_cards(self, records, running_by_key, display_curr, is_viewer):
+        cards = []
+        for idx, record in enumerate(records, 1):
+            values = self._record_display_values(record, running_by_key, display_curr)
+            action_control = (
+                ft.Icon(ft.Icons.VISIBILITY_OUTLINED, color=MUTED, size=19)
+                if is_viewer
+                else operation_menu_button(
+                    lambda e, rec=record: self._open_record_actions(rec),
+                    tooltip="إجراءات القيد",
+                )
+            )
+
+            payment_strip = ft.Container(height=0)
+            if values["settleable"]:
+                payment_strip = ft.Container(
+                    content=ft.Row([
+                        key_value_tile(
+                            "مدفوع",
+                            currency.format_amount_ui(values["paid"], values["currency"]),
+                            color=SUCCESS,
+                        ),
+                        key_value_tile(
+                            "متبقي",
+                            currency.format_amount_ui(values["remaining"], values["currency"]),
+                            color=values["payment_color"],
+                        ),
+                        key_value_tile("الحالة", values["payment_label"], color=values["payment_color"]),
+                    ], spacing=4, vertical_alignment=ft.CrossAxisAlignment.START),
+                    bgcolor=ft.Colors.GREY_100,
+                    border_radius=10,
+                    padding=ft.Padding(left=8, right=8, top=8, bottom=8),
+                )
+
+            match_control = self._match_chip(record) if normalize_search_text(self.search_query) else ft.Container(height=0)
+            card = data_card(
+                ft.Column([
+                    ft.Row([
+                        ft.Column([
+                            ft.Text(str(record.get("date") or "—"), size=12, weight=ft.FontWeight.BOLD, color=TEXT),
+                            ft.Text(self._source_label(record), size=10, color=PRIMARY, max_lines=1, overflow=ft.TextOverflow.ELLIPSIS),
+                        ], spacing=2, expand=True),
+                        ft.Text(f"#{idx}", size=10, color=MUTED),
+                        action_control,
+                    ], spacing=6, vertical_alignment=ft.CrossAxisAlignment.CENTER),
+                    ft.Text(values["description"], size=13, weight=ft.FontWeight.BOLD, color=TEXT, max_lines=2, overflow=ft.TextOverflow.ELLIPSIS),
+                    ft.Text(values["subtitle"], size=11, color=MUTED, max_lines=1, overflow=ft.TextOverflow.ELLIPSIS)
+                    if values["subtitle"] else ft.Container(height=0),
+                    ft.Container(
+                        content=ft.Row([
+                            key_value_tile(values["direction"], values["amount"], color=values["direction_color"]),
+                            key_value_tile(
+                                "الرصيد بعد القيد",
+                                f"{values['running_text']} {values['running_direction']}",
+                                color=values["running_color"],
+                            ),
+                        ], spacing=6, vertical_alignment=ft.CrossAxisAlignment.START),
+                        bgcolor=values["direction_bg"],
+                        border_radius=10,
+                        padding=ft.Padding(left=8, right=8, top=8, bottom=8),
+                    ),
+                    payment_strip,
+                    match_control,
+                ], spacing=8),
+                padding=12,
+                elevation=0,
+            )
+            cards.append(card)
+
+        self._mobile_ledger_rows = cards
+        self._desktop_ledger_table = None
+        heading = ft.Container(
+            content=ft.Column([
+                ft.Row([
+                    ft.Icon(ft.Icons.RECEIPT_LONG_OUTLINED, color=PRIMARY, size=20),
+                    ft.Text("قيود الشركة", weight=ft.FontWeight.BOLD, color=TEXT, expand=True),
+                    pill(f"{len(records)} قيد", color=PRIMARY, bgcolor=PRIMARY_SOFT, size=10),
+                ], spacing=7, vertical_alignment=ft.CrossAxisAlignment.CENTER),
+                ft.Text("اعرض التفاصيل والسداد من زر الإجراءات داخل كل قيد", size=10, color=MUTED),
+            ], spacing=4),
+            padding=ft.Padding(left=10, right=10, top=6, bottom=2),
+        )
+        return [heading, *cards]
+
     def _build_ledger_table(self, records, running_by_key, display_curr, is_viewer):
         rows = []
         for idx, record in enumerate(records, 1):
-            original_currency = record.get("currency_original") or display_curr
-            amount_str = currency.format_amount_ui(float(record.get("amount_original") or 0), original_currency)
-            is_waiting = int(record.get("is_settleable") or 0) == 1 and float(record.get("remaining_amount_original") or 0) > 0.005
-            incoming = amount_str if record.get("type") == "incoming" else "—"
-            outgoing = amount_str if record.get("type") == "outgoing" else "—"
-            incoming_color = WARNING if is_waiting else SUCCESS
-            outgoing_color = WARNING if is_waiting else DANGER
-            settleable = int(record.get("is_settleable") or 0) == 1
-            paid_amount = float(record.get("paid_amount_original") or 0)
-            remaining_amount = float(record.get("remaining_amount_original") or 0)
-            payment_status = str(record.get("payment_status") or "")
-            payment_labels = {"unpaid": "غير مدفوع", "partial": "جزئي", "paid": "مكتمل", "not_applicable": "حركة"}
-            payment_color = SUCCESS if payment_status == "paid" else (WARNING if payment_status in ("partial", "unpaid") else MUTED)
-            if settleable:
+            values = self._record_display_values(record, running_by_key, display_curr)
+            incoming = values["amount"] if record.get("type") == "incoming" else "—"
+            outgoing = values["amount"] if record.get("type") == "outgoing" else "—"
+            incoming_color = values["direction_color"] if record.get("type") == "incoming" else MUTED
+            outgoing_color = values["direction_color"] if record.get("type") == "outgoing" else MUTED
+
+            if values["settleable"]:
                 payment_content = ft.Column([
-                    ft.Text(f"مدفوع: {currency.format_amount_ui(paid_amount, original_currency)}", size=10, color=SUCCESS),
-                    ft.Text(f"متبقي: {currency.format_amount_ui(remaining_amount, original_currency)}", size=10, weight=ft.FontWeight.BOLD, color=payment_color),
-                    ft.Text(payment_labels.get(payment_status, payment_status), size=9, color=payment_color),
+                    ft.Text(
+                        f"مدفوع: {currency.format_amount_ui(values['paid'], values['currency'])}",
+                        size=10, color=SUCCESS,
+                    ),
+                    ft.Text(
+                        f"متبقي: {currency.format_amount_ui(values['remaining'], values['currency'])}",
+                        size=10, weight=ft.FontWeight.BOLD, color=values["payment_color"],
+                    ),
+                    ft.Text(values["payment_label"], size=9, color=values["payment_color"]),
                 ], spacing=1, tight=True)
             else:
-                payment_content = ft.Text(payment_labels.get(payment_status, "حركة"), size=10, color=MUTED)
-
-            running_usd = float(running_by_key.get(record.get("id") or id(record), 0.0) or 0.0)
-            running_display = currency.convert(abs(running_usd), "USD", display_curr)
-            running_text = currency.format_amount_ui(running_display, display_curr)
-            running_direction = "لنا" if running_usd >= 0 else "له"
-            running_color = SUCCESS if running_usd >= 0 else DANGER
-
-            description = (
-                str(record.get("print_description") or "").strip()
-                or str(record.get("notes") or "").strip()
-                or operation_label(record.get("operation_type"))
-            )
-            person = str(record.get("person_name") or "").strip()
-            service_type = str(record.get("service_type") or "غير محدد").strip()
-            subtitle_parts = [part for part in (person, service_type) if part and part != "غير محدد"]
-            subtitle = " · ".join(subtitle_parts)
+                payment_content = ft.Text(values["payment_label"], size=10, color=MUTED)
 
             action_control = (
                 ft.Icon(ft.Icons.VISIBILITY_OUTLINED, color=MUTED, size=19)
@@ -337,8 +484,9 @@ class CompanyDetailsMobileView(ft.Column):
                 )),
                 ft.DataCell(ft.Container(
                     content=ft.Column([
-                        ft.Text(description or "—", size=12, max_lines=2, overflow=ft.TextOverflow.ELLIPSIS),
-                        ft.Text(subtitle, size=10, color=MUTED, max_lines=1, overflow=ft.TextOverflow.ELLIPSIS) if subtitle else ft.Container(height=0),
+                        ft.Text(values["description"], size=12, max_lines=2, overflow=ft.TextOverflow.ELLIPSIS),
+                        ft.Text(values["subtitle"], size=10, color=MUTED, max_lines=1, overflow=ft.TextOverflow.ELLIPSIS)
+                        if values["subtitle"] else ft.Container(height=0),
                     ], spacing=2, tight=True),
                     width=230,
                 )),
@@ -347,8 +495,8 @@ class CompanyDetailsMobileView(ft.Column):
                 ft.DataCell(ft.Container(payment_content, width=170, alignment=ft.alignment.center_right)),
                 ft.DataCell(ft.Container(
                     content=ft.Column([
-                        ft.Text(running_text, size=12, weight=ft.FontWeight.BOLD, color=running_color),
-                        ft.Text(running_direction, size=10, color=running_color),
+                        ft.Text(values["running_text"], size=12, weight=ft.FontWeight.BOLD, color=values["running_color"]),
+                        ft.Text(values["running_direction"], size=10, color=values["running_color"]),
                     ], spacing=1, tight=True, horizontal_alignment=ft.CrossAxisAlignment.END),
                     width=120, alignment=ft.alignment.center_right,
                 )),
@@ -377,17 +525,23 @@ class CompanyDetailsMobileView(ft.Column):
             data_row_min_height=62,
             data_row_max_height=76,
             divider_thickness=0.8,
+            heading_row_color=ft.Colors.GREY_100,
+        )
+        self._desktop_ledger_table = table
+        self._mobile_ledger_rows = []
+        table_surface = ft.Container(
+            content=ft.Row([table], scroll=ft.ScrollMode.AUTO),
             border=ft.border.all(1, BORDER),
             border_radius=12,
-            heading_row_color=ft.Colors.GREY_100,
+            bgcolor=ft.Colors.WHITE,
         )
         return data_card(ft.Column([
             ft.Row([
                 ft.Icon(ft.Icons.TABLE_ROWS_OUTLINED, color=PRIMARY, size=20),
                 ft.Text("جدول قيود الشركة", weight=ft.FontWeight.BOLD, color=TEXT, expand=True),
                 ft.Text("مرّر أفقياً لرؤية جميع الأعمدة", size=10, color=MUTED),
-            ], spacing=6, wrap=True, run_spacing=4),
-            ft.Row([table], scroll=ft.ScrollMode.AUTO),
+            ], spacing=6, vertical_alignment=ft.CrossAxisAlignment.CENTER),
+            table_surface,
         ], spacing=8), padding=8, elevation=0)
 
     def _load_data(self):
@@ -447,7 +601,16 @@ class CompanyDetailsMobileView(ft.Column):
             table_controls = [empty_state("لا توجد قيود مطابقة", "غيّر البحث أو الفلاتر", icon=ft.Icons.RECEIPT_LONG, padding=30)]
             self.pagination_bar.visible = False
         else:
-            table_controls = [self._build_ledger_table(visible_records, running_by_key, display_curr, is_viewer)]
+            layout_mode = self._ledger_layout_mode()
+            self._last_ledger_layout_mode = layout_mode
+            if layout_mode == "compact":
+                table_controls = self._build_mobile_ledger_cards(
+                    visible_records, running_by_key, display_curr, is_viewer
+                )
+            else:
+                table_controls = [self._build_ledger_table(
+                    visible_records, running_by_key, display_curr, is_viewer
+                )]
             shown = min(len(visible_records), len(filtered_records))
             self.pagination_text.value = f"عرض {shown} من {len(filtered_records)} قيد"
             self.load_more_button.visible = shown < len(filtered_records)

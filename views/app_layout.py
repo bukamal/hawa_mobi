@@ -279,7 +279,30 @@ class AppLayout(ft.Column):
 
     def _handle_resize(self, e=None):
         self._apply_responsive_mode()
+        self._notify_responsive_content()
         safe_update(self._page)
+
+    def _notify_responsive_content(self):
+        """Let active route controls rebuild when a layout breakpoint changes."""
+        stack = [getattr(self.content_area, "content", None)]
+        visited = set()
+        while stack:
+            control = stack.pop()
+            if control is None or id(control) in visited:
+                continue
+            visited.add(id(control))
+            callback = getattr(control, "_on_responsive_resize", None)
+            if callable(callback):
+                try:
+                    callback()
+                except Exception:
+                    pass
+            content = getattr(control, "content", None)
+            if content is not None:
+                stack.append(content)
+            controls = getattr(control, "controls", None)
+            if controls:
+                stack.extend(list(controls))
 
     def _apply_responsive_mode(self):
         factor = form_factor(self._page)
