@@ -142,7 +142,7 @@ class CompanyDetailsMobileView(ft.Column):
                 continue
             if person != "الكل" and str(record.get('person_name') or '').strip() != person:
                 continue
-            is_waiting = record.get('status') == 'waiting_payment'
+            is_waiting = int(record.get('is_settleable') or 0) == 1 and float(record.get('remaining_amount_original') or 0) > 0.005
             if direction == "لنا" and (record.get('type') != 'incoming' or is_waiting):
                 continue
             if direction == "له" and (record.get('type') != 'outgoing' or is_waiting):
@@ -191,18 +191,30 @@ class CompanyDetailsMobileView(ft.Column):
                 callback(record)
             actions.append(modern_action_button(label, icon, handler, color=color, bgcolor=bgcolor))
 
+        payment_source = source_type in ('payment_received', 'payment_paid')
+        settleable = int(record.get('is_settleable') or 0) == 1 and not payment_source
+        remaining = float(record.get('remaining_amount_original') or 0)
+        paid = float(record.get('paid_amount_original') or 0)
+        if settleable and remaining > 0.005:
+            add_action("تسجيل دفعة", ft.Icons.PAYMENTS_OUTLINED, self._open_payment_dialog, color=SUCCESS, bgcolor="#E9F8F0")
+        if settleable and paid > 0.005 and remaining <= 0.005:
+            add_action("عرض سجل الدفعات", ft.Icons.RECEIPT_LONG_OUTLINED, self._open_payment_dialog)
+
         if not source_type and not locked:
             add_action("تعديل القيد", ft.Icons.EDIT, self._edit_record)
             add_action("حذف القيد", ft.Icons.DELETE, self._delete_record, color=DANGER, bgcolor="#FDECEC")
-        elif source_type == 'third_party_payment':
-            add_action("تعديل العملية", ft.Icons.EDIT_NOTE, self._edit_third_party)
-            add_action("عكس العملية", ft.Icons.UNDO, self._reverse_third_party, color=WARNING, bgcolor="#FFF7E3")
-        elif source_type in ('service_case_client', 'service_case_supplier'):
-            add_action("تعديل ملف الخدمة", ft.Icons.EDIT_NOTE, self._edit_service_case)
-            add_action("عكس ملف الخدمة", ft.Icons.UNDO, self._reverse_service_case, color=WARNING, bgcolor="#FFF7E3")
-        elif source_type in ('direct_service_client', 'direct_service_supplier'):
-            add_action("تعديل الخدمة", ft.Icons.EDIT_NOTE, self._edit_direct_service)
-            add_action("عكس الخدمة", ft.Icons.UNDO, self._reverse_direct_service, color=WARNING, bgcolor="#FFF7E3")
+        elif source_type in ('third_party_payment', 'third_party_payment_reversal'):
+            if source_type == 'third_party_payment':
+                add_action("تعديل العملية", ft.Icons.EDIT_NOTE, self._edit_third_party)
+            add_action("حذف العملية كاملة", ft.Icons.DELETE_FOREVER, self._delete_third_party, color=DANGER, bgcolor="#FDECEC")
+        elif source_type in ('service_case_client', 'service_case_supplier', 'service_case_reversal'):
+            if source_type != 'service_case_reversal':
+                add_action("تعديل ملف الخدمة", ft.Icons.EDIT_NOTE, self._edit_service_case)
+            add_action("حذف ملف الخدمة كاملاً", ft.Icons.DELETE_FOREVER, self._delete_service_case, color=DANGER, bgcolor="#FDECEC")
+        elif source_type in ('direct_service_client', 'direct_service_supplier', 'direct_service_reversal'):
+            if source_type != 'direct_service_reversal':
+                add_action("تعديل الخدمة", ft.Icons.EDIT_NOTE, self._edit_direct_service)
+            add_action("حذف الخدمة كاملة", ft.Icons.DELETE_FOREVER, self._delete_direct_service, color=DANGER, bgcolor="#FDECEC")
         if not actions:
             self._show_snackbar("لا توجد إجراءات متاحة لهذا القيد", False)
             return
@@ -229,10 +241,151 @@ class CompanyDetailsMobileView(ft.Column):
             padding=ft.Padding(left=8, right=8, top=5, bottom=5),
         )
 
+    @staticmethod
+    def _record_sort_key(record):
+        try:
+            record_id = int(record.get("id") or 0)
+        except Exception:
+            record_id = 0
+        return (
+            str(record.get("date") or ""),
+            str(record.get("created_at") or record.get("updated_at") or ""),
+            record_id,
+        )
+
+    @staticmethod
+    def _source_label(record):
+        source_type = str(record.get("source_type") or "").strip()
+        labels = {
+            "third_party_payment": "سداد بالنيابة",
+            "third_party_payment_reversal": "سداد بالنيابة قديم/معكوس",
+            "service_case_client": "ملف خدمة · عميل",
+            "service_case_supplier": "ملف خدمة · مورد",
+            "service_case_reversal": "ملف خدمة قديم/معكوس",
+            "direct_service_client": "خدمة مباشرة · عميل",
+            "direct_service_supplier": "خدمة مباشرة · مورد",
+            "direct_service_reversal": "خدمة مباشرة قديمة/معكوسة",
+            "payment_received": "دفعة مستلمة",
+            "payment_paid": "دفعة مدفوعة",
+        }
+        return labels.get(source_type, operation_label(record.get("operation_type")))
+
+    def _build_ledger_table(self, records, running_by_key, display_curr, is_viewer):
+        rows = []
+        for idx, record in enumerate(records, 1):
+            original_currency = record.get("currency_original") or display_curr
+            amount_str = currency.format_amount_ui(float(record.get("amount_original") or 0), original_currency)
+            is_waiting = int(record.get("is_settleable") or 0) == 1 and float(record.get("remaining_amount_original") or 0) > 0.005
+            incoming = amount_str if record.get("type") == "incoming" else "—"
+            outgoing = amount_str if record.get("type") == "outgoing" else "—"
+            incoming_color = WARNING if is_waiting else SUCCESS
+            outgoing_color = WARNING if is_waiting else DANGER
+            settleable = int(record.get("is_settleable") or 0) == 1
+            paid_amount = float(record.get("paid_amount_original") or 0)
+            remaining_amount = float(record.get("remaining_amount_original") or 0)
+            payment_status = str(record.get("payment_status") or "")
+            payment_labels = {"unpaid": "غير مدفوع", "partial": "جزئي", "paid": "مكتمل", "not_applicable": "حركة"}
+            payment_color = SUCCESS if payment_status == "paid" else (WARNING if payment_status in ("partial", "unpaid") else MUTED)
+            if settleable:
+                payment_content = ft.Column([
+                    ft.Text(f"مدفوع: {currency.format_amount_ui(paid_amount, original_currency)}", size=10, color=SUCCESS),
+                    ft.Text(f"متبقي: {currency.format_amount_ui(remaining_amount, original_currency)}", size=10, weight=ft.FontWeight.BOLD, color=payment_color),
+                    ft.Text(payment_labels.get(payment_status, payment_status), size=9, color=payment_color),
+                ], spacing=1, tight=True)
+            else:
+                payment_content = ft.Text(payment_labels.get(payment_status, "حركة"), size=10, color=MUTED)
+
+            running_usd = float(running_by_key.get(record.get("id") or id(record), 0.0) or 0.0)
+            running_display = currency.convert(abs(running_usd), "USD", display_curr)
+            running_text = currency.format_amount_ui(running_display, display_curr)
+            running_direction = "لنا" if running_usd >= 0 else "له"
+            running_color = SUCCESS if running_usd >= 0 else DANGER
+
+            description = (
+                str(record.get("print_description") or "").strip()
+                or str(record.get("notes") or "").strip()
+                or operation_label(record.get("operation_type"))
+            )
+            person = str(record.get("person_name") or "").strip()
+            service_type = str(record.get("service_type") or "غير محدد").strip()
+            subtitle_parts = [part for part in (person, service_type) if part and part != "غير محدد"]
+            subtitle = " · ".join(subtitle_parts)
+
+            action_control = (
+                ft.Icon(ft.Icons.VISIBILITY_OUTLINED, color=MUTED, size=19)
+                if is_viewer
+                else operation_menu_button(
+                    lambda e, rec=record: self._open_record_actions(rec),
+                    tooltip="إجراءات القيد",
+                )
+            )
+            rows.append(ft.DataRow(cells=[
+                ft.DataCell(ft.Container(
+                    content=ft.Column([
+                        ft.Text(str(record.get("date") or "—"), size=12, weight=ft.FontWeight.BOLD),
+                        ft.Text(f"#{idx}", size=10, color=MUTED),
+                    ], spacing=2, tight=True),
+                    width=92,
+                )),
+                ft.DataCell(ft.Container(
+                    content=ft.Column([
+                        ft.Text(description or "—", size=12, max_lines=2, overflow=ft.TextOverflow.ELLIPSIS),
+                        ft.Text(subtitle, size=10, color=MUTED, max_lines=1, overflow=ft.TextOverflow.ELLIPSIS) if subtitle else ft.Container(height=0),
+                    ], spacing=2, tight=True),
+                    width=230,
+                )),
+                ft.DataCell(ft.Container(ft.Text(incoming, size=12, weight=ft.FontWeight.BOLD, color=incoming_color), width=118, alignment=ft.alignment.center_right)),
+                ft.DataCell(ft.Container(ft.Text(outgoing, size=12, weight=ft.FontWeight.BOLD, color=outgoing_color), width=118, alignment=ft.alignment.center_right)),
+                ft.DataCell(ft.Container(payment_content, width=170, alignment=ft.alignment.center_right)),
+                ft.DataCell(ft.Container(
+                    content=ft.Column([
+                        ft.Text(running_text, size=12, weight=ft.FontWeight.BOLD, color=running_color),
+                        ft.Text(running_direction, size=10, color=running_color),
+                    ], spacing=1, tight=True, horizontal_alignment=ft.CrossAxisAlignment.END),
+                    width=120, alignment=ft.alignment.center_right,
+                )),
+                ft.DataCell(ft.Container(
+                    content=ft.Text(self._source_label(record), size=11, color=PRIMARY, max_lines=2, overflow=ft.TextOverflow.ELLIPSIS),
+                    width=150,
+                )),
+                ft.DataCell(ft.Container(action_control, width=46, alignment=ft.alignment.center)),
+            ]))
+
+        table = ft.DataTable(
+            columns=[
+                ft.DataColumn(ft.Text("التاريخ", weight=ft.FontWeight.BOLD)),
+                ft.DataColumn(ft.Text("البيان", weight=ft.FontWeight.BOLD)),
+                ft.DataColumn(ft.Text("لنا", weight=ft.FontWeight.BOLD), numeric=True),
+                ft.DataColumn(ft.Text("له", weight=ft.FontWeight.BOLD), numeric=True),
+                ft.DataColumn(ft.Text("السداد", weight=ft.FontWeight.BOLD), numeric=True),
+                ft.DataColumn(ft.Text("الرصيد", weight=ft.FontWeight.BOLD), numeric=True),
+                ft.DataColumn(ft.Text("المصدر", weight=ft.FontWeight.BOLD)),
+                ft.DataColumn(ft.Text("إجراء", weight=ft.FontWeight.BOLD)),
+            ],
+            rows=rows,
+            column_spacing=14,
+            horizontal_margin=12,
+            heading_row_height=46,
+            data_row_min_height=62,
+            data_row_max_height=76,
+            divider_thickness=0.8,
+            border=ft.border.all(1, BORDER),
+            border_radius=12,
+            heading_row_color=ft.Colors.GREY_100,
+        )
+        return data_card(ft.Column([
+            ft.Row([
+                ft.Icon(ft.Icons.TABLE_ROWS_OUTLINED, color=PRIMARY, size=20),
+                ft.Text("جدول قيود الشركة", weight=ft.FontWeight.BOLD, color=TEXT, expand=True),
+                ft.Text("مرّر أفقياً لرؤية جميع الأعمدة", size=10, color=MUTED),
+            ], spacing=6, wrap=True, run_spacing=4),
+            ft.Row([table], scroll=ft.ScrollMode.AUTO),
+        ], spacing=8), padding=8, elevation=0)
+
     def _load_data(self):
         display_curr = currency.get_display_currency()
         approved_records = [r for r in self._all_records if r.get('status', 'approved') != 'waiting_payment']
-        waiting_count = len([r for r in self._all_records if r.get('status') == 'waiting_payment'])
+        waiting_count = len([r for r in self._all_records if int(r.get('is_settleable') or 0) == 1 and float(r.get('remaining_amount_original') or 0) > 0.005])
         total_in_usd = sum(float(r['amount']) for r in approved_records if r['type'] == 'incoming')
         total_out_usd = sum(float(r['amount']) for r in approved_records if r['type'] == 'outgoing')
         net_usd = total_in_usd - total_out_usd
@@ -271,7 +424,7 @@ class CompanyDetailsMobileView(ft.Column):
             self.people_summary.visible = False
 
         filtered_records = self._filtered_records()
-        chronological = sorted(filtered_records, key=lambda item: str(item.get('date') or ''))
+        chronological = sorted(self._all_records, key=self._record_sort_key)
         running_by_key = {}
         running_usd = 0.0
         for item in chronological:
@@ -280,92 +433,30 @@ class CompanyDetailsMobileView(ft.Column):
             running_by_key[item.get('id') or id(item)] = running_usd
 
         visible_records = filtered_records[:self._visible_limit]
-        cards = []
         is_viewer = UserSession.get_current() and UserSession.get_current().get('role') == 'viewer'
 
-        for idx, r in enumerate(visible_records, 1):
-            amount_str = currency.format_amount_ui(float(r.get('amount_original') or 0), r.get('currency_original') or display_curr)
-            is_waiting = r.get('status') == 'waiting_payment'
-            if r['type'] == 'incoming':
-                inc_out = amount_str
-                out_txt = "—"
-                amount_color = WARNING if is_waiting else SUCCESS
-                icon = ft.Icons.PAYMENTS if is_waiting else ft.Icons.ARROW_DOWNWARD
-                amount_label = "بانتظار الدفع" if is_waiting else "لنا"
-            else:
-                inc_out = "—"
-                out_txt = amount_str
-                amount_color = WARNING if is_waiting else DANGER
-                icon = ft.Icons.PAYMENTS if is_waiting else ft.Icons.ARROW_UPWARD
-                amount_label = "بانتظار الدفع" if is_waiting else "له"
-
-            row_running_usd = running_by_key.get(r.get('id') or id(r), 0.0)
-            running_display = currency.convert(row_running_usd, 'USD', display_curr)
-            running_str = currency.format_amount_ui(running_display, display_curr)
-            running_color = SUCCESS if row_running_usd >= 0 else DANGER
-
-            card = data_card(
-                ft.Column([
-                    ft.Row([
-                        pill(f"#{idx}", color=ft.Colors.GREY_700, bgcolor=ft.Colors.GREY_100),
-                        ft.Text(r['date'], size=12, color=ft.Colors.GREY_600, expand=True),
-                        ft.Icon(icon, color=amount_color, size=18),
-                    ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
-                    ft.Row([
-                        key_value_tile(amount_label, amount_str, amount_color),
-                        key_value_tile("تراكمي", running_str, running_color),
-                    ], alignment=ft.MainAxisAlignment.SPACE_AROUND),
-                    pill(
-                        f"⏳ تنبيه الدفع: {r.get('payment_due_date') or 'غير محدد'}",
-                        color=WARNING,
-                        bgcolor="#FFF7E3",
-                    ) if is_waiting else ft.Container(width=0, height=0),
-                    ft.Row([
-                        pill(f"👤 {r.get('person_name')}", color=PRIMARY, bgcolor=PRIMARY_SOFT) if (r.get('person_name') or '').strip() else ft.Container(width=0, height=0),
-                        pill(f"🧾 {r.get('service_type') or 'غير محدد'}", color=ft.Colors.GREY_800, bgcolor=ft.Colors.GREY_100),
-                        pill(f"⚙️ {operation_label(r.get('operation_type'))}", color=PRIMARY, bgcolor=PRIMARY_SOFT),
-                    ], spacing=5, wrap=True),
-                    ft.Text(r['notes'] or '', size=12, color=ft.Colors.GREY_600, max_lines=2, overflow=ft.TextOverflow.ELLIPSIS),
-                    self._match_chip(r) if normalize_search_text(self.search_query) else ft.Container(width=0, height=0),
-                    pill(
-                        "🔁 سداد بالنيابة" if r.get('source_type') == 'third_party_payment' else "↩️ عكس سداد بالنيابة",
-                        color=PRIMARY if r.get('source_type') == 'third_party_payment' else WARNING,
-                        bgcolor=PRIMARY_SOFT if r.get('source_type') == 'third_party_payment' else "#FFF7E3",
-                    ) if r.get('source_type') in ('third_party_payment', 'third_party_payment_reversal') else ft.Container(width=0, height=0),
-                    pill(
-                        '🧭 ملف خدمة - عميل' if r.get('source_type') == 'service_case_client' else ('🧭 ملف خدمة - مورد' if r.get('source_type') == 'service_case_supplier' else '↩️ عكس ملف خدمة'),
-                        color=PRIMARY,
-                        bgcolor=PRIMARY_SOFT,
-                    ) if r.get('source_type') in ('service_case_client', 'service_case_supplier', 'service_case_reversal') else ft.Container(width=0, height=0),
-                    pill(
-                        '💼 خدمة مباشرة - عميل' if r.get('source_type') == 'direct_service_client' else ('💼 خدمة مباشرة - مورد' if r.get('source_type') == 'direct_service_supplier' else '↩️ عكس خدمة مباشرة'),
-                        color=PRIMARY,
-                        bgcolor=PRIMARY_SOFT,
-                    ) if r.get('source_type') in ('direct_service_client', 'direct_service_supplier', 'direct_service_reversal') else ft.Container(width=0, height=0),
-                    ft.Row([
-                        ft.Text("اضغط لعرض الإجراءات", size=11, color=MUTED, expand=True),
-                        operation_menu_button(lambda e, rec=r: self._open_record_actions(rec), tooltip="إجراءات القيد"),
-                    ], alignment=ft.MainAxisAlignment.END)
-                ], spacing=8),
-                padding=12,
-                elevation=1,
-                margin=ft.Margin(left=5, right=5, top=5, bottom=5),
-            )
-            cards.append(card)
-
-        if not cards:
-            cards.append(empty_state("لا توجد قيود مطابقة", "غيّر البحث أو الفلاتر", icon=ft.Icons.RECEIPT_LONG, padding=30))
+        if not visible_records:
+            table_controls = [empty_state("لا توجد قيود مطابقة", "غيّر البحث أو الفلاتر", icon=ft.Icons.RECEIPT_LONG, padding=30)]
             self.pagination_bar.visible = False
         else:
+            table_controls = [self._build_ledger_table(visible_records, running_by_key, display_curr, is_viewer)]
             shown = min(len(visible_records), len(filtered_records))
             self.pagination_text.value = f"عرض {shown} من {len(filtered_records)} قيد"
             self.load_more_button.visible = shown < len(filtered_records)
             self.pagination_bar.visible = len(filtered_records) > self._page_size
 
         self.records = filtered_records
-        self.records_list.controls = cards
+        self.records_list.controls = table_controls
         self._page.update()
 
+
+    def _open_payment_dialog(self, record):
+        try:
+            from views.dialogs.payment_dialog import PaymentDialog
+            dialog = PaymentDialog(self._page, record, on_save=lambda _: self._reload())
+            open_control(self._page, dialog)
+        except Exception as ex:
+            self._show_snackbar(f"تعذر فتح الدفعات: {str(ex)}", True)
 
     def _add_record(self, e=None):
         if UserSession.get_current() and UserSession.get_current().get('role') == 'viewer':
@@ -488,6 +579,89 @@ class CompanyDetailsMobileView(ft.Column):
             actions=[btn_yes, btn_no]
         )
         open_control(self._page, dlg)
+
+    def _confirm_linked_operation_delete(self, record, *, title, operation_label_text, delete_callback):
+        ref = str(record.get('source_ref') or '').strip()
+        if not ref:
+            self._show_snackbar("لا يوجد مرجع للعملية المراد حذفها", True)
+            return
+        reason_field = ft.TextField(
+            label="سبب الحذف",
+            multiline=True,
+            min_lines=2,
+            max_lines=3,
+            hint_text="مثال: إدخال مكرر أو عملية أضيفت بالخطأ",
+            autofocus=True,
+        )
+
+        def confirm(e):
+            reason = str(reason_field.value or '').strip()
+            if not reason:
+                self._show_snackbar("سبب الحذف مطلوب", True)
+                return
+            try:
+                user = UserSession.get_current() or {}
+                delete_callback(ref, reason, user.get('id'))
+                self._show_snackbar(f"تم حذف {operation_label_text} وجميع القيود المرتبطة دون إنشاء قيد عكسي", False)
+                self._reload()
+                self._close_dialog(dlg)
+            except Exception as ex:
+                self._show_snackbar(f"خطأ في الحذف: {str(ex)}", True)
+
+        dlg = ft.AlertDialog(
+            modal=True,
+            title=ft.Row([
+                ft.Icon(ft.Icons.DELETE_FOREVER, color=DANGER),
+                ft.Text(title, weight=ft.FontWeight.BOLD, color=DANGER),
+            ], spacing=8),
+            content=ft.Column([
+                ft.Text(
+                    f"سيُحذف {operation_label_text} {ref} نهائياً مع جميع قيود العميل والمورد والمكونات التابعة له. "
+                    "لن يُنشأ قيد عكسي، وسيتغير رصيد كل شركة مرتبطة مباشرة. لا يمكن التراجع عن هذه العملية.",
+                    size=13,
+                ),
+                reason_field,
+            ], tight=True, spacing=12),
+            actions=[
+                ft.TextButton("حذف نهائي", on_click=confirm, style=ft.ButtonStyle(color=DANGER)),
+                ft.TextButton("إلغاء", on_click=lambda e: self._close_dialog(dlg)),
+            ],
+            actions_alignment=ft.MainAxisAlignment.END,
+        )
+        open_control(self._page, dlg)
+
+    def _delete_third_party(self, record):
+        from database import ThirdPartyPaymentRepository
+        self._confirm_linked_operation_delete(
+            record,
+            title="حذف عملية السداد بالنيابة",
+            operation_label_text="عملية السداد بالنيابة",
+            delete_callback=lambda ref, reason, uid: ThirdPartyPaymentRepository().delete_payment_on_behalf(
+                ref, user_id=uid, reason=reason
+            ),
+        )
+
+    def _delete_service_case(self, record):
+        from database import ServiceCaseRepository
+        self._confirm_linked_operation_delete(
+            record,
+            title="حذف ملف الخدمة",
+            operation_label_text="ملف الخدمة",
+            delete_callback=lambda ref, reason, uid: ServiceCaseRepository().delete(
+                ref, reason=reason, user_id=uid
+            ),
+        )
+
+    def _delete_direct_service(self, record):
+        from database import DirectServiceRepository
+        self._confirm_linked_operation_delete(
+            record,
+            title="حذف الخدمة المباشرة",
+            operation_label_text="الخدمة المباشرة",
+            delete_callback=lambda ref, reason, uid: DirectServiceRepository().delete(
+                ref, user_id=uid, reason=reason
+            ),
+        )
 
     def _edit_third_party(self, record):
         ref = record.get('source_ref') or ''

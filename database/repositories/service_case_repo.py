@@ -9,6 +9,7 @@ from database.repositories.base_repo import BaseRepository
 from auth.session import UserSession
 from services.currency_ledger_service import CurrencyLedgerService
 from services.ledger_operation_service import normalize_expense_metadata
+from services.payment_service import delete_payments_for_targets, enrich_expenses_with_payments, get_payment_summary, insert_payment_in_transaction, sync_payment_state
 from services.service_case_service import (
     SERVICE_CASE_SOURCE_CLIENT,
     SERVICE_CASE_SOURCE_SUPPLIER,
@@ -128,6 +129,8 @@ class ServiceCaseRepository(BaseRepository):
             "print_description": client_print_description(payload),
             "service_case_role": "client",
             "linked_company_name": supplier_summary,
+            "payment_due_date": payload.get("client_due_date") or None,
+            "payment_reminder_note": payload.get("payment_reminder_note"),
         })
         supplier_payloads: List[Dict[str, Any]] = []
         for component in payload.get("components") or []:
@@ -225,6 +228,8 @@ class ServiceCaseRepository(BaseRepository):
             "print_description": client_print_description(payload),
             "service_case_role": "client",
             "linked_company_name": supplier_summary,
+            "payment_due_date": payload.get("client_due_date") or None,
+            "payment_reminder_note": payload.get("payment_reminder_note"),
         })
 
         supplier_payloads: List[Dict[str, Any]] = []
@@ -263,6 +268,11 @@ class ServiceCaseRepository(BaseRepository):
         try:
             conn.execute("BEGIN IMMEDIATE")
             client_expense_id = self._insert_expense(conn, client_payload)
+            if float(payload.get("client_paid_amount") or 0) > 0:
+                target = dict(conn.execute("SELECT * FROM expenses WHERE id=?", (client_expense_id,)).fetchone())
+                insert_payment_in_transaction(conn, target, payload.get("client_paid_amount"), date=payload["date"], payment_method=payload.get("payment_method") or "cash", notes="دفعة أولى من المسافر", user_id=uid, username=user.get("username", ""), now=now)
+            else:
+                sync_payment_state(conn, client_expense_id, now=now)
             supplier_expense_ids: List[int] = []
             first_supplier_expense_id = None
             component_rows = []
@@ -280,6 +290,8 @@ class ServiceCaseRepository(BaseRepository):
                 component_rows.append((idx, component, supplier_expense_id, supplier_payload_for_component))
             for idx, component, supplier_expense_id, supplier_payload_for_component in component_rows:
                 self._insert_component(conn, reference, idx, component, payload, supplier_expense_id, supplier_payload_for_component)
+            for supplier_expense_id in supplier_expense_ids:
+                sync_payment_state(conn, supplier_expense_id, now=now)
 
             sale_base = float(client_payload.get("amount_base") or 0)
             cost_base = sum(float(x["payload"].get("amount_base") or 0) for x in supplier_payloads)
@@ -321,6 +333,10 @@ class ServiceCaseRepository(BaseRepository):
                     f"{c.get('service_type')} / {c.get('supplier_company_name') or '-'} / تكلفة {c.get('cost_amount_original')}"
                     for c in case["components"]
                 )
+            if case.get("client_expense_id"):
+                client = conn.execute("SELECT * FROM expenses WHERE id=?", (case["client_expense_id"],)).fetchone()
+                if client:
+                    case["client_entry"] = enrich_expenses_with_payments(conn, [dict(client)])[0]
         return cases
 
     def get_by_reference(self, reference: str) -> Dict[str, Any]:
@@ -343,6 +359,10 @@ class ServiceCaseRepository(BaseRepository):
         case = dict(row)
         comps = conn.execute("SELECT * FROM service_case_components WHERE service_case_ref=? ORDER BY component_index", (reference,)).fetchall()
         case["components"] = [dict(c) for c in comps]
+        if case.get("client_expense_id"):
+            client = conn.execute("SELECT * FROM expenses WHERE id=?", (case["client_expense_id"],)).fetchone()
+            if client:
+                case["client_entry"] = enrich_expenses_with_payments(conn, [dict(client)])[0]
         return case
 
     def update(self, reference: str, data: Dict[str, Any], edit_reason: str = "", user_id: int | None = None) -> Dict[str, Any]:
@@ -368,6 +388,18 @@ class ServiceCaseRepository(BaseRepository):
         if service.get("status") == SERVICE_CASE_STATUS_REVERSED:
             raise ValueError("لا يمكن تعديل ملف خدمة معكوس. أنشئ ملف خدمة جديداً بدلاً منه.")
         client_entry = self._client_row(conn, service)
+        client_summary = get_payment_summary(conn, client_entry)
+        if float(payload.get("sale_amount_original") or 0) + 0.005 < float(client_summary.get("paid_amount_original") or 0):
+            raise ValueError("إجمالي البيع الجديد أقل من دفعات المسافر المسجلة")
+        if payload.get("currency_original") != client_entry.get("currency_original") and float(client_summary.get("paid_amount_original") or 0) > 0:
+            raise ValueError("لا يمكن تغيير عملة ملف خدمة عليه دفعات مسافر")
+        supplier_payment_row = conn.execute(
+            """SELECT COUNT(*) AS c FROM payments p JOIN expenses e ON e.id=p.target_expense_id
+               WHERE e.source_ref=? AND e.source_type=? AND p.status='posted'""",
+            (reference, SERVICE_CASE_SOURCE_SUPPLIER),
+        ).fetchone()
+        if supplier_payment_row and int(supplier_payment_row["c"] or 0) > 0:
+            raise ValueError("لا يمكن تعديل بنود الموردين قبل حذف دفعات الموردين المسجلة لهذا الملف")
         before_components = [dict(r) for r in conn.execute("SELECT * FROM service_case_components WHERE service_case_ref=? ORDER BY component_index", (reference,)).fetchall()]
         before = {
             "client_company_name": service.get("client_company_name"),
@@ -416,6 +448,9 @@ class ServiceCaseRepository(BaseRepository):
                 component_rows.append((idx, component, supplier_expense_id, supplier_payload_for_component))
             for idx, component, supplier_expense_id, supplier_payload_for_component in component_rows:
                 self._insert_component(conn, reference, idx, component, payload, supplier_expense_id, supplier_payload_for_component)
+            sync_payment_state(conn, int(client_entry["id"]), now=now)
+            for supplier_expense_id in supplier_expense_ids:
+                sync_payment_state(conn, supplier_expense_id, now=now)
             conn.execute(
                 """UPDATE service_cases SET
                 client_company_name=?, supplier_company_name=?, person_name=?, service_type=?, sale_amount_original=?, cost_amount_original=?,
@@ -444,6 +479,70 @@ class ServiceCaseRepository(BaseRepository):
                 conn.rollback()
             except Exception:
                 pass
+            raise
+
+    def delete(self, reference: str, reason: str = "", user_id: int | None = None) -> Dict[str, Any]:
+        """Delete a complete service case without generating reversal rows."""
+        reference = str(reference or "").strip()
+        if not reference:
+            raise ValueError("مرجع ملف الخدمة مطلوب")
+        clean_reason = str(reason or "").strip()
+        if not clean_reason:
+            raise ValueError("سبب حذف ملف الخدمة مطلوب")
+        user = UserSession.get_current() or {}
+        uid = int(user_id or user.get("id") or 1)
+        if self.data.is_remote():
+            client = self.db.get_rest_client()
+            if hasattr(client, "delete_service_case"):
+                return client.delete_service_case(reference, {"reason": clean_reason})
+            raise RuntimeError("خادم ويندوز لا يدعم حذف ملف الخدمة بعد. حدّث الخادم إلى النسخة الحالية.")
+
+        conn = self.db.get_connection()
+        try:
+            conn.execute("BEGIN IMMEDIATE")
+            row = conn.execute("SELECT * FROM service_cases WHERE reference=?", (reference,)).fetchone()
+            if not row:
+                raise ValueError("لم يتم العثور على ملف الخدمة")
+            service = dict(row)
+            components = [dict(r) for r in conn.execute(
+                "SELECT * FROM service_case_components WHERE service_case_ref=? ORDER BY component_index",
+                (reference,),
+            ).fetchall()]
+            expense_ids = {
+                int(value) for value in (service.get("client_expense_id"), service.get("supplier_expense_id"))
+                if value not in (None, "")
+            }
+            expense_ids.update(
+                int(component["supplier_expense_id"])
+                for component in components
+                if component.get("supplier_expense_id") not in (None, "")
+            )
+            linked = conn.execute(
+                "SELECT id FROM expenses WHERE source_ref=? AND source_type IN (?,?,?)",
+                (reference, SERVICE_CASE_SOURCE_CLIENT, SERVICE_CASE_SOURCE_SUPPLIER, SERVICE_CASE_REVERSAL),
+            ).fetchall()
+            expense_ids.update(int(r["id"]) for r in linked)
+            payment_counts = delete_payments_for_targets(conn, expense_ids)
+            if expense_ids:
+                placeholders = ",".join("?" for _ in expense_ids)
+                params = tuple(sorted(expense_ids))
+                conn.execute(f"DELETE FROM payment_reminders WHERE expense_id IN ({placeholders})", params)
+                conn.execute(f"DELETE FROM expenses WHERE id IN ({placeholders})", params)
+            conn.execute("DELETE FROM service_case_components WHERE service_case_ref=?", (reference,))
+            conn.execute("DELETE FROM service_cases WHERE reference=?", (reference,))
+            now = datetime.datetime.now().isoformat()
+            details = (
+                f"{reference} | السبب: {clean_reason} | العميل: {service.get('client_company_name')} | "
+                f"الموردون/المكونات: {len(components)} | القيود المحذوفة: {len(expense_ids)} | الدفعات المحذوفة: {payment_counts['payments']}"
+            )
+            conn.execute(
+                "INSERT INTO audit_log (user_id, username, action, table_name, record_id, details, ip_address, timestamp) VALUES (?,?,?,?,?,?,?,?)",
+                (uid, user.get("username", ""), "حذف ملف خدمة", "service_cases", service.get("id"), details, "127.0.0.1", now),
+            )
+            conn.commit()
+            return {"ok": True, "reference": reference, "deleted_expenses": len(expense_ids), "deleted_components": len(components)}
+        except Exception:
+            conn.rollback()
             raise
 
     def reverse(self, reference: str, reason: str = "") -> Dict[str, Any]:

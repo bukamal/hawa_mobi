@@ -29,7 +29,7 @@ class AppLayout(ft.Column):
     """
 
     ROOT_PAGES = ["dashboard", "accounts", "reports", "more"]
-    ROUTED_PAGES = {"dashboard", "accounts", "reports", "more", "users", "audit_log", "settings"}
+    ROUTED_PAGES = {"dashboard", "accounts", "reports", "more", "users", "audit_log", "payment_reminders", "settings"}
 
     def __init__(self, page, on_logout=None, on_exit=None):
         super().__init__()
@@ -167,7 +167,7 @@ class AppLayout(ft.Column):
             return "/accounts"
         if route.startswith("/settings/"):
             return "/settings"
-        if route in {"/users", "/audit_log", "/settings"}:
+        if route in {"/users", "/audit_log", "/payment_reminders", "/settings"}:
             return "/more"
         if route in {"/accounts", "/reports", "/more"}:
             return "/dashboard"
@@ -427,6 +427,12 @@ class AppLayout(ft.Column):
             elif page_id == "audit_log":
                 from views.audit_log_mobile_view import AuditLogMobileView
                 view = AuditLogMobileView(self._page)
+            elif page_id == "payment_reminders":
+                from views.payment_reminders_mobile_view import PaymentRemindersMobileView
+                view = PaymentRemindersMobileView(
+                    self._page,
+                    on_open_company=lambda company: self.open_company_details(company) if company else None,
+                )
             elif page_id == "settings":
                 from views.settings_hub_mobile_view import SettingsHubMobileView
                 view = SettingsHubMobileView(self._page, self.switch_page)

@@ -353,6 +353,59 @@ class ThirdPartyPaymentRepository(BaseRepository):
             conn.rollback()
             raise
 
+    def delete_payment_on_behalf(self, reference: str, user_id: int | None = None, reason: str = "") -> Dict:
+        """Delete the source payment and all linked original/reversal entries."""
+        reference = str(reference or "").strip()
+        if not reference:
+            raise ValueError("مرجع عملية السداد بالنيابة مطلوب")
+        clean_reason = str(reason or "").strip()
+        if not clean_reason:
+            raise ValueError("سبب حذف عملية السداد بالنيابة مطلوب")
+        user = self._current_user()
+        uid = int(user_id or user.get("id") or 1)
+        if self.data.is_remote():
+            client = self.db.get_rest_client()
+            if hasattr(client, "delete_third_party_payment"):
+                return client.delete_third_party_payment(reference, {"reason": clean_reason})
+            raise RuntimeError("خادم ويندوز لا يدعم حذف السداد بالنيابة بعد. حدّث الخادم إلى النسخة الحالية.")
+
+        conn = self.db.get_connection()
+        try:
+            conn.execute("BEGIN IMMEDIATE")
+            row = conn.execute("SELECT * FROM third_party_payments WHERE reference=?", (reference,)).fetchone()
+            if not row:
+                raise ValueError("لم يتم العثور على عملية السداد بالنيابة")
+            payment = dict(row)
+            expense_ids = {
+                int(value) for value in (payment.get("payer_expense_id"), payment.get("paid_to_expense_id"))
+                if value not in (None, "")
+            }
+            linked = conn.execute(
+                "SELECT id FROM expenses WHERE source_ref=? AND source_type IN (?,?)",
+                (reference, self.SOURCE_TYPE, self.REVERSAL_SOURCE_TYPE),
+            ).fetchall()
+            expense_ids.update(int(r["id"]) for r in linked)
+            if expense_ids:
+                placeholders = ",".join("?" for _ in expense_ids)
+                params = tuple(sorted(expense_ids))
+                conn.execute(f"DELETE FROM payment_reminders WHERE expense_id IN ({placeholders})", params)
+                conn.execute(f"DELETE FROM expenses WHERE id IN ({placeholders})", params)
+            conn.execute("DELETE FROM third_party_payments WHERE reference=?", (reference,))
+            now = datetime.datetime.now().isoformat()
+            details = (
+                f"{reference} | السبب: {clean_reason} | {payment.get('payer_company_name')} -> "
+                f"{payment.get('paid_to_company_name')} | القيود المحذوفة: {len(expense_ids)}"
+            )
+            conn.execute(
+                "INSERT INTO audit_log (user_id, username, action, table_name, record_id, details, ip_address, timestamp) VALUES (?,?,?,?,?,?,?,?)",
+                (uid, user.get("username", ""), "حذف سداد بالنيابة", "third_party_payments", payment.get("id"), details, "127.0.0.1", now),
+            )
+            conn.commit()
+            return {"ok": True, "reference": reference, "deleted_expenses": len(expense_ids)}
+        except Exception:
+            conn.rollback()
+            raise
+
     def reverse_payment_on_behalf(self, reference: str, user_id: int | None = None, date: str | None = None) -> Dict:
         reference = str(reference or "").strip()
         if not reference:

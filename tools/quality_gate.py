@@ -7,6 +7,8 @@ import os
 import signal
 import subprocess
 import sys
+import tempfile
+import shutil
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -16,6 +18,11 @@ def run_py(script: str) -> None:
     env = os.environ.copy()
     env["PYTHONPATH"] = str(ROOT) + os.pathsep + env.get("PYTHONPATH", "")
     env.setdefault("PYTHONUNBUFFERED", "1")
+    # Each smoke test gets an isolated data directory. This prevents a test that
+    # switches to network/client mode from contaminating later accounting and
+    # report tests through the shared settings database.
+    isolated_data_dir = tempfile.mkdtemp(prefix="hawaa-quality-gate-")
+    env["HAWAA_DATA_DIR"] = isolated_data_dir
     print(f"▶ {script}", flush=True)
 
     use_process_group = os.name != "nt"
@@ -48,6 +55,7 @@ def run_py(script: str) -> None:
     if err:
         print(err, end="", file=sys.stderr)
     if proc.returncode != 0:
+        shutil.rmtree(isolated_data_dir, ignore_errors=True)
         raise subprocess.CalledProcessError(proc.returncode, [sys.executable, str(ROOT / script)])
 
     if use_process_group:
@@ -57,6 +65,7 @@ def run_py(script: str) -> None:
             pass
         except PermissionError:
             pass
+    shutil.rmtree(isolated_data_dir, ignore_errors=True)
 
 
 def main() -> int:
@@ -106,6 +115,9 @@ def main() -> int:
         "tools/phase104_navigation_recovery_accessibility_smoke_test.py",
         "tools/phase105_visual_runtime_fixes_smoke_test.py",
         "tools/company_inline_entry_segmented_direction_smoke_test.py",
+        "tools/company_ledger_table_hard_delete_smoke_test.py",
+        "tools/partial_payments_contract_smoke_test.py",
+        "tools/partial_payments_smoke_test.py",
         "tools/modern_dashboard_features_smoke_test.py",
         "tools/company_details_route_safearea_smoke_test.py",
         "tools/company_details_nameerror_runtime_smoke_test.py",

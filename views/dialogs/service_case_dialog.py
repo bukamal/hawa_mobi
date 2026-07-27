@@ -137,6 +137,49 @@ class ServiceCaseDialog(ft.AlertDialog):
             filled=True,
             border_radius=10,
         )
+        client_entry = dict(self.service_case.get("client_entry") or {})
+        self.client_paid_field = ft.TextField(
+            label="المدفوع من العميل الآن",
+            value="0" if not self.is_edit else str(client_entry.get("paid_amount_original") or 0),
+            keyboard_type=ft.KeyboardType.NUMBER,
+            width=half_width,
+            prefix_icon=ft.Icons.PAYMENTS_OUTLINED,
+            filled=True,
+            border_radius=10,
+            disabled=self.is_edit,
+            helper_text="يمكن تسجيل دفعات إضافية لاحقًا من كشف الحساب" if not self.is_edit else "الدفعات السابقة لا تُعدّل من ملف الخدمة",
+        )
+        self.payment_method_dropdown = ft.Dropdown(
+            label="طريقة الدفعة الأولى",
+            value="cash",
+            options=[
+                ft.dropdown.Option("cash", "نقدي"),
+                ft.dropdown.Option("bank_transfer", "تحويل بنكي"),
+                ft.dropdown.Option("card", "بطاقة"),
+                ft.dropdown.Option("other", "أخرى"),
+            ],
+            width=half_width,
+            filled=True,
+            border_radius=10,
+            disabled=self.is_edit,
+        )
+        self.client_due_field = ft.TextField(
+            label="تاريخ استحقاق المتبقي",
+            value=client_entry.get("payment_due_date") or "",
+            hint_text="YYYY-MM-DD",
+            width=half_width,
+            prefix_icon=ft.Icons.EVENT_OUTLINED,
+            filled=True,
+            border_radius=10,
+        )
+        self.payment_reminder_field = ft.TextField(
+            label="ملاحظة تذكير الدفع",
+            value=client_entry.get("payment_reminder_note") or "",
+            width=half_width,
+            prefix_icon=ft.Icons.NOTIFICATIONS_ACTIVE_OUTLINED,
+            filled=True,
+            border_radius=10,
+        )
 
         self.embassy_supplier_field = SearchableTextField(
             label="حساب السفارة / الرسوم",
@@ -244,6 +287,7 @@ class ServiceCaseDialog(ft.AlertDialog):
             self.embassy_cost_field,
             self.transport_sale_field,
             self.transport_cost_field,
+            self.client_paid_field,
         ):
             field.on_change = self._update_profit
         self.currency_dropdown.on_change = self._update_profit
@@ -259,7 +303,9 @@ class ServiceCaseDialog(ft.AlertDialog):
             [
                 self.supplier_field,
                 ft.Row([self.sale_field, self.cost_field], spacing=12, wrap=True),
-                ft.Row([self.currency_dropdown], spacing=12, wrap=True),
+                ft.Row([self.currency_dropdown, self.client_paid_field], spacing=12, wrap=True),
+                ft.Row([self.payment_method_dropdown, self.client_due_field], spacing=12, wrap=True),
+                self.payment_reminder_field,
                 ft.Container(content=self.profit_text, bgcolor="#F8FAFC", border_radius=12, padding=12),
             ],
             icon=ft.Icons.HANDSHAKE_OUTLINED,
@@ -352,8 +398,12 @@ class ServiceCaseDialog(ft.AlertDialog):
             sale, cost = self._amounts()
             code = self.currency_dropdown.value or currency.get_display_currency()
             profit = sale - cost
+            paid = parse_non_negative_amount(self.client_paid_field.value or 0)
+            remaining = max(0.0, sale - paid)
             self.profit_text.value = (
                 f"إجمالي البيع {currency.format_amount_ui(sale, code)}  ·  "
+                f"المدفوع {currency.format_amount_ui(paid, code)}  ·  "
+                f"المتبقي {currency.format_amount_ui(remaining, code)}  ·  "
                 f"التكلفة {currency.format_amount_ui(cost, code)}  ·  "
                 f"الربح {currency.format_amount_ui(profit, code)}"
             )
@@ -396,6 +446,12 @@ class ServiceCaseDialog(ft.AlertDialog):
                     raise ValueError("الشركة المورّدة مطلوبة عند وجود تكلفة")
                 if supplier and supplier == client:
                     raise ValueError("لا يمكن أن تكون الشركة العميلة هي المورد نفسه")
+                paid = parse_non_negative_amount(self.client_paid_field.value or 0)
+                if paid > sale + 0.005:
+                    raise ValueError("المبلغ المدفوع من العميل أكبر من إجمالي البيع الحالي")
+                due = normalize_text(self.client_due_field.value)
+                if sale - paid > 0.005 and due and (len(due) != 10 or due[4:5] != "-" or due[7:8] != "-"):
+                    raise ValueError("تاريخ الاستحقاق يجب أن يكون بصيغة YYYY-MM-DD")
             elif index == 2:
                 for label, supplier_field, sale_field, cost_field in (
                     ("رسوم السفارة", self.embassy_supplier_field, self.embassy_sale_field, self.embassy_cost_field),
@@ -425,6 +481,11 @@ class ServiceCaseDialog(ft.AlertDialog):
             sale, cost = 0.0, 0.0
         code = self.currency_dropdown.value or currency.get_display_currency()
         profit = sale - cost
+        try:
+            paid = parse_non_negative_amount(self.client_paid_field.value or 0)
+        except Exception:
+            paid = 0.0
+        remaining = max(0.0, sale - paid)
         component_rows = []
         base_supplier = normalize_text(self.supplier_field.value)
         component_rows.append(review_row(self.service_dropdown.value or "الخدمة الأساسية", base_supplier or "—", icon=ft.Icons.HANDSHAKE_OUTLINED))
@@ -442,6 +503,8 @@ class ServiceCaseDialog(ft.AlertDialog):
                 "الأثر المالي المتوقع",
                 [
                     ("إجمالي البيع على العميل", currency.format_amount_ui(sale, code), FINANCIAL_RECEIVABLE),
+                    ("المدفوع من العميل", currency.format_amount_ui(paid, code), STATE_SUCCESS),
+                    ("المتبقي على العميل", currency.format_amount_ui(remaining, code), STATE_WARNING if remaining > 0.005 else STATE_SUCCESS),
                     ("إجمالي المستحق للموردين", currency.format_amount_ui(cost, code), FINANCIAL_PAYABLE),
                     ("الربح الداخلي", currency.format_amount_ui(profit, code), margin_color),
                 ],
@@ -493,6 +556,10 @@ class ServiceCaseDialog(ft.AlertDialog):
             "currency_original": self.currency_dropdown.value,
             "date": self.operation_date.require_value("تاريخ الخدمة"),
             "notes": self.notes_field.value or "",
+            "client_paid_amount": 0 if self.is_edit else self.client_paid_field.value,
+            "payment_method": self.payment_method_dropdown.value or "cash",
+            "client_due_date": normalize_text(self.client_due_field.value) or None,
+            "payment_reminder_note": normalize_text(self.payment_reminder_field.value),
             "components": components,
         }
         return validate_service_case_payload(payload)

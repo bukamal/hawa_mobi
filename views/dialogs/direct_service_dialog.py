@@ -113,6 +113,62 @@ class DirectServiceDialog(ft.AlertDialog):
             filled=True,
             border_radius=10,
         )
+        self.client_paid_field = ft.TextField(
+            label="المدفوع من المسافر الآن",
+            value="" if self.is_edit else "0",
+            keyboard_type=ft.KeyboardType.NUMBER,
+            width=half_width,
+            disabled=self.is_edit or self.supplier_only_mode,
+            hint_text="دفعة أولى اختيارية",
+            filled=True,
+            border_radius=10,
+        )
+        self.supplier_paid_field = ft.TextField(
+            label="المدفوع للمورد الآن",
+            value="" if self.is_edit else "0",
+            keyboard_type=ft.KeyboardType.NUMBER,
+            width=half_width,
+            disabled=self.is_edit,
+            hint_text="دفعة أولى اختيارية",
+            filled=True,
+            border_radius=10,
+        )
+        self.payment_method_dropdown = ft.Dropdown(
+            label="طريقة الدفع الأولية",
+            value="cash",
+            options=[
+                ft.dropdown.Option("cash", "نقدي"),
+                ft.dropdown.Option("bank_transfer", "تحويل بنكي"),
+                ft.dropdown.Option("card", "بطاقة"),
+                ft.dropdown.Option("cheque", "شيك"),
+                ft.dropdown.Option("other", "أخرى"),
+            ],
+            width=half_width,
+            disabled=self.is_edit,
+            filled=True,
+            border_radius=10,
+        )
+        existing_entries = list(self.service.get("entries") or [])
+        client_entry = next((x for x in existing_entries if x.get("source_type") == "direct_service_client"), {})
+        supplier_entry = next((x for x in existing_entries if x.get("source_type") == "direct_service_supplier"), {})
+        self.client_due_field = ft.TextField(
+            label="استحقاق المتبقي على المسافر",
+            value=client_entry.get("payment_due_date") or "",
+            hint_text="YYYY-MM-DD",
+            width=half_width,
+        )
+        self.supplier_due_field = ft.TextField(
+            label="استحقاق المتبقي للمورد",
+            value=supplier_entry.get("payment_due_date") or "",
+            hint_text="YYYY-MM-DD",
+            width=half_width,
+        )
+        self.payment_reminder_field = ft.TextField(
+            label="ملاحظة تذكير الدفع",
+            value=client_entry.get("payment_reminder_note") or supplier_entry.get("payment_reminder_note") or "متابعة المبلغ المتبقي",
+            width=field_width,
+        )
+
         self.supplier_field = SearchableTextField(
             label="المورد / حساب التكلفة (اختياري)",
             value=self.service.get("supplier_company_name") or "",
@@ -191,7 +247,7 @@ class DirectServiceDialog(ft.AlertDialog):
             visible=False,
         )
 
-        for field in (self.sale_field, self.cost_field):
+        for field in (self.sale_field, self.cost_field, self.client_paid_field, self.supplier_paid_field):
             field.on_change = self._update_profit
         self.currency_dropdown.on_change = self._update_profit
         self._update_profit(None)
@@ -199,8 +255,11 @@ class DirectServiceDialog(ft.AlertDialog):
         party_controls = [self.info_box, self.error_box, self.supplier_badge, self.company_field, self.person_field, self.service_dropdown]
         price_controls = [
             ft.Row([self.sale_field, self.currency_dropdown], spacing=12, wrap=True),
-            ft.Row([self.cost_field], spacing=12, wrap=True),
+            ft.Row([self.cost_field, self.supplier_paid_field], spacing=12, wrap=True),
+            ft.Row([self.client_paid_field, self.payment_method_dropdown], spacing=12, wrap=True),
             self.supplier_field,
+            ft.Row([self.client_due_field, self.supplier_due_field], spacing=12, wrap=True),
+            self.payment_reminder_field,
             ft.Container(content=self.profit_text, bgcolor="#F8FAFC", border_radius=12, padding=12),
         ]
         review_controls = [self.review_host, self.operation_date, self.notes_field, self.edit_reason_field]
@@ -282,9 +341,15 @@ class DirectServiceDialog(ft.AlertDialog):
             sale, cost = self._amounts()
             code = self.currency_dropdown.value or currency.get_display_currency()
             profit = sale - cost
+            client_paid = parse_non_negative_amount(self.client_paid_field.value or 0) if not self.is_edit else 0
+            supplier_paid = parse_non_negative_amount(self.supplier_paid_field.value or 0) if not self.is_edit else 0
             self.profit_text.value = (
                 f"البيع {currency.format_amount_ui(sale, code)}  ·  "
+                f"مدفوع المسافر {currency.format_amount_ui(client_paid, code)}  ·  "
+                f"متبقي المسافر {currency.format_amount_ui(max(sale-client_paid,0), code)}\n"
                 f"التكلفة {currency.format_amount_ui(cost, code)}  ·  "
+                f"مدفوع المورد {currency.format_amount_ui(supplier_paid, code)}  ·  "
+                f"متبقي المورد {currency.format_amount_ui(max(cost-supplier_paid,0), code)}  ·  "
                 f"الربح {currency.format_amount_ui(profit, code)}"
             )
             self.profit_text.color = STATE_SUCCESS if profit >= 0 else STATE_DANGER
@@ -315,6 +380,14 @@ class DirectServiceDialog(ft.AlertDialog):
                 company = self.supplier_locked_name if self.supplier_only_mode else normalize_text(self.company_field.value)
                 if supplier and supplier == company and not self.supplier_only_mode:
                     raise ValueError("لا يمكن أن يكون حساب المورد هو نفس حساب العميل")
+                client_paid = parse_non_negative_amount(self.client_paid_field.value or 0) if not self.is_edit else 0
+                supplier_paid = parse_non_negative_amount(self.supplier_paid_field.value or 0) if not self.is_edit else 0
+                if client_paid > sale:
+                    raise ValueError("المدفوع من المسافر لا يمكن أن يتجاوز سعر البيع")
+                if supplier_paid > cost:
+                    raise ValueError("المدفوع للمورد لا يمكن أن يتجاوز التكلفة")
+                if supplier_paid > 0 and not supplier:
+                    raise ValueError("حدد المورد قبل تسجيل دفعة له")
                 if cost > sale:
                     # Warning, not a hard block.  Keep it visible for the review step.
                     self._show_snackbar("تنبيه: تكلفة الخدمة أعلى من سعر البيع", True)
@@ -340,7 +413,9 @@ class DirectServiceDialog(ft.AlertDialog):
                 "الأثر المالي المتوقع",
                 [
                     ("سعر البيع", currency.format_amount_ui(sale, code), FINANCIAL_RECEIVABLE),
+                    ("المدفوع من المسافر", currency.format_amount_ui(parse_non_negative_amount(self.client_paid_field.value or 0) if not self.is_edit else 0, code), FINANCIAL_RECEIVABLE),
                     ("تكلفة المورد", currency.format_amount_ui(cost, code), FINANCIAL_PAYABLE),
+                    ("المدفوع للمورد", currency.format_amount_ui(parse_non_negative_amount(self.supplier_paid_field.value or 0) if not self.is_edit else 0, code), FINANCIAL_PAYABLE),
                     ("الربح", currency.format_amount_ui(profit, code), STATE_SUCCESS if profit >= 0 else STATE_DANGER),
                 ],
                 tone_color=STATE_SUCCESS if profit >= 0 else STATE_DANGER,
@@ -375,6 +450,12 @@ class DirectServiceDialog(ft.AlertDialog):
             "date": self.operation_date.require_value("تاريخ الخدمة المباشرة"),
             "notes": self.notes_field.value or "",
             "supplier_only": self.supplier_only_mode,
+            "client_paid_amount": 0 if self.is_edit else (self.client_paid_field.value or 0),
+            "supplier_paid_amount": 0 if self.is_edit else (self.supplier_paid_field.value or 0),
+            "client_due_date": normalize_text(self.client_due_field.value),
+            "supplier_due_date": normalize_text(self.supplier_due_field.value),
+            "payment_reminder_note": normalize_text(self.payment_reminder_field.value),
+            "payment_method": self.payment_method_dropdown.value or "cash",
         }
         return validate_direct_service_payload(payload)
 

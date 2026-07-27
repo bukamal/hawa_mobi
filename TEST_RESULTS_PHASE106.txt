@@ -1,0 +1,88 @@
+▶ tools/cleanup_legacy_root_server_entries.py
+cleanup_legacy_root_server_entries: no stale root server files
+▶ tools/cleanup_sensitive_source_files.py
+cleanup_sensitive_source_files: no sensitive source files
+▶ tools/architecture_smoke_test.py
+phase3 architecture smoke test: ok
+▶ tools/local_crud_smoke_test.py
+✅ تم تهيئة قاعدة البيانات: /tmp/hawaa_crud_gzkqtp0p/hawaa_data.db
+✅ local_crud_smoke_test passed
+▶ tools/currency_ledger_contract_smoke_test.py
+currency_ledger_contract_smoke_test OK
+▶ tools/runtime_currency_settings_smoke_test.py
+✅ تم تهيئة قاعدة البيانات: /tmp/hawaa_currency_runtime_o7ojyd6z/hawaa_data.db
+✅ runtime_currency_settings_smoke_test passed
+▶ tools/mobile_money_format_smoke_test.py
+✅ تم تهيئة قاعدة البيانات: /tmp/hawaa_money_format_4x8smt37/hawaa_data.db
+✅ mobile_money_format_smoke_test passed
+▶ tools/network_contract_test.py
+✅ network_contract_test passed
+▶ tools/api_capabilities_contract_smoke_test.py
+✅ api_capabilities_contract_smoke_test passed
+▶ tools/direct_service_api_contract_smoke_test.py
+direct_service_api_contract_smoke_test passed
+▶ tools/service_case_edit_api_contract_smoke_test.py
+service_case_edit_api_contract_smoke_test passed
+▶ tools/comprehensive_currency_language_api_test.py
+✅ تم تهيئة قاعدة البيانات: /tmp/hawaa_comprehensive_dl_w_xpk/local/hawaa_data.db
+live Flask API test skipped: flask is not installed; static API contract passed
+comprehensive_currency_language_api_test passed
+▶ tools/mobile_pairing_contract_smoke_test.py
+✅ mobile_pairing_contract_smoke_test passed
+▶ tools/qr_pairing_ui_smoke_test.py
+✅ qr_pairing_ui_smoke_test passed
+▶ tools/manual_pairing_code_smoke_test.py
+manual_pairing_code_smoke_test passed
+▶ tools/pairing_capabilities_strict_smoke_test.py
+✅ pairing_capabilities_strict_smoke_test passed
+▶ tools/company_logo_print_smoke_test.py
+✅ company_logo_print_smoke_test passed
+▶ tools/apk_release_preflight.py
+✅ apk_release_preflight passed
+▶ tools/share_export_fallback_smoke_test.py
+✅ share_export_fallback_smoke_test passed
+▶ tools/report_action_share_print_whatsapp_smoke_test.py
+✅ report_action_share_print_whatsapp_smoke_test passed
+▶ tools/professional_statement_layout_smoke_test.py
+professional_statement_layout_smoke_test passed
+▶ tools/reconciliation_statement_note_restored_smoke_test.py
+reconciliation_statement_note_restored_smoke_test passed
+▶ tools/reporting_center_core_smoke_test.py
+✅ تم تهيئة قاعدة البيانات: /tmp/hawaa_reporting_center_r5039bk6/hawaa_data.db
+reporting_center_core_smoke_test passed
+▶ tools/reporting_center_advanced_smoke_test.py
+✅ تم تهيئة قاعدة البيانات: /tmp/hawaa_reporting_advanced_m9i9yhlk/hawaa_data.db
+reporting_center_advanced_smoke_test passed
+▶ tools/report_image_export_smoke_test.py
+✅ تم تهيئة قاعدة البيانات: /tmp/hawaa_report_image_2tyyz3d4/hawaa_data.db
+report_image_export_smoke_test passed
+▶ tools/report_image_true_renderer_rtl_smoke_test.py
+✅ تم تهيئة قاعدة البيانات: /tmp/hawaa_png_true_renderer_zddhdjcf/hawaa_data.db
+report_image_true_renderer_rtl_smoke_test passed
+▶ tools/image_export_button_responsive_smoke_test.py
+image_export_button_responsive_smoke_test passed
+▶ tools/image_export_android_responsiveness_regression_test.py
+✅ تم تهيئة قاعدة البيانات: /tmp/hawaa_png_regression_avhr8ius/hawaa_data.db
+image_export_android_responsiveness_regression_test passed
+▶ tools/sqlite_closed_connection_recovery_smoke_test.py
+✅ تم تهيئة قاعدة البيانات: /tmp/hawaa_closed_db_recovery_zo9r7ujw/hawaa_data.db
+sqlite_closed_connection_recovery_smoke_test passed
+▶ tools/hawa_visual_identity_smoke_test.py
+hawa_visual_identity_smoke_test passed
+▶ tools/phase100_design_system_smoke_test.py
+Traceback (most recent call last):
+  File "/mnt/data/hawa_phase105_company_table_delete/hawa_phase105_company_inline_entry_segmented/tools/phase100_design_system_smoke_test.py", line 67, in <module>
+    raise SystemExit(main())
+                     ~~~~^^
+  File "/mnt/data/hawa_phase105_company_table_delete/hawa_phase105_company_inline_entry_segmented/tools/phase100_design_system_smoke_test.py", line 52, in main
+    import flet as ft
+ModuleNotFoundError: No module named 'flet'
+Traceback (most recent call last):
+  File "/mnt/data/hawa_phase105_company_table_delete/hawa_phase105_company_inline_entry_segmented/tools/quality_gate.py", line 188, in <module>
+    code = main()
+  File "/mnt/data/hawa_phase105_company_table_delete/hawa_phase105_company_inline_entry_segmented/tools/quality_gate.py", line 179, in main
+    run_py(script)
+    ~~~~~~^^^^^^^^
+  File "/mnt/data/hawa_phase105_company_table_delete/hawa_phase105_company_inline_entry_segmented/tools/quality_gate.py", line 51, in run_py
+    raise subprocess.CalledProcessError(proc.returncode, [sys.executable, str(ROOT / script)])
+subprocess.CalledProcessError: Command '['/opt/pyvenv/bin/python', '/mnt/data/hawa_phase105_company_table_delete/hawa_phase105_company_inline_entry_segmented/tools/phase100_design_system_smoke_test.py']' returned non-zero exit status 1.

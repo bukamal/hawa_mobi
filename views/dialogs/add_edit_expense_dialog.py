@@ -61,6 +61,29 @@ class AddEditExpenseDialog(ft.AlertDialog):
             width=dialog_width - 20
         )
 
+        existing_paid = float((expense or {}).get('paid_amount_original') or 0)
+        self.initial_paid_field = ft.TextField(
+            label="المدفوع الآن",
+            keyboard_type=ft.KeyboardType.NUMBER,
+            value="" if self.expense_id is not None else "0",
+            width=160,
+            disabled=self.expense_id is not None,
+            hint_text=(f"مسجل سابقاً: {existing_paid:.2f}" if self.expense_id is not None else "دفعة أولى اختيارية"),
+        )
+        self.payment_method_dropdown = ft.Dropdown(
+            label="طريقة الدفع",
+            value="cash",
+            options=[
+                ft.dropdown.Option("cash", "نقدي"),
+                ft.dropdown.Option("bank_transfer", "تحويل بنكي"),
+                ft.dropdown.Option("card", "بطاقة"),
+                ft.dropdown.Option("cheque", "شيك"),
+                ft.dropdown.Option("other", "أخرى"),
+            ],
+            width=170,
+            disabled=self.expense_id is not None,
+        )
+
         self.currency_dropdown = ft.Dropdown(
             label=translate('currency'),
             value=expense.get('currency_original', 'SAR') if expense else currency.get_display_currency(),
@@ -149,7 +172,7 @@ class AddEditExpenseDialog(ft.AlertDialog):
         )
         self.zero_amount_notice = ft.Container(
             content=ft.Text(
-                "📝 عند حفظ مبلغ صفر ستُحفظ العملية بانتظار الدفع ولن تؤثر على الأرصدة حتى تسجيل مبلغ مالي.",
+                "أدخل إجمالي المطالبة والمدفوع الآن. سيحسب النظام المتبقي ويغلق التذكير تلقائياً عند اكتمال السداد.",
                 size=12,
                 color=ft.Colors.ORANGE_900,
             ),
@@ -166,6 +189,7 @@ class AddEditExpenseDialog(ft.AlertDialog):
             controls=[
                 self.company_field,
                 ft.Row([self.amount_field, self.currency_dropdown], spacing=10, wrap=True),
+                ft.Row([self.initial_paid_field, self.payment_method_dropdown], spacing=10, wrap=True),
                 ft.Text("اتجاه القيد", size=13, weight=ft.FontWeight.BOLD, color=ft.Colors.GREY_700),
                 self.type_selector,
                 ft.Text("لنا: مبلغ مستحق للشركة · له: مبلغ مستحق على الشركة", size=11, color=ft.Colors.GREY_600),
@@ -201,6 +225,7 @@ class AddEditExpenseDialog(ft.AlertDialog):
         self.shape = ft.RoundedRectangleBorder(radius=15)
 
         self.amount_field.on_change = self._update_conversion
+        self.initial_paid_field.on_change = self._update_conversion
         self.currency_dropdown.on_change = self._update_conversion
         self.service_dropdown.on_change = self._update_operation_label
         self._update_operation_label(None)
@@ -237,18 +262,19 @@ class AddEditExpenseDialog(ft.AlertDialog):
     def _update_conversion(self, e):
         try:
             amount = float(self.amount_field.value or 0)
+            initial_paid = float(self.initial_paid_field.value or 0) if self.expense_id is None else float((self.expense or {}).get('paid_amount_original') or 0)
             curr = self.currency_dropdown.value
             rate_to_usd = float(currency.get_rate_to_usd(curr) or 1.0)
             usd_value = amount / rate_to_usd if rate_to_usd != 0 else 0
-            self.zero_amount_notice.visible = (amount == 0)
+            self.zero_amount_notice.visible = amount > 0 and initial_paid < amount
             self.exchange_rate_text.value = f"سعر الصرف: 1 {curr} = {rate_to_usd:.4f} USD"
             display_curr = currency.get_display_currency()
             if display_curr != curr:
                 rate_to_display = float(currency.get_rate_to_usd(display_curr) or 1.0)
                 display_value = usd_value * rate_to_display if rate_to_display != 0 else 0
-                self.converted_amount_text.value = f"≈ {display_value:.2f} {display_curr}"
+                self.converted_amount_text.value = f"الإجمالي ≈ {display_value:.2f} {display_curr} · المتبقي {max(amount-initial_paid,0):.2f} {curr}"
             else:
-                self.converted_amount_text.value = f"≈ {amount:.2f} {display_curr}"
+                self.converted_amount_text.value = f"الإجمالي {amount:.2f} {display_curr} · المدفوع {initial_paid:.2f} · المتبقي {max(amount-initial_paid,0):.2f}"
         except:
             self.exchange_rate_text.value = ""
             self.converted_amount_text.value = ""
@@ -298,12 +324,21 @@ class AddEditExpenseDialog(ft.AlertDialog):
             self._show_snackbar(str(ex), True)
             return
         notes = self.notes_field.value or ""
+        try:
+            initial_paid = 0.0 if self.expense_id is not None else parse_non_negative_amount(self.initial_paid_field.value or 0)
+            existing_paid = float((self.expense or {}).get('paid_amount_original') or 0)
+            effective_paid = existing_paid if self.expense_id is not None else initial_paid
+            if effective_paid > amount + 0.005:
+                raise ValueError("المدفوع لا يمكن أن يتجاوز إجمالي القيد")
+        except Exception as ex:
+            self._show_snackbar(str(ex), True)
+            return
         currency_code = self.currency_dropdown.value
         person_name = normalize_text(self.person_field.value)
         service_type = self.service_dropdown.value or "غير محدد"
         operation_type = SERVICE_TO_OPERATION.get(service_type, 'normal')
-        payment_due_date = (self.payment_due_field.value or '').strip() if amount == 0 else None
-        payment_note = (self.payment_note_field.value or '').strip() if amount == 0 else None
+        payment_due_date = (self.payment_due_field.value or '').strip() if amount > effective_paid + 0.005 else None
+        payment_note = (self.payment_note_field.value or '').strip() if payment_due_date else None
 
         user = UserSession.get_current()
         user_id = user['id'] if user else None
@@ -319,12 +354,19 @@ class AddEditExpenseDialog(ft.AlertDialog):
             if self.expense_id is not None:
                 repo.update(self.expense_id, company, amount, type_val, date, notes, currency_code, user_id, payment_due_date, payment_note, person_name=person_name, service_type=service_type, operation_type=operation_type)
             else:
-                repo.add(company, amount, type_val, date, notes, currency_code, user_id, payment_due_date, payment_note, person_name=person_name, service_type=service_type, operation_type=operation_type)
+                repo.add(
+                    company, amount, type_val, date, notes, currency_code, user_id,
+                    payment_due_date, payment_note, person_name=person_name,
+                    service_type=service_type, operation_type=operation_type,
+                    initial_paid_amount=initial_paid,
+                    payment_method=self.payment_method_dropdown.value or "cash",
+                )
             self.operation_date.remember()
             self._close()
             if self.on_save:
                 self.on_save(None)
-            self._show_snackbar("📝 تم حفظ العملية بانتظار الدفع" if amount == 0 else "تم الحفظ بنجاح", is_error=False)
+            remaining = max(amount - effective_paid, 0)
+            self._show_snackbar("تم الحفظ · يوجد مبلغ متبقٍ" if remaining > 0.005 else "تم الحفظ والسداد مكتمل", is_error=False)
         except Exception as ex:
             self._show_snackbar(f"فشل الحفظ: {str(ex)}", True)
         finally:

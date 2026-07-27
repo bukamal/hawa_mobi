@@ -8,6 +8,7 @@ from auth.session import UserSession
 from database.repositories.base_repo import BaseRepository
 from services.currency_ledger_service import CurrencyLedgerService
 from services.ledger_operation_service import normalize_expense_metadata
+from services.payment_service import delete_payments_for_targets, enrich_expenses_with_payments, get_payment_summary, insert_payment_in_transaction, sync_payment_state
 from services.direct_customer_service import (
     DIRECT_SERVICE_OPERATION_CLIENT,
     DIRECT_SERVICE_OPERATION_SUPPLIER,
@@ -117,6 +118,8 @@ class DirectServiceRepository(BaseRepository):
                 "print_description": payload.get("print_description"),
                 "service_case_role": "direct_client",
                 "linked_company_name": payload.get("supplier_company_name") or "",
+                "payment_due_date": payload.get("client_due_date") or None,
+                "payment_reminder_note": payload.get("payment_reminder_note"),
             })
 
         supplier_payload = None
@@ -142,6 +145,8 @@ class DirectServiceRepository(BaseRepository):
                 "print_description": f"تكلفة {payload.get('service_type')} - {payload.get('person_name')}",
                 "service_case_role": "direct_supplier",
                 "linked_company_name": "زبون مباشر" if supplier_only else payload["company_name"],
+                "payment_due_date": payload.get("supplier_due_date") or None,
+                "payment_reminder_note": payload.get("payment_reminder_note"),
             })
 
         if client_payload:
@@ -219,6 +224,16 @@ class DirectServiceRepository(BaseRepository):
             conn.execute("BEGIN IMMEDIATE")
             client_expense_id = self._insert_expense(conn, client_payload) if client_payload else None
             supplier_expense_id = self._insert_expense(conn, supplier_payload) if supplier_payload else None
+            if client_expense_id and float(payload.get("client_paid_amount") or 0) > 0:
+                target = dict(conn.execute("SELECT * FROM expenses WHERE id=?", (client_expense_id,)).fetchone())
+                insert_payment_in_transaction(conn, target, payload.get("client_paid_amount"), date=payload["date"], payment_method=payload.get("payment_method") or "cash", notes="دفعة أولى من المسافر", user_id=uid, username=user.get("username", ""), now=now)
+            elif client_expense_id:
+                sync_payment_state(conn, client_expense_id, now=now)
+            if supplier_expense_id and float(payload.get("supplier_paid_amount") or 0) > 0:
+                target = dict(conn.execute("SELECT * FROM expenses WHERE id=?", (supplier_expense_id,)).fetchone())
+                insert_payment_in_transaction(conn, target, payload.get("supplier_paid_amount"), date=payload["date"], payment_method=payload.get("payment_method") or "cash", notes="دفعة أولى للمورد", user_id=uid, username=user.get("username", ""), now=now)
+            elif supplier_expense_id:
+                sync_payment_state(conn, supplier_expense_id, now=now)
             note_payload = client_payload or supplier_payload or {"internal_note": internal_note(reference, payload, sale_base, cost_base)}
             conn.execute(
                 """INSERT INTO direct_services
@@ -267,7 +282,12 @@ class DirectServiceRepository(BaseRepository):
             raise ValueError("لم يتم العثور على الخدمة المباشرة")
         out = dict(row)
         entries = conn.execute("SELECT * FROM expenses WHERE source_ref=? AND source_type IN (?, ?, ?) ORDER BY id", (reference, DIRECT_SERVICE_SOURCE_CLIENT, DIRECT_SERVICE_SOURCE_SUPPLIER, DIRECT_SERVICE_REVERSAL)).fetchall()
-        out["entries"] = [dict(r) for r in entries]
+        out["entries"] = enrich_expenses_with_payments(conn, [dict(r) for r in entries])
+        for entry in out["entries"]:
+            if int(entry.get("id") or 0) == int(out.get("client_expense_id") or 0):
+                out["client_entry"] = entry
+            if int(entry.get("id") or 0) == int(out.get("supplier_expense_id") or 0):
+                out["supplier_entry"] = entry
         return out
 
     def update(self, reference: str, data: Dict[str, Any], edit_reason: str = "", user_id: int | None = None) -> Dict[str, Any]:
@@ -293,6 +313,19 @@ class DirectServiceRepository(BaseRepository):
         if service.get("status") == DIRECT_SERVICE_STATUS_REVERSED:
             raise ValueError("لا يمكن تعديل خدمة مباشرة معكوسة. أنشئ خدمة جديدة بدلاً منها.")
         client_entry, supplier_entry = self._linked_rows(conn, service)
+        if client_entry:
+            client_summary = get_payment_summary(conn, client_entry)
+            if float(payload.get("sale_amount_original") or 0) + 0.005 < float(client_summary.get("paid_amount_original") or 0):
+                raise ValueError("سعر البيع الجديد أقل من دفعات المسافر المسجلة")
+            if payload.get("currency_original") != client_entry.get("currency_original") and float(client_summary.get("paid_amount_original") or 0) > 0:
+                raise ValueError("لا يمكن تغيير عملة خدمة عليها دفعات مسافر")
+        if supplier_entry:
+            supplier_summary = get_payment_summary(conn, supplier_entry)
+            if float(payload.get("cost_amount_original") or 0) + 0.005 < float(supplier_summary.get("paid_amount_original") or 0):
+                raise ValueError("تكلفة المورد الجديدة أقل من الدفعات المسجلة للمورد")
+            supplier_changed = (payload.get("supplier_company_name") or "") != (supplier_entry.get("company_name") or "")
+            if (supplier_changed or not payload.get("supplier_company_name")) and float(supplier_summary.get("paid_amount_original") or 0) > 0:
+                raise ValueError("لا يمكن تغيير أو إزالة المورد قبل حذف دفعاته المسجلة")
         before = {
             "company_name": service.get("company_name"), "person_name": service.get("person_name"), "service_type": service.get("service_type"),
             "sale_amount_original": service.get("sale_amount_original"), "cost_amount_original": service.get("cost_amount_original"),
@@ -324,6 +357,10 @@ class DirectServiceRepository(BaseRepository):
             elif supplier_entry:
                 conn.execute("DELETE FROM expenses WHERE id=? AND source_ref=? AND source_type=?", (int(supplier_entry["id"]), reference, DIRECT_SERVICE_SOURCE_SUPPLIER))
                 supplier_expense_id = None
+            if client_expense_id:
+                sync_payment_state(conn, int(client_expense_id), now=now)
+            if supplier_expense_id:
+                sync_payment_state(conn, int(supplier_expense_id), now=now)
             conn.execute(
                 """UPDATE direct_services SET
                 company_name=?, person_name=?, service_type=?, sale_amount_original=?, cost_amount_original=?,
@@ -352,6 +389,66 @@ class DirectServiceRepository(BaseRepository):
                 conn.rollback()
             except Exception:
                 pass
+            raise
+
+    def delete(self, reference: str, user_id: int | None = None, reason: str = "") -> Dict[str, Any]:
+        """Delete a direct-service operation and every generated ledger row.
+
+        This is an explicit destructive correction requested by the user.  It
+        never creates reversal entries.  The source record, client/supplier
+        rows, historical reversal rows (if any), and reminders are removed in
+        one SQLite transaction while a compact audit snapshot is retained.
+        """
+        reference = str(reference or "").strip()
+        if not reference:
+            raise ValueError("مرجع الخدمة المباشرة مطلوب")
+        clean_reason = str(reason or "").strip()
+        if not clean_reason:
+            raise ValueError("سبب حذف الخدمة المباشرة مطلوب")
+        uid = int(user_id or self._uid({}, "updated_by"))
+        if self.data.is_remote():
+            client = self.db.get_rest_client()
+            if hasattr(client, "delete_direct_service"):
+                return client.delete_direct_service(reference, {"reason": clean_reason})
+            raise RuntimeError("خادم ويندوز لا يدعم حذف الخدمة المباشرة بعد. حدّث الخادم إلى النسخة الحالية.")
+
+        conn = self.db.get_connection()
+        user = self._current_user()
+        try:
+            conn.execute("BEGIN IMMEDIATE")
+            row = conn.execute("SELECT * FROM direct_services WHERE reference=?", (reference,)).fetchone()
+            if not row:
+                raise ValueError("لم يتم العثور على الخدمة المباشرة")
+            service = dict(row)
+            expense_ids = {
+                int(value) for value in (service.get("client_expense_id"), service.get("supplier_expense_id"))
+                if value not in (None, "")
+            }
+            linked = conn.execute(
+                "SELECT id FROM expenses WHERE source_ref=? AND source_type IN (?,?,?)",
+                (reference, DIRECT_SERVICE_SOURCE_CLIENT, DIRECT_SERVICE_SOURCE_SUPPLIER, DIRECT_SERVICE_REVERSAL),
+            ).fetchall()
+            expense_ids.update(int(r["id"]) for r in linked)
+            payment_counts = delete_payments_for_targets(conn, expense_ids)
+            if expense_ids:
+                placeholders = ",".join("?" for _ in expense_ids)
+                params = tuple(sorted(expense_ids))
+                conn.execute(f"DELETE FROM payment_reminders WHERE expense_id IN ({placeholders})", params)
+                conn.execute(f"DELETE FROM expenses WHERE id IN ({placeholders})", params)
+            conn.execute("DELETE FROM direct_services WHERE reference=?", (reference,))
+            now = datetime.datetime.now().isoformat()
+            details = (
+                f"{reference} | السبب: {clean_reason} | الشركة: {service.get('company_name')} | "
+                f"المورد: {service.get('supplier_company_name') or '-'} | القيود المحذوفة: {len(expense_ids)} | الدفعات المحذوفة: {payment_counts['payments']}"
+            )
+            conn.execute(
+                "INSERT INTO audit_log (user_id, username, action, table_name, record_id, details, ip_address, timestamp) VALUES (?,?,?,?,?,?,?,?)",
+                (uid, user.get("username", ""), "حذف خدمة مباشرة", "direct_services", service.get("id"), details, "127.0.0.1", now),
+            )
+            conn.commit()
+            return {"ok": True, "reference": reference, "deleted_expenses": len(expense_ids)}
+        except Exception:
+            conn.rollback()
             raise
 
     def reverse(self, reference: str, user_id: int | None = None, date: str | None = None, reason: str = "") -> Dict[str, Any]:

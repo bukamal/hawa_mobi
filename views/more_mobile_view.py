@@ -30,6 +30,7 @@ class MoreMobileView(ft.Column):
             ])
         settings_subtitle = "المظهر وإعدادات الحساب" if role != "admin" else "النظام والعملات والتقارير والاتصال"
         items.extend([
+            self._item("متابعة الدفعات", "الإجمالي والمدفوع والمتبقي والتذكيرات", ft.Icons.NOTIFICATIONS_ACTIVE_OUTLINED, lambda e: on_open("payment_reminders")),
             self._item(translate("settings"), settings_subtitle, ft.Icons.SETTINGS_OUTLINED, lambda e: on_open("settings")),
             self._item(translate("change_password"), "تحديث كلمة مرور الحساب الحالي", ft.Icons.LOCK_RESET, on_change_password),
             self._item(translate("logout"), "إنهاء الجلسة على هذا الجهاز", ft.Icons.LOGOUT, on_logout, danger=True),

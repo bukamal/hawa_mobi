@@ -223,6 +223,10 @@ class RestClient:
         from urllib.parse import quote
         return self._request('POST', f'/api/service_cases/{quote(str(reference or ""), safe="")}/reverse', data or {})
 
+    def delete_service_case(self, reference: str, data: Dict | None = None) -> Dict:
+        from urllib.parse import quote
+        return self._request('DELETE', f'/api/service_cases/{quote(str(reference or ""), safe="")}', data or {})
+
     def add_third_party_payment(self, data: Dict) -> Dict:
         try:
             return self._request('POST', '/api/third_party_payments', data)
@@ -240,7 +244,12 @@ class RestClient:
         return self._request('PUT', f'/api/third_party_payments/{quote(str(reference or ""), safe="")}', data)
 
     def reverse_third_party_payment(self, reference: str) -> Dict:
-        return self._request('POST', f'/api/third_party_payments/{reference}/reverse')
+        from urllib.parse import quote
+        return self._request('POST', f'/api/third_party_payments/{quote(str(reference or ""), safe="")}/reverse')
+
+    def delete_third_party_payment(self, reference: str, data: Dict | None = None) -> Dict:
+        from urllib.parse import quote
+        return self._request('DELETE', f'/api/third_party_payments/{quote(str(reference or ""), safe="")}', data or {})
 
 
     def add_direct_service(self, data: Dict) -> Dict:
@@ -265,6 +274,22 @@ class RestClient:
     def reverse_direct_service(self, reference: str, data: Dict | None = None) -> Dict:
         from urllib.parse import quote
         return self._request('POST', f'/api/direct_services/{quote(str(reference or ""), safe="")}/reverse', data or {})
+
+    def delete_direct_service(self, reference: str, data: Dict | None = None) -> Dict:
+        from urllib.parse import quote
+        return self._request('DELETE', f'/api/direct_services/{quote(str(reference or ""), safe="")}', data or {})
+
+    def get_payment_summary(self, expense_id: int) -> Dict:
+        return self._request('GET', f'/api/expenses/{int(expense_id)}/payment-summary')
+
+    def get_payments(self, expense_id: int) -> List[Dict]:
+        return self._request('GET', f'/api/expenses/{int(expense_id)}/payments')
+
+    def add_payment(self, expense_id: int, data: Dict) -> Dict:
+        return self._request('POST', f'/api/expenses/{int(expense_id)}/payments', data)
+
+    def delete_payment(self, payment_id: int, data: Dict | None = None) -> Dict:
+        return self._request('DELETE', f'/api/payments/{int(payment_id)}', data or {})
 
     def get_pending_payment_reminders(self) -> List[Dict]:
         return self._request('GET', '/api/payment_reminders')

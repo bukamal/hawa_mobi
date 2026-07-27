@@ -60,6 +60,12 @@ def validate_direct_service_payload(data: Dict[str, Any]) -> Dict[str, Any]:
     date = clean_text(data.get("date")) or datetime.datetime.now().strftime("%Y-%m-%d")
     notes = clean_text(data.get("notes"))
     print_description = clean_text(data.get("print_description")) or f"{service} - {person}".strip(" -")
+    client_paid = parse_amount(data.get("client_paid_amount", data.get("initial_paid_amount", 0)), "المدفوع من المسافر", allow_zero=True)
+    supplier_paid = parse_amount(data.get("supplier_paid_amount", 0), "المدفوع للمورد", allow_zero=True)
+    client_due_date = clean_text(data.get("client_due_date") or data.get("payment_due_date"))[:10]
+    supplier_due_date = clean_text(data.get("supplier_due_date"))[:10]
+    payment_reminder_note = clean_text(data.get("payment_reminder_note")) or "متابعة المبلغ المتبقي"
+    payment_method = clean_text(data.get("payment_method")) or "cash"
 
     if not company:
         raise ValueError("الشركة / الحساب مطلوب")
@@ -68,7 +74,14 @@ def validate_direct_service_payload(data: Dict[str, Any]) -> Dict[str, Any]:
     if not currency_code:
         currency_code = "USD"
 
+    if client_paid > sale:
+        raise ValueError("المدفوع من المسافر لا يمكن أن يتجاوز سعر البيع")
+    if supplier_paid > cost:
+        raise ValueError("المدفوع للمورد لا يمكن أن يتجاوز التكلفة")
+
     if supplier_only:
+        if client_paid > 0:
+            raise ValueError("لا يمكن تسجيل دفعة مسافر في وضع المورد فقط؛ سجلها على حساب العميل")
         # In the Android card workflow the selected company is the supplier/source
         # of the direct service.  There is no second supplier field and no customer
         # company receivable row; the sale/profit are internal, while the cost is
@@ -94,6 +107,12 @@ def validate_direct_service_payload(data: Dict[str, Any]) -> Dict[str, Any]:
         "notes": notes,
         "print_description": print_description,
         "supplier_only": supplier_only,
+        "client_paid_amount": client_paid,
+        "supplier_paid_amount": supplier_paid,
+        "client_due_date": client_due_date,
+        "supplier_due_date": supplier_due_date,
+        "payment_reminder_note": payment_reminder_note,
+        "payment_method": payment_method,
     }
 
 
