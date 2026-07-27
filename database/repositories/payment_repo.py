@@ -90,6 +90,8 @@ class PaymentRepository(BaseRepository):
             if not row:
                 raise ValueError("لم يتم العثور على الدفعة")
             payment = dict(row)
+            if payment.get("batch_id"):
+                raise ValueError("هذه الدفعة جزء من دفعة مجمعة؛ احذف الدفعة المجمعة كاملةً")
             if payment.get("ledger_expense_id"):
                 conn.execute("DELETE FROM expenses WHERE id=?", (int(payment["ledger_expense_id"]),))
             conn.execute("DELETE FROM payments WHERE id=?", (int(payment_id),))

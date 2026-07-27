@@ -94,6 +94,12 @@ class CompanyDetailsMobileView(ft.Column):
                 color=ft.Colors.WHITE,
             ),
             ft.FilledButton(
+                content=ft.Row([ft.Icon(ft.Icons.ACCOUNT_BALANCE_WALLET_OUTLINED), ft.Text("دفعة مجمعة")], tight=True),
+                on_click=self._add_batch_payment,
+                bgcolor=PRIMARY,
+                color=ft.Colors.WHITE,
+            ),
+            ft.FilledButton(
                 content=ft.Row([ft.Icon(ft.Icons.PRINT), ft.Text("كشف الحساب")], tight=True),
                 on_click=self._export_printable_statement,
                 bgcolor=PRIMARY,
@@ -267,6 +273,8 @@ class CompanyDetailsMobileView(ft.Column):
             "direct_service_reversal": "خدمة مباشرة قديمة/معكوسة",
             "payment_received": "دفعة مستلمة",
             "payment_paid": "دفعة مدفوعة",
+            "customer_credit": "رصيد دائن للعميل",
+            "supplier_advance": "دفعة مقدمة للمورد",
         }
         return labels.get(source_type, operation_label(record.get("operation_type")))
 
@@ -480,6 +488,21 @@ class CompanyDetailsMobileView(ft.Column):
         from views.dialogs.direct_service_dialog import DirectServiceDialog
         dialog = DirectServiceDialog(page=self._page, on_save=lambda _: self._reload(), supplier_company_name=self.company_name)
         open_control(self._page, dialog)
+
+    def _add_batch_payment(self, e=None):
+        if UserSession.get_current() and UserSession.get_current().get('role') == 'viewer':
+            self._show_snackbar("ليس لديك صلاحية لتسجيل دفعات", True)
+            return
+        try:
+            from views.dialogs.batch_payment_dialog import BatchPaymentDialog
+            dialog = BatchPaymentDialog(
+                page=self._page,
+                initial_company=self.company_name,
+                on_save=lambda _: self._reload(),
+            )
+            open_control(self._page, dialog)
+        except Exception as ex:
+            self._show_snackbar(f"تعذر فتح الدفعة المجمعة: {str(ex)}", True)
 
     async def _export_printable_statement(self, e):
         try:

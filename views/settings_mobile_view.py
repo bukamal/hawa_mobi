@@ -1528,8 +1528,10 @@ class SettingsMobileView(ft.Column):
             conn = db.get_connection()
             conn.execute("BEGIN IMMEDIATE")
             for table in (
-                "expenses", "third_party_payments", "direct_services", "service_cases",
-                "users", "audit_log", "settings", "exchange_rates", "token_blacklist",
+                "payment_allocations", "payments", "payment_batches", "payment_reminders",
+                "service_case_components", "direct_services", "service_cases", "third_party_payments",
+                "expenses", "exchange_rate_history", "users", "audit_log", "settings",
+                "exchange_rates", "token_blacklist",
             ):
                 conn.execute(f"DROP TABLE IF EXISTS {table}")
             conn.commit()

@@ -228,3 +228,7 @@ PYTHONPATH=. python tools/login_remember_password_flow_test.py
 PYTHONPATH=. python tools/apk_release_preflight.py
 PYTHONPATH=. python tools/quality_gate.py
 ```
+
+## Phase 108 — Batch payments and allocations
+
+Adds one-payment-to-many-claims allocation for normal entries, direct services, service cases, customers, suppliers, and travelers. Supports oldest-first/manual allocation, excess customer credit or supplier advance, local/REST parity, safe batch deletion, and schema migration to version 25. See `PHASE108_BATCH_PAYMENTS_ALLOCATIONS_AR.md`.

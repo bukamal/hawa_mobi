@@ -284,10 +284,15 @@ def insert_payment_in_transaction(
 def delete_payments_for_targets(conn, target_expense_ids: Iterable[int]) -> Dict[str, int]:
     ids = sorted({int(value) for value in target_expense_ids if value not in (None, "")})
     if not ids:
-        return {"payments": 0, "ledger_expenses": 0}
+        return {"payments": 0, "ledger_expenses": 0, "reclassified_credit": 0.0}
     placeholders = ",".join("?" for _ in ids)
+    # A batch may span several services.  Deleting one service must not erase
+    # the cash transaction or the allocations belonging to the other claims.
+    # Its removed allocation is therefore moved back to unapplied party credit.
+    from services.batch_payment_service import reclassify_allocations_as_credit
+    reclassified = reclassify_allocations_as_credit(conn, ids)
     rows = conn.execute(
-        f"SELECT id, ledger_expense_id FROM payments WHERE target_expense_id IN ({placeholders})",
+        f"SELECT id, ledger_expense_id FROM payments WHERE target_expense_id IN ({placeholders}) AND batch_id IS NULL",
         tuple(ids),
     ).fetchall()
     ledger_ids = sorted({int(row["ledger_expense_id"]) for row in rows if row["ledger_expense_id"] not in (None, "")})
@@ -295,5 +300,9 @@ def delete_payments_for_targets(conn, target_expense_ids: Iterable[int]) -> Dict
         ledger_placeholders = ",".join("?" for _ in ledger_ids)
         conn.execute(f"DELETE FROM payment_reminders WHERE expense_id IN ({ledger_placeholders})", tuple(ledger_ids))
         conn.execute(f"DELETE FROM expenses WHERE id IN ({ledger_placeholders})", tuple(ledger_ids))
-    conn.execute(f"DELETE FROM payments WHERE target_expense_id IN ({placeholders})", tuple(ids))
-    return {"payments": len(rows), "ledger_expenses": len(ledger_ids)}
+    conn.execute(f"DELETE FROM payments WHERE target_expense_id IN ({placeholders}) AND batch_id IS NULL", tuple(ids))
+    return {
+        "payments": len(rows) + len(reclassified.get("payment_ids") or []),
+        "ledger_expenses": len(ledger_ids) + len(reclassified.get("ledger_ids") or []),
+        "reclassified_credit": float(reclassified.get("reclassified_amount") or 0),
+    }

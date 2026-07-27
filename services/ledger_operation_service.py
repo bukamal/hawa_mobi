@@ -21,6 +21,8 @@ SERVICE_CASE_REVERSAL_OPERATION = "service_case_reversal"
 DIRECT_SERVICE_CLIENT_OPERATION = "direct_service_client"
 DIRECT_SERVICE_SUPPLIER_OPERATION = "direct_service_supplier"
 DIRECT_SERVICE_REVERSAL_OPERATION = "direct_service_reversal"
+CUSTOMER_CREDIT_OPERATION = "customer_credit"
+SUPPLIER_ADVANCE_OPERATION = "supplier_advance"
 
 # Operational visibility groups.  A reversed service operation is preserved in
 # SQLite for audit, but the original and reversal ledger rows must disappear
@@ -56,6 +58,8 @@ SERVICE_TYPES = [
     "عمولة",
     "تحويل ذمة",
     "متعدد الخدمات",
+    "رصيد دائن للعميل",
+    "دفعة مقدمة للمورد",
     "أخرى",
 ]
 
@@ -78,6 +82,8 @@ OPERATION_TYPES = [
     DIRECT_SERVICE_CLIENT_OPERATION,
     DIRECT_SERVICE_SUPPLIER_OPERATION,
     DIRECT_SERVICE_REVERSAL_OPERATION,
+    CUSTOMER_CREDIT_OPERATION,
+    SUPPLIER_ADVANCE_OPERATION,
     "other",
 ]
 
@@ -100,6 +106,8 @@ OPERATION_LABELS = {
     DIRECT_SERVICE_CLIENT_OPERATION: "خدمة مباشرة - عميل",
     DIRECT_SERVICE_SUPPLIER_OPERATION: "خدمة مباشرة - مورد",
     DIRECT_SERVICE_REVERSAL_OPERATION: "عكس خدمة مباشرة",
+    CUSTOMER_CREDIT_OPERATION: "رصيد دائن للعميل",
+    SUPPLIER_ADVANCE_OPERATION: "دفعة مقدمة للمورد",
     "other": "أخرى",
 }
 
@@ -118,6 +126,8 @@ SERVICE_TO_OPERATION = {
     "عمولة": "fee",
     "تحويل ذمة": "liability_transfer",
     "متعدد الخدمات": "other",
+    "رصيد دائن للعميل": CUSTOMER_CREDIT_OPERATION,
+    "دفعة مقدمة للمورد": SUPPLIER_ADVANCE_OPERATION,
     "أخرى": "other",
 }
 
@@ -133,7 +143,7 @@ def normalize_service_type(value: Any) -> str:
 
 def normalize_operation_type(value: Any, service_type: Any = None, source_type: Any = None) -> str:
     source = clean_text(source_type)
-    if source in {THIRD_PARTY_OPERATION, THIRD_PARTY_REVERSAL_OPERATION, SERVICE_CASE_CLIENT_OPERATION, SERVICE_CASE_SUPPLIER_OPERATION, SERVICE_CASE_REVERSAL_OPERATION, DIRECT_SERVICE_CLIENT_OPERATION, DIRECT_SERVICE_SUPPLIER_OPERATION, DIRECT_SERVICE_REVERSAL_OPERATION}:
+    if source in {THIRD_PARTY_OPERATION, THIRD_PARTY_REVERSAL_OPERATION, SERVICE_CASE_CLIENT_OPERATION, SERVICE_CASE_SUPPLIER_OPERATION, SERVICE_CASE_REVERSAL_OPERATION, DIRECT_SERVICE_CLIENT_OPERATION, DIRECT_SERVICE_SUPPLIER_OPERATION, DIRECT_SERVICE_REVERSAL_OPERATION, CUSTOMER_CREDIT_OPERATION, SUPPLIER_ADVANCE_OPERATION}:
         return source
     value = clean_text(value)
     if value in OPERATION_TYPES:
@@ -142,7 +152,7 @@ def normalize_operation_type(value: Any, service_type: Any = None, source_type: 
 
 
 def is_generated_source(source_type: Any) -> bool:
-    return clean_text(source_type) in {THIRD_PARTY_OPERATION, THIRD_PARTY_REVERSAL_OPERATION, SERVICE_CASE_CLIENT_OPERATION, SERVICE_CASE_SUPPLIER_OPERATION, SERVICE_CASE_REVERSAL_OPERATION, DIRECT_SERVICE_CLIENT_OPERATION, DIRECT_SERVICE_SUPPLIER_OPERATION, DIRECT_SERVICE_REVERSAL_OPERATION}
+    return clean_text(source_type) in {THIRD_PARTY_OPERATION, THIRD_PARTY_REVERSAL_OPERATION, SERVICE_CASE_CLIENT_OPERATION, SERVICE_CASE_SUPPLIER_OPERATION, SERVICE_CASE_REVERSAL_OPERATION, DIRECT_SERVICE_CLIENT_OPERATION, DIRECT_SERVICE_SUPPLIER_OPERATION, DIRECT_SERVICE_REVERSAL_OPERATION, CUSTOMER_CREDIT_OPERATION, SUPPLIER_ADVANCE_OPERATION}
 
 
 def is_locked_payload(data: Dict[str, Any]) -> int:

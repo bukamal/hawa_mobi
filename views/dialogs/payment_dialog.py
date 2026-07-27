@@ -121,14 +121,15 @@ class PaymentDialog(ft.AlertDialog):
                 icon_color=DANGER,
                 tooltip="حذف الدفعة",
                 on_click=lambda e, payment=dict(row): self._confirm_delete(payment),
-                visible=is_admin,
+                visible=is_admin and not bool(row.get("batch_id")),
             )
+            batch_hint = " · ضمن دفعة مجمعة" if row.get("batch_id") else ""
             controls.append(ft.Container(
                 content=ft.Row([
                     ft.Icon(ft.Icons.CHECK_CIRCLE_OUTLINE, color=SUCCESS, size=19),
                     ft.Column([
                         ft.Text(amount, weight=ft.FontWeight.BOLD),
-                        ft.Text(f"{row.get('date') or '—'} · {method} · {row.get('reference_number') or row.get('reference') or ''}", size=10, color=MUTED),
+                        ft.Text(f"{row.get('date') or '—'} · {method} · {row.get('reference_number') or row.get('reference') or ''}{batch_hint}", size=10, color=MUTED),
                     ], spacing=2, expand=True),
                     trailing,
                 ], spacing=8),

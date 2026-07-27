@@ -99,6 +99,7 @@ class MobilePairingService:
             "supports_exchange_rate_history": "الخادم لا يدعم تاريخ أسعار الصرف",
             "supports_expense_summary": "الخادم لا يدعم ملخص القيود المطلوب لتطبيق Android",
             "supports_payment_reminders": "الخادم لا يدعم تنبيهات الدفع المطلوبة لتطبيق Android",
+            "supports_batch_payments": "الخادم لا يدعم توزيع دفعة واحدة على عدة مطالبات",
             "supports_audit_post": "الخادم لا يدعم إرسال سجل التدقيق من Android",
         }
         missing.extend(message for key, message in required_flags.items() if not caps.get(key))
@@ -108,6 +109,8 @@ class MobilePairingService:
             "/api/expenses/summary",
             "/api/payment_reminders",
             "/api/payment_reminders/count_waiting",
+            "/api/payment-batches",
+            "/api/payment-batches/outstanding",
             "/api/audit_log",
         }
         if endpoints:

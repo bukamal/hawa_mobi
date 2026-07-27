@@ -7,6 +7,7 @@ import flet as ft
 from auth.session import UserSession
 from currency import currency
 from database import ExpenseRepository
+from views.dialogs.batch_payment_dialog import BatchPaymentDialog, BatchPaymentHistoryDialog
 from views.dialogs.payment_dialog import PaymentDialog
 from views.flet_compat import open_control
 from views.ui_kit import (
@@ -27,11 +28,27 @@ class PaymentRemindersMobileView(ft.Column):
         self.scroll = ft.ScrollMode.AUTO
         self.repo = ExpenseRepository()
         self.list_host = ft.Column(spacing=10)
+        role = (UserSession.get_current() or {}).get("role") or "user"
+        header_actions = ft.Row([
+            ft.IconButton(
+                icon=ft.Icons.HISTORY_OUTLINED,
+                tooltip="سجل الدفعات المجمعة",
+                on_click=lambda e: self._open_batch_history(),
+            ),
+            ft.FilledButton(
+                "دفعة مجمعة",
+                icon=ft.Icons.ACCOUNT_BALANCE_WALLET_OUTLINED,
+                on_click=lambda e: self._open_batch_payment(),
+                visible=role != "viewer",
+                height=42,
+            ),
+        ], spacing=4, tight=True)
         self.controls = [
             page_header(
                 "متابعة الدفعات",
                 icon=ft.Icons.NOTIFICATIONS_ACTIVE_OUTLINED,
                 subtitle="المبالغ الجزئية والمتأخرة محسوبة من سجل الدفعات الفعلي",
+                trailing=header_actions,
             ),
             self.list_host,
             ft.Container(height=24),
@@ -70,6 +87,12 @@ class PaymentRemindersMobileView(ft.Column):
                 on_click=lambda e, record=dict(row): self._open_payment(record),
                 bgcolor=SUCCESS,
                 color=ft.Colors.WHITE,
+                height=42,
+            ))
+            actions.append(ft.OutlinedButton(
+                "توزيع دفعة",
+                icon=ft.Icons.ACCOUNT_TREE_OUTLINED,
+                on_click=lambda e, record=dict(row): self._open_batch_payment(record),
                 height=42,
             ))
         if callable(self.on_open_company):
@@ -141,3 +164,15 @@ class PaymentRemindersMobileView(ft.Column):
             self._page.update()
         except Exception:
             pass
+
+    def _open_batch_payment(self, initial_record=None):
+        dialog = BatchPaymentDialog(
+            self._page,
+            initial_record=initial_record,
+            on_save=lambda result: self._after_payment(),
+        )
+        open_control(self._page, dialog)
+
+    def _open_batch_history(self):
+        dialog = BatchPaymentHistoryDialog(self._page, on_change=lambda: self._after_payment())
+        open_control(self._page, dialog)

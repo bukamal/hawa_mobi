@@ -291,6 +291,26 @@ class RestClient:
     def delete_payment(self, payment_id: int, data: Dict | None = None) -> Dict:
         return self._request('DELETE', f'/api/payments/{int(payment_id)}', data or {})
 
+    def get_batch_outstanding(self, params: Dict | None = None) -> List[Dict]:
+        from urllib.parse import urlencode
+        query = urlencode({k: v for k, v in (params or {}).items() if v is not None and v != ''})
+        suffix = f'?{query}' if query else ''
+        return self._request('GET', f'/api/payment-batches/outstanding{suffix}')
+
+    def get_payment_batches(self, limit: int = 50) -> List[Dict]:
+        return self._request('GET', f'/api/payment-batches?limit={int(limit or 50)}')
+
+    def get_payment_batch(self, batch_id_or_reference) -> Dict:
+        from urllib.parse import quote
+        key = quote(str(batch_id_or_reference), safe='')
+        return self._request('GET', f'/api/payment-batches/{key}')
+
+    def add_payment_batch(self, data: Dict) -> Dict:
+        return self._request('POST', '/api/payment-batches', data)
+
+    def delete_payment_batch(self, batch_id: int, data: Dict | None = None) -> Dict:
+        return self._request('DELETE', f'/api/payment-batches/{int(batch_id)}', data or {})
+
     def get_pending_payment_reminders(self) -> List[Dict]:
         return self._request('GET', '/api/payment_reminders')
 

@@ -635,7 +635,10 @@ class FileExportService:
         counts = {}
         conn = sqlite3.connect(db_path)
         try:
-            for table in ("users", "expenses", "settings", "exchange_rates", "audit_log", "third_party_payments"):
+            for table in (
+                "users", "expenses", "settings", "exchange_rates", "audit_log",
+                "third_party_payments", "payments", "payment_batches", "payment_allocations",
+            ):
                 try:
                     counts[table] = int(conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0])
                 except Exception:

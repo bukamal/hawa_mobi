@@ -35,6 +35,12 @@ from services.payment_service import (
     insert_payment_in_transaction,
     sync_payment_state,
 )
+from services.batch_payment_service import (
+    create_payment_batch_in_transaction,
+    delete_payment_batch_in_transaction,
+    get_payment_batch,
+    list_outstanding_claims,
+)
 
 _SERVER_CONFIG = load_server_config()
 app = Flask(__name__)
@@ -43,6 +49,7 @@ _PAIRING_TOKENS: Dict[str, Dict[str, Any]] = {}
 
 API_CONTRACT_VERSION = "2026.07.mobile-v1"
 PARTIAL_PAYMENTS_CONTRACT_VERSION = "partial-payments-v1"
+BATCH_PAYMENTS_CONTRACT_VERSION = "batch-payments-v1"
 CURRENCY_CONTRACT_VERSION = "historic-currency-snapshot-v1"
 REQUIRED_MOBILE_ENDPOINTS = [
     "/api/health",
@@ -56,6 +63,9 @@ REQUIRED_MOBILE_ENDPOINTS = [
     "/api/expenses/{id}/payment-summary",
     "/api/expenses/{id}/payments",
     "/api/payments/{id}",
+    "/api/payment-batches",
+    "/api/payment-batches/outstanding",
+    "/api/payment-batches/{id}",
     "/api/search/company-ledger",
     "/api/third_party_payments",
     "/api/third_party_payments/{reference}",
@@ -98,6 +108,8 @@ def _capabilities_payload() -> Dict[str, Any]:
         "supports_partial_payments": True,
         "partial_payments_contract": PARTIAL_PAYMENTS_CONTRACT_VERSION,
         "supports_dynamic_payment_balances": True,
+        "supports_batch_payments": True,
+        "batch_payments_contract": BATCH_PAYMENTS_CONTRACT_VERSION,
         "supports_third_party_payments": True,
         "supports_linked_intercompany_entry_editing": True,
         "supports_audit_post": True,
@@ -756,6 +768,9 @@ def delete_expense_payment(payment_id: int):
             conn.rollback()
             return _json_error("لم يتم العثور على الدفعة", 404)
         payment = dict(row)
+        if payment.get("batch_id"):
+            conn.rollback()
+            return _json_error("هذه الدفعة جزء من دفعة مجمعة؛ احذف الدفعة المجمعة كاملةً", 409)
         if payment.get("ledger_expense_id"):
             conn.execute("DELETE FROM expenses WHERE id=?", (payment["ledger_expense_id"],))
         conn.execute("DELETE FROM payments WHERE id=?", (payment_id,))
@@ -767,6 +782,123 @@ def delete_expense_payment(payment_id: int):
         try: conn.rollback()
         except Exception: pass
         return _json_error(e, 400)
+    finally:
+        conn.close()
+
+
+@app.get("/api/payment-batches/outstanding")
+@require_auth
+def payment_batch_outstanding():
+    conn = _connect()
+    try:
+        person_arg = request.args.get("person_name")
+        rows = list_outstanding_claims(
+            conn,
+            company_name=(request.args.get("company_name") or "").strip() or None,
+            person_name=(person_arg.strip() if person_arg is not None else None),
+            direction=(request.args.get("direction") or "").strip() or None,
+            currency_code=(request.args.get("currency_code") or "").strip() or None,
+        )
+        return jsonify(rows)
+    finally:
+        conn.close()
+
+
+@app.get("/api/payment-batches")
+@require_auth
+def payment_batches_list():
+    try:
+        limit = max(1, min(int(request.args.get("limit") or 50), 200))
+    except Exception:
+        limit = 50
+    conn = _connect()
+    try:
+        rows = conn.execute(
+            "SELECT * FROM payment_batches WHERE status='posted' ORDER BY date DESC, id DESC LIMIT ?",
+            (limit,),
+        ).fetchall()
+        return jsonify([dict(row) for row in rows])
+    finally:
+        conn.close()
+
+
+@app.get("/api/payment-batches/<batch_key>")
+@require_auth
+def payment_batch_get(batch_key: str):
+    conn = _connect()
+    try:
+        try:
+            value = int(batch_key) if str(batch_key).isdigit() else batch_key
+            return jsonify(get_payment_batch(conn, value))
+        except ValueError as exc:
+            return _json_error(exc, 404)
+    finally:
+        conn.close()
+
+
+@app.post("/api/payment-batches")
+@require_roles(*_role_allows_write())
+def payment_batch_add():
+    data = request.get_json(silent=True) or {}
+    conn = _connect()
+    try:
+        conn.execute("BEGIN IMMEDIATE")
+        user = _current_user() or {}
+        result = create_payment_batch_in_transaction(
+            conn,
+            company_name=data.get("company_name"),
+            person_name=data.get("person_name") or "",
+            direction=data.get("direction"),
+            amount=data.get("amount"),
+            currency_code=data.get("currency_original") or data.get("currency") or "USD",
+            date=data.get("date") or _now()[:10],
+            payment_method=data.get("payment_method") or "cash",
+            reference_number=data.get("reference_number") or "",
+            notes=data.get("notes") or "",
+            allocation_mode=data.get("allocation_mode") or "oldest",
+            allocations=data.get("allocations") or [],
+            user_id=user.get("id") or 1,
+            username=user.get("username", ""),
+        )
+        conn.commit()
+        return jsonify(result)
+    except ValueError as exc:
+        try: conn.rollback()
+        except Exception: pass
+        return _json_error(exc, 400)
+    except Exception as exc:
+        try: conn.rollback()
+        except Exception: pass
+        return _json_error(exc, 400)
+    finally:
+        conn.close()
+
+
+@app.delete("/api/payment-batches/<int:batch_id>")
+@require_roles("admin", "manager", "accountant")
+def payment_batch_delete(batch_id: int):
+    data = request.get_json(silent=True) or {}
+    conn = _connect()
+    try:
+        conn.execute("BEGIN IMMEDIATE")
+        user = _current_user() or {}
+        result = delete_payment_batch_in_transaction(
+            conn,
+            batch_id,
+            reason=data.get("reason") or "",
+            user_id=user.get("id") or 1,
+            username=user.get("username", ""),
+        )
+        conn.commit()
+        return jsonify(result)
+    except ValueError as exc:
+        try: conn.rollback()
+        except Exception: pass
+        return _json_error(exc, 409)
+    except Exception as exc:
+        try: conn.rollback()
+        except Exception: pass
+        return _json_error(exc, 400)
     finally:
         conn.close()
 

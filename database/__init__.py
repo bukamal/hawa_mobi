@@ -8,4 +8,5 @@ from database.repositories.third_party_payment_repo import ThirdPartyPaymentRepo
 from database.repositories.service_case_repo import ServiceCaseRepository
 from database.repositories.direct_service_repo import DirectServiceRepository
 from database.repositories.payment_repo import PaymentRepository
-__all__ = ['ensure_db', 'init_database', 'DatabaseConnection', 'UserRepository', 'ExpenseRepository', 'AuditRepository', 'SettingsRepository', 'ThirdPartyPaymentRepository', 'ServiceCaseRepository', 'DirectServiceRepository', 'PaymentRepository']
+from database.repositories.batch_payment_repo import BatchPaymentRepository
+__all__ = ['ensure_db', 'init_database', 'DatabaseConnection', 'UserRepository', 'ExpenseRepository', 'AuditRepository', 'SettingsRepository', 'ThirdPartyPaymentRepository', 'ServiceCaseRepository', 'DirectServiceRepository', 'PaymentRepository', 'BatchPaymentRepository']

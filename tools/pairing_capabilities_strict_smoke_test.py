@@ -13,10 +13,13 @@ def main() -> int:
         'supports_exchange_rate_history',
         'supports_expense_summary',
         'supports_payment_reminders',
+        'supports_batch_payments',
         'supports_audit_post',
         '/api/expenses/summary',
         '/api/payment_reminders',
         '/api/payment_reminders/count_waiting',
+        '/api/payment-batches',
+        '/api/payment-batches/outstanding',
     ]:
         if required not in source:
             print(f'❌ Missing strict pairing capability check: {required}')
