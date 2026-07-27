@@ -30,6 +30,39 @@ def static_checks() -> None:
     require("views/company_details_mobile_view.py", "تصدير ومشاركة كشف الحساب")
 
 
+
+
+def _datatable_row_count(root_control) -> int:
+    """Return the number of rendered rows in the first nested Flet DataTable.
+
+    CompanyDetailsMobileView used to render one control per ledger record. Since
+    Phase 106 it renders a single responsive card containing a DataTable, so the
+    pagination regression must count DataTable.rows rather than wrapper controls.
+    """
+    stack = [root_control]
+    visited = set()
+    while stack:
+        control = stack.pop()
+        if control is None or id(control) in visited:
+            continue
+        visited.add(id(control))
+
+        rows = getattr(control, "rows", None)
+        columns = getattr(control, "columns", None)
+        if rows is not None and columns is not None:
+            return len(rows)
+
+        content = getattr(control, "content", None)
+        if content is not None:
+            stack.append(content)
+
+        controls = getattr(control, "controls", None)
+        if controls:
+            stack.extend(list(controls))
+
+    raise AssertionError("company ledger DataTable was not rendered")
+
+
 def runtime_checks() -> None:
     try:
         import flet  # noqa: F401
@@ -94,10 +127,10 @@ def runtime_checks() -> None:
 
     from views.company_details_mobile_view import CompanyDetailsMobileView
     details = CompanyDetailsMobileView(page, "شركة كثيفة")
-    assert len(details.records_list.controls) == 20
+    assert _datatable_row_count(details.records_list) == 20
     assert details.pagination_bar.visible
     details._load_more()
-    assert len(details.records_list.controls) == 25
+    assert _datatable_row_count(details.records_list) == 25
     details.direction_filter.value = "لنا"
     details._on_filter_changed()
     assert all(r.get("type") == "incoming" for r in details.records)
