@@ -10,6 +10,7 @@ from database import ExpenseRepository
 from views.dialogs.batch_payment_dialog import BatchPaymentDialog, BatchPaymentHistoryDialog
 from views.dialogs.payment_dialog import PaymentDialog
 from views.flet_compat import open_control, run_async_task, show_snackbar
+from services.payment_target_service import normalize_payment_target
 from views.ui_kit import (
     page_header, data_card, empty_state, PRIMARY, PRIMARY_SOFT, TEXT, MUTED,
     SUCCESS, WARNING, DANGER,
@@ -180,8 +181,12 @@ class PaymentRemindersMobileView(ft.Column):
         )
 
     def _open_payment(self, record):
-        dialog = PaymentDialog(self._page, record, on_save=lambda result: self._after_payment())
-        open_control(self._page, dialog)
+        try:
+            target = normalize_payment_target(record)
+            dialog = PaymentDialog(self._page, target, on_save=lambda result: self._after_payment())
+            open_control(self._page, dialog)
+        except Exception as ex:
+            show_snackbar(self._page, f"تعذر فتح نافذة تسجيل الدفعة: {ex}", is_error=True)
 
     def _after_payment(self):
         self.reload()

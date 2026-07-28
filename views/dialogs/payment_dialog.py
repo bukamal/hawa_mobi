@@ -12,6 +12,7 @@ from views.dialogs.dialog_kit import cancel_button, dialog_body, dialog_title, p
 from views.financial_date_field import FinancialDateField
 from views.flet_compat import close_control, open_control, run_async_task
 from views.ui_kit import PRIMARY, PRIMARY_SOFT, SUCCESS, DANGER, WARNING, MUTED, BORDER
+from services.payment_target_service import normalize_payment_target
 
 
 _PAYMENT_METHODS = [
@@ -29,8 +30,8 @@ class PaymentDialog(ft.AlertDialog):
     def __init__(self, page, expense, on_save=None):
         super().__init__()
         self._page = page
-        self.expense = dict(expense or {})
-        self.expense_id = int(self.expense.get("id") or 0)
+        self.expense = normalize_payment_target(expense)
+        self.expense_id = int(self.expense["expense_id"])
         self.on_save = on_save
         self.repo = PaymentRepository()
         self._saving = False
