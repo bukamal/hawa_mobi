@@ -8,6 +8,11 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    env:
+      # Flet 0.28.x packages Android Python dependencies here during the
+      # first build pass. The later direct Flutter/Gradle rebuild must receive
+      # the same absolute path or serious_python_android aborts at evaluation.
+      SERIOUS_PYTHON_SITE_PACKAGES: ${{ github.workspace }}/build/site-packages
     steps:
       - uses: actions/checkout@v4
 
@@ -76,7 +81,21 @@ jobs:
             exit 1
           fi
           echo "Using Flutter: $FLUTTER_BIN"
-          (cd build/flutter && "$FLUTTER_BIN" build apk --release)
+          if [ ! -d "$SERIOUS_PYTHON_SITE_PACKAGES" ]; then
+            echo "❌ Serious Python site-packages directory is missing: $SERIOUS_PYTHON_SITE_PACKAGES"
+            echo "Discovered build directories:"
+            find "$GITHUB_WORKSPACE/build" -maxdepth 3 -type d 2>/dev/null | sort || true
+            exit 1
+          fi
+          echo "Using Serious Python site-packages: $SERIOUS_PYTHON_SITE_PACKAGES"
+          find "$SERIOUS_PYTHON_SITE_PACKAGES" -maxdepth 2 -mindepth 1 -type d 2>/dev/null | sort | head -n 40 || true
+
+          # The first Flet pass may leave a Gradle daemon alive. Stop it so the
+          # release rebuild starts with the environment above deterministically.
+          (cd build/flutter/android && ./gradlew --stop) || true
+          (cd build/flutter && \
+            SERIOUS_PYTHON_SITE_PACKAGES="$SERIOUS_PYTHON_SITE_PACKAGES" \
+            "$FLUTTER_BIN" build apk --release)
 
       - name: Find and copy APK
         run: |

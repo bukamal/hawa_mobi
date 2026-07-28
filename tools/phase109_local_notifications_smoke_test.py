@@ -223,6 +223,10 @@ def static_contract_checks():
     assert "android.permission.POST_NOTIFICATIONS" in pyproject
     assert "android.permission.RECEIVE_BOOT_COMPLETED" in pyproject
     assert "patch_android_local_notifications.py" in workflow
+    assert "SERIOUS_PYTHON_SITE_PACKAGES" in workflow
+    assert "${{ github.workspace }}/build/site-packages" in workflow
+    assert "./gradlew --stop" in workflow
+    assert 'test -d "$SERIOUS_PYTHON_SITE_PACKAGES"' in workflow or '[ ! -d "$SERIOUS_PYTHON_SITE_PACKAGES" ]' in workflow
     assert "inexactAllowWhileIdle" in dart
     assert "AndroidScheduleMode.exactAllowWhileIdle" not in dart
     assert "فتح المطالبة" in manager and "تسجيل دفعة" in manager
