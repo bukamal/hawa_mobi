@@ -172,6 +172,24 @@ def patcher_checks():
             '<application android:label="Hawaa"></application></manifest>',
             encoding="utf-8",
         )
+        # Flutter debug/profile manifests are overlays and may omit <application>.
+        # They must never be selected as the patch target.
+        debug_manifest = root / "android" / "app" / "src" / "debug" / "AndroidManifest.xml"
+        debug_manifest.parent.mkdir(parents=True)
+        debug_manifest.write_text(
+            '<?xml version="1.0" encoding="utf-8"?>\n'
+            '<manifest xmlns:android="http://schemas.android.com/apk/res/android">'
+            '<uses-permission android:name="android.permission.INTERNET" />'
+            '</manifest>',
+            encoding="utf-8",
+        )
+        profile_manifest = root / "android" / "app" / "src" / "profile" / "AndroidManifest.xml"
+        profile_manifest.parent.mkdir(parents=True)
+        profile_manifest.write_text(
+            '<?xml version="1.0" encoding="utf-8"?>\n'
+            '<manifest xmlns:android="http://schemas.android.com/apk/res/android" />',
+            encoding="utf-8",
+        )
         gradle = root / "android" / "app" / "build.gradle"
         gradle.parent.mkdir(parents=True, exist_ok=True)
         gradle.write_text(
@@ -181,6 +199,7 @@ def patcher_checks():
         )
         first = module.patch(root)
         second = module.patch(root)
+        assert Path(first["manifest"]) == manifest
         assert first["manifest_changed"] and first["gradle_changed"]
         assert not second["manifest_changed"] and not second["gradle_changed"]
         manifest_text = manifest.read_text(encoding="utf-8")

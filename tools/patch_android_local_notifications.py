@@ -102,19 +102,66 @@ def patch_gradle(path: Path) -> bool:
     return False
 
 
-def find_one(root: Path, names: tuple[str, ...]) -> Path:
-    matches = []
-    for name in names:
-        matches.extend(root.rglob(name))
-    matches = [p for p in matches if "/app/" in p.as_posix() or p.parent.name == "app"]
+def find_main_manifest(root: Path) -> Path:
+    """Return the app's main manifest, never a debug/profile overlay.
+
+    Flet/Flutter generates multiple manifests under ``app/src``. The debug and
+    profile files are manifest overlays and legitimately may not contain an
+    ``<application>`` element. Notification permissions and receivers belong in
+    ``src/main/AndroidManifest.xml``.
+    """
+    exact_candidates = (
+        root / "android" / "app" / "src" / "main" / "AndroidManifest.xml",
+        root / "app" / "src" / "main" / "AndroidManifest.xml",
+    )
+    for candidate in exact_candidates:
+        if candidate.is_file():
+            return candidate
+
+    matches = [
+        path
+        for path in root.rglob("AndroidManifest.xml")
+        if path.parent.name == "main"
+        and path.parent.parent.name == "src"
+        and path.parent.parent.parent.name == "app"
+    ]
     if not matches:
-        raise FileNotFoundError(f"Could not find {names} under {root}")
-    return sorted(matches, key=lambda p: len(p.parts))[0]
+        discovered = ", ".join(
+            str(path.relative_to(root))
+            for path in sorted(root.rglob("AndroidManifest.xml"))
+        ) or "none"
+        raise FileNotFoundError(
+            "Could not find app/src/main/AndroidManifest.xml under "
+            f"{root}; discovered manifests: {discovered}"
+        )
+    return sorted(matches, key=lambda path: (len(path.parts), path.as_posix()))[0]
+
+
+def find_app_gradle(root: Path) -> Path:
+    exact_candidates = (
+        root / "android" / "app" / "build.gradle.kts",
+        root / "android" / "app" / "build.gradle",
+        root / "app" / "build.gradle.kts",
+        root / "app" / "build.gradle",
+    )
+    for candidate in exact_candidates:
+        if candidate.is_file():
+            return candidate
+
+    matches = [
+        path
+        for name in ("build.gradle.kts", "build.gradle")
+        for path in root.rglob(name)
+        if path.parent.name == "app"
+    ]
+    if not matches:
+        raise FileNotFoundError(f"Could not find app/build.gradle(.kts) under {root}")
+    return sorted(matches, key=lambda path: (len(path.parts), path.as_posix()))[0]
 
 
 def patch(root: Path) -> dict:
-    manifest = find_one(root, ("AndroidManifest.xml",))
-    gradle = find_one(root, ("build.gradle", "build.gradle.kts"))
+    manifest = find_main_manifest(root)
+    gradle = find_app_gradle(root)
     return {
         "manifest": str(manifest),
         "manifest_changed": patch_manifest(manifest),
