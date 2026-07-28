@@ -1,0 +1,14 @@
+[project]
+name = "flet-notifications"
+version = "0.2.0"
+description = "Local scheduled notifications extension for Hawaa Flet 0.28.x"
+requires-python = ">=3.10"
+dependencies = ["flet==0.28.3"]
+
+[build-system]
+requires = ["setuptools>=65", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["flet_notifications*"]

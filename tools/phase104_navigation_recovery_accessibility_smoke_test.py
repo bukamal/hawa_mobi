@@ -18,7 +18,7 @@ def require(path: str, text: str) -> None:
 
 
 def static_checks() -> None:
-    require("pyproject.toml", 'version = "1.0.49"')
+    require("pyproject.toml", 'version = "1.0.50"')
     require("views/connection_recovery_view.py", "class ConnectionRecoveryView")
     require("views/connection_recovery_view.py", "_local_admin_is_valid")
     require("views/connection_recovery_view.py", "asyncio.to_thread")

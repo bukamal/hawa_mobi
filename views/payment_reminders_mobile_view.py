@@ -9,7 +9,7 @@ from currency import currency
 from database import ExpenseRepository
 from views.dialogs.batch_payment_dialog import BatchPaymentDialog, BatchPaymentHistoryDialog
 from views.dialogs.payment_dialog import PaymentDialog
-from views.flet_compat import open_control
+from views.flet_compat import open_control, run_async_task, show_snackbar
 from views.ui_kit import (
     page_header, data_card, empty_state, PRIMARY, PRIMARY_SOFT, TEXT, MUTED,
     SUCCESS, WARNING, DANGER,
@@ -19,10 +19,13 @@ from views.ui_kit import (
 class PaymentRemindersMobileView(ft.Column):
     """Actionable list of outstanding receivables and payables."""
 
-    def __init__(self, page, on_open_company=None):
+    def __init__(self, page, on_open_company=None, focus_expense_id=None, notification_action=None):
         super().__init__()
         self._page = page
         self.on_open_company = on_open_company
+        self.focus_expense_id = int(focus_expense_id or 0)
+        self.notification_action = str(notification_action or "")
+        self._focused_record = None
         self.expand = True
         self.spacing = 12
         self.scroll = ft.ScrollMode.AUTO
@@ -54,6 +57,24 @@ class PaymentRemindersMobileView(ft.Column):
             ft.Container(height=24),
         ]
         self.reload()
+        if self.focus_expense_id:
+            run_async_task(self._page, self._handle_notification_focus)
+
+    async def _handle_notification_focus(self):
+        import asyncio
+        await asyncio.sleep(0.20)
+        record = self._focused_record
+        if not record:
+            return
+        try:
+            setattr(self._page, "_hawaa_notification_focus_expense_id", None)
+            setattr(self._page, "_hawaa_notification_action", None)
+        except Exception:
+            pass
+        if self.notification_action == "pay":
+            self._open_payment(record)
+        else:
+            show_snackbar(self._page, "تم فتح المطالبة المرتبطة بالتنبيه", is_error=False)
 
     def reload(self, *_):
         try:
@@ -65,7 +86,11 @@ class PaymentRemindersMobileView(ft.Column):
             self.list_host.controls = [empty_state("لا توجد دفعات معلقة", "كل المطالبات المسجلة مكتملة حاليًا", ft.Icons.CHECK_CIRCLE_OUTLINE)]
             return
         today = datetime.datetime.now().strftime("%Y-%m-%d")
-        self.list_host.controls = [self._card(dict(row), today) for row in rows]
+        records = [dict(row) for row in rows]
+        if self.focus_expense_id:
+            records.sort(key=lambda row: 0 if int(row.get("expense_id") or 0) == self.focus_expense_id else 1)
+            self._focused_record = next((row for row in records if int(row.get("expense_id") or 0) == self.focus_expense_id), None)
+        self.list_host.controls = [self._card(row, today) for row in records]
 
     def _card(self, row, today):
         code = row.get("currency_original") or "USD"
@@ -160,6 +185,11 @@ class PaymentRemindersMobileView(ft.Column):
 
     def _after_payment(self):
         self.reload()
+        try:
+            from services.local_notification_manager import request_local_notification_resync
+            request_local_notification_resync(self._page)
+        except Exception:
+            pass
         try:
             self._page.update()
         except Exception:

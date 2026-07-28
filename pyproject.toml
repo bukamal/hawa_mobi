@@ -1,6 +1,6 @@
 [project]
 name = "hawaa-accounting"
-version = "1.0.49"
+version = "1.0.50"
 description = "نظام حسابات هوى الشام الداخلي"
 requires-python = ">=3.10"
 dependencies = [
@@ -9,6 +9,7 @@ dependencies = [
     "flet-permission-handler==0.1.0",
     "Pillow>=10.0.0",
     "cryptography==43.0.1",
+    "flet-notifications==0.2.0",
 ]
 
 [build-system]
@@ -35,7 +36,9 @@ android_permissions = [
     "android.permission.READ_MEDIA_IMAGES",
     "android.permission.READ_MEDIA_VIDEO",
     "android.permission.READ_MEDIA_AUDIO",
-    "android.permission.MANAGE_EXTERNAL_STORAGE"
+    "android.permission.MANAGE_EXTERNAL_STORAGE",
+    "android.permission.POST_NOTIFICATIONS",
+    "android.permission.RECEIVE_BOOT_COMPLETED"
 ]
 
 [tool.flet.app]
@@ -71,3 +74,8 @@ allowBackup = "false"
 "android.permission.READ_MEDIA_AUDIO" = true
 
 "android.permission.MANAGE_EXTERNAL_STORAGE" = true
+"android.permission.POST_NOTIFICATIONS" = true
+"android.permission.RECEIVE_BOOT_COMPLETED" = true
+
+[tool.flet.dev_packages]
+"flet-notifications" = "extensions/flet_notifications"

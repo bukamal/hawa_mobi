@@ -24,6 +24,7 @@ jobs:
       - name: Install Python dependencies
         run: |
           python -m pip install --upgrade pip
+          python -m pip install -e extensions/flet_notifications
           python -m pip install -e .
           python - <<'PY'
           import flet, sys
@@ -48,11 +49,34 @@ jobs:
         run: |
           rm -rf ~/.flet ~/.cache/flet build/flutter build/apk
 
-      - name: Build APK
+      - name: Generate Android project and APK
         run: |
+          # The first pass generates build/flutter. flutter_local_notifications
+          # may require the desugaring patch before its first successful compile,
+          # so retain the generated project even when that compile returns nonzero.
+          set +e
           flet build apk --verbose --clear-cache \
             --product "هوى الشام" \
             --org com.hawaa
+          FIRST_BUILD_EXIT=$?
+          set -e
+          echo "Initial Flet build exit: $FIRST_BUILD_EXIT"
+          test -d build/flutter
+
+      - name: Patch native local notifications
+        run: |
+          python tools/patch_android_local_notifications.py build/flutter
+          FLUTTER_BIN=$(command -v flutter || true)
+          if [ -z "$FLUTTER_BIN" ]; then
+            FLUTTER_BIN=$(find "$HOME/.flet" "$HOME/flutter" -path "*/bin/flutter" -type f 2>/dev/null | head -n 1)
+          fi
+          if [ -z "$FLUTTER_BIN" ]; then
+            echo "Flutter executable was not found in PATH, ~/.flet, or ~/flutter"
+            find "$HOME/.flet" "$HOME/flutter" -maxdepth 4 -type f -name flutter 2>/dev/null || true
+            exit 1
+          fi
+          echo "Using Flutter: $FLUTTER_BIN"
+          (cd build/flutter && "$FLUTTER_BIN" build apk --release)
 
       - name: Find and copy APK
         run: |

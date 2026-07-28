@@ -58,10 +58,14 @@ def main():
         tables = {row[0] for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
         assert "payment_batches" in tables
         assert "payment_allocations" in tables
+        assert "local_notification_schedule" in tables
+        assert "notification_state" in tables
         payment_cols = {row[1] for row in conn.execute("PRAGMA table_info(payments)")}
         assert "batch_id" in payment_cols
         version = conn.execute("SELECT value FROM settings WHERE key='schema_version'").fetchone()[0]
-        assert version == "25", version
+        assert version == "26", version
+        assert conn.execute("SELECT value FROM settings WHERE key='notifications/enabled'").fetchone()[0] == "true"
+        assert conn.execute("SELECT COUNT(*) FROM sqlite_master WHERE type='trigger' AND name LIKE 'trg_notifications_%'").fetchone()[0] == 9
         assert conn.execute("SELECT COUNT(*) FROM expenses WHERE company_name='شركة قديمة'").fetchone()[0] == 1
     finally:
         conn.close()

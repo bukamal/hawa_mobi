@@ -44,7 +44,7 @@ def main() -> int:
     assert "ft.Colors.INDIGO" not in all_view_text, "Legacy Indigo styling remains"
 
     pyproject = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
-    assert 'version = "1.0.49"' in pyproject
+    assert 'version = "1.0.50"' in pyproject
     assert 'color = "#0A3F70"' in pyproject
 
     # Runtime constructor check with pinned Flet is intentionally light and has

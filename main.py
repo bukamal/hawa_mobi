@@ -204,6 +204,12 @@ def main(page: ft.Page):
             app = AppLayout(page=page, on_logout=logout, on_exit=close_app)
             page.add(app)
             page.update()
+            try:
+                from services.local_notification_manager import attach_local_notifications
+                manager = attach_local_notifications(page)
+                manager.prompt_permission_if_needed()
+            except Exception as notification_error:
+                print(f"[WARN] تعذر تهيئة الإشعارات المحلية: {notification_error}")
 
         try:
             setattr(page, '_hawaa_logout', logout)

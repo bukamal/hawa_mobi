@@ -15,7 +15,7 @@ def require(path, text):
 
 
 def static_checks():
-    require("pyproject.toml", 'version = "1.0.49"')
+    require("pyproject.toml", 'version = "1.0.50"')
     require("auth/permissions.py", "ADMIN_SETTINGS_SECTIONS")
     require("views/app_layout.py", "can_access_page(page_id)")
     require("views/settings_hub_mobile_view.py", 'f"settings/{sid}"')

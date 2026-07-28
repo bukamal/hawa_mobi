@@ -14,7 +14,7 @@ for token in (
     "CREATE TABLE IF NOT EXISTS payment_batches",
     "CREATE TABLE IF NOT EXISTS payment_allocations",
     "batch_id INTEGER",
-    "schema_version','25",
+    "schema_version','26",
 ):
     assert token in migrations, token
 

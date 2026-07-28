@@ -6,6 +6,97 @@ import json
 from database.connection import DatabaseConnection, get_local_db_path
 from auth.password import hash_password
 
+
+def _ensure_local_notification_schema(cursor):
+    """Phase 109 local Android notification persistence and dirty tracking."""
+    cursor.executescript("""
+        CREATE TABLE IF NOT EXISTS local_notification_schedule (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            notification_key TEXT UNIQUE NOT NULL,
+            notification_id INTEGER UNIQUE NOT NULL,
+            expense_id INTEGER,
+            reminder_id INTEGER,
+            kind TEXT NOT NULL,
+            scheduled_at TEXT NOT NULL,
+            title TEXT NOT NULL,
+            body TEXT NOT NULL,
+            payload TEXT,
+            channel_id TEXT NOT NULL,
+            status TEXT NOT NULL DEFAULT 'scheduled',
+            last_error TEXT,
+            opened_at TEXT,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_local_notification_schedule_time
+            ON local_notification_schedule(scheduled_at, status);
+        CREATE INDEX IF NOT EXISTS idx_local_notification_schedule_expense
+            ON local_notification_schedule(expense_id);
+        CREATE TABLE IF NOT EXISTS notification_state (
+            key TEXT PRIMARY KEY,
+            value TEXT,
+            updated_at TEXT
+        );
+        INSERT OR IGNORE INTO notification_state(key, value, updated_at)
+            VALUES ('financial_dirty', '1', CURRENT_TIMESTAMP);
+
+        CREATE TRIGGER IF NOT EXISTS trg_notifications_expenses_insert
+        AFTER INSERT ON expenses BEGIN
+            INSERT INTO notification_state(key,value,updated_at) VALUES('financial_dirty','1',CURRENT_TIMESTAMP)
+            ON CONFLICT(key) DO UPDATE SET value='1', updated_at=CURRENT_TIMESTAMP;
+        END;
+        CREATE TRIGGER IF NOT EXISTS trg_notifications_expenses_update
+        AFTER UPDATE ON expenses BEGIN
+            INSERT INTO notification_state(key,value,updated_at) VALUES('financial_dirty','1',CURRENT_TIMESTAMP)
+            ON CONFLICT(key) DO UPDATE SET value='1', updated_at=CURRENT_TIMESTAMP;
+        END;
+        CREATE TRIGGER IF NOT EXISTS trg_notifications_expenses_delete
+        AFTER DELETE ON expenses BEGIN
+            INSERT INTO notification_state(key,value,updated_at) VALUES('financial_dirty','1',CURRENT_TIMESTAMP)
+            ON CONFLICT(key) DO UPDATE SET value='1', updated_at=CURRENT_TIMESTAMP;
+        END;
+        CREATE TRIGGER IF NOT EXISTS trg_notifications_reminders_insert
+        AFTER INSERT ON payment_reminders BEGIN
+            INSERT INTO notification_state(key,value,updated_at) VALUES('financial_dirty','1',CURRENT_TIMESTAMP)
+            ON CONFLICT(key) DO UPDATE SET value='1', updated_at=CURRENT_TIMESTAMP;
+        END;
+        CREATE TRIGGER IF NOT EXISTS trg_notifications_reminders_update
+        AFTER UPDATE ON payment_reminders BEGIN
+            INSERT INTO notification_state(key,value,updated_at) VALUES('financial_dirty','1',CURRENT_TIMESTAMP)
+            ON CONFLICT(key) DO UPDATE SET value='1', updated_at=CURRENT_TIMESTAMP;
+        END;
+        CREATE TRIGGER IF NOT EXISTS trg_notifications_reminders_delete
+        AFTER DELETE ON payment_reminders BEGIN
+            INSERT INTO notification_state(key,value,updated_at) VALUES('financial_dirty','1',CURRENT_TIMESTAMP)
+            ON CONFLICT(key) DO UPDATE SET value='1', updated_at=CURRENT_TIMESTAMP;
+        END;
+        CREATE TRIGGER IF NOT EXISTS trg_notifications_payments_insert
+        AFTER INSERT ON payments BEGIN
+            INSERT INTO notification_state(key,value,updated_at) VALUES('financial_dirty','1',CURRENT_TIMESTAMP)
+            ON CONFLICT(key) DO UPDATE SET value='1', updated_at=CURRENT_TIMESTAMP;
+        END;
+        CREATE TRIGGER IF NOT EXISTS trg_notifications_payments_update
+        AFTER UPDATE ON payments BEGIN
+            INSERT INTO notification_state(key,value,updated_at) VALUES('financial_dirty','1',CURRENT_TIMESTAMP)
+            ON CONFLICT(key) DO UPDATE SET value='1', updated_at=CURRENT_TIMESTAMP;
+        END;
+        CREATE TRIGGER IF NOT EXISTS trg_notifications_payments_delete
+        AFTER DELETE ON payments BEGIN
+            INSERT INTO notification_state(key,value,updated_at) VALUES('financial_dirty','1',CURRENT_TIMESTAMP)
+            ON CONFLICT(key) DO UPDATE SET value='1', updated_at=CURRENT_TIMESTAMP;
+        END;
+    """)
+    defaults = (
+        ('notifications/enabled', 'true'),
+        ('notifications/time', '09:00'),
+        ('notifications/pre_due_days', '3'),
+        ('notifications/overdue_days', '3,7'),
+        ('notifications/lockscreen_privacy', 'private'),
+        ('notifications/permission_prompted', 'false'),
+    )
+    cursor.executemany("INSERT OR IGNORE INTO settings(key,value) VALUES (?,?)", defaults)
+    cursor.execute("INSERT OR REPLACE INTO settings(key,value) VALUES('schema_version','26')")
+
 def init_database():
     db = DatabaseConnection()
     db.close()
@@ -66,7 +157,7 @@ def init_database():
             ('theme','light'),
             ('base_currency','USD'),
             ('display_currency','USD'),
-            ('schema_version','25'),
+            ('schema_version','26'),
             ('abbreviate_numbers','false'),
             ('network/mode','local'),
             ('network/server_url','');
@@ -78,6 +169,7 @@ def init_database():
             ('company_tax_number',''),
             ('company_logo_path','');
     ''')
+    _ensure_local_notification_schema(cursor)
     now = datetime.datetime.now().isoformat()
     default_rates = [('USD',1.0),('SAR',3.75),('SYP',14000.0),('EUR',0.92),('GBP',0.79),('AED',3.67),('QAR',3.64),('KWD',0.31),('OMR',0.38)]
     for code, rate in default_rates:
@@ -179,7 +271,7 @@ def ensure_db():
             except Exception:
                 pass
             cursor.execute("CREATE TABLE IF NOT EXISTS exchange_rate_history (id INTEGER PRIMARY KEY AUTOINCREMENT, currency_code TEXT NOT NULL, rate_to_usd REAL NOT NULL, previous_rate_to_usd REAL, changed_by INTEGER, changed_at TEXT NOT NULL)")
-            cursor.execute("INSERT OR REPLACE INTO settings (key, value) VALUES (?,?)", ('schema_version','25'))
+            cursor.execute("INSERT OR REPLACE INTO settings (key, value) VALUES (?,?)", ('schema_version','26'))
             cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='token_blacklist'")
             if not cursor.fetchone():
                 cursor.execute("CREATE TABLE token_blacklist (jti TEXT PRIMARY KEY, created_at TEXT)")
@@ -235,6 +327,7 @@ def ensure_db():
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_direct_services_ref ON direct_services(reference)")
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_direct_services_company ON direct_services(company_name)")
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_direct_services_person ON direct_services(person_name)")
+            _ensure_local_notification_schema(cursor)
             conn.commit()
             conn.close()
         except Exception as e:

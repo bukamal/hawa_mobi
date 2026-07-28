@@ -29,7 +29,7 @@ class AppLayout(ft.Column):
     """
 
     ROOT_PAGES = ["dashboard", "accounts", "reports", "more"]
-    ROUTED_PAGES = {"dashboard", "accounts", "reports", "more", "users", "audit_log", "payment_reminders", "settings"}
+    ROUTED_PAGES = {"dashboard", "accounts", "reports", "more", "users", "audit_log", "payment_reminders", "notification_center", "settings"}
 
     def __init__(self, page, on_logout=None, on_exit=None):
         super().__init__()
@@ -167,7 +167,7 @@ class AppLayout(ft.Column):
             return "/accounts"
         if route.startswith("/settings/"):
             return "/settings"
-        if route in {"/users", "/audit_log", "/payment_reminders", "/settings"}:
+        if route in {"/users", "/audit_log", "/payment_reminders", "/notification_center", "/settings"}:
             return "/more"
         if route in {"/accounts", "/reports", "/more"}:
             return "/dashboard"
@@ -455,7 +455,12 @@ class AppLayout(ft.Column):
                 view = PaymentRemindersMobileView(
                     self._page,
                     on_open_company=lambda company: self.open_company_details(company) if company else None,
+                    focus_expense_id=getattr(self._page, "_hawaa_notification_focus_expense_id", None),
+                    notification_action=getattr(self._page, "_hawaa_notification_action", None),
                 )
+            elif page_id == "notification_center":
+                from views.notification_center_mobile_view import NotificationCenterMobileView
+                view = NotificationCenterMobileView(self._page)
             elif page_id == "settings":
                 from views.settings_hub_mobile_view import SettingsHubMobileView
                 view = SettingsHubMobileView(self._page, self.switch_page)

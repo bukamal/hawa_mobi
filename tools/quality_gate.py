@@ -112,6 +112,7 @@ def main() -> int:
         "tools/batch_payments_migration_smoke_test.py",
         "tools/batch_payments_allocations_smoke_test.py",
         "tools/batch_payments_rest_smoke_test.py",
+        "tools/phase109_local_notifications_smoke_test.py",
         "tools/phase100_design_system_smoke_test.py",
         "tools/phase101_accounting_workflow_wizard_smoke_test.py",
         "tools/phase102_secure_admin_settings_smoke_test.py",
