@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 import tempfile
 from pathlib import Path
+import tomllib
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -15,7 +16,9 @@ def require(path, text):
 
 
 def static_checks():
-    require("pyproject.toml", 'version = "1.0.50"')
+    app = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+    version = tuple(int(part) for part in app["project"]["version"].split("."))
+    assert version >= (1, 0, 50), version
     require("auth/permissions.py", "ADMIN_SETTINGS_SECTIONS")
     require("views/app_layout.py", "can_access_page(page_id)")
     require("views/settings_hub_mobile_view.py", 'f"settings/{sid}"')
