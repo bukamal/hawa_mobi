@@ -219,7 +219,7 @@ def static_contract_checks():
     manager = (ROOT / "services" / "local_notification_manager.py").read_text(encoding="utf-8")
     center = (ROOT / "views" / "notification_center_mobile_view.py").read_text(encoding="utf-8")
     app_layout = (ROOT / "views" / "app_layout.py").read_text(encoding="utf-8")
-    assert '"flet-notifications==0.2.0"' in pyproject
+    assert '"flet-notifications==0.2.1"' in pyproject
     assert "android.permission.POST_NOTIFICATIONS" in pyproject
     assert "android.permission.RECEIVE_BOOT_COMPLETED" in pyproject
     assert "patch_android_local_notifications.py" in workflow

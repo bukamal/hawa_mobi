@@ -1,6 +1,6 @@
 name: flet_notifications
 description: Local scheduled notifications extension for Hawaa.
-version: 0.2.0
+version: 0.2.1
 homepage: https://example.invalid/hawaa
 
 environment:

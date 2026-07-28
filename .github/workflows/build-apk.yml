@@ -52,7 +52,7 @@ jobs:
 
       - name: Clear Flet cache
         run: |
-          rm -rf ~/.flet ~/.cache/flet build/flutter build/apk
+          rm -rf ~/.flet ~/.cache/flet build/flutter build/flutter-packages build/site-packages build/apk
 
       - name: Generate Android project and APK
         run: |
@@ -62,11 +62,17 @@ jobs:
           set +e
           flet build apk --verbose --clear-cache \
             --product "هوى الشام" \
-            --org com.hawaa
+            --org com.hawaa \
+            --build-number 1094 \
+            --build-version 1.0.54
           FIRST_BUILD_EXIT=$?
           set -e
           echo "Initial Flet build exit: $FIRST_BUILD_EXIT"
           test -d build/flutter
+
+      - name: Verify notification extension registration
+        run: |
+          python tools/verify_flet_notifications_registration.py build/flutter
 
       - name: Patch native local notifications
         run: |
