@@ -60,7 +60,9 @@ def validate_direct_service_payload(data: Dict[str, Any]) -> Dict[str, Any]:
     date = clean_text(data.get("date")) or datetime.datetime.now().strftime("%Y-%m-%d")
     notes = clean_text(data.get("notes"))
     print_description = clean_text(data.get("print_description")) or f"{service} - {person}".strip(" -")
-    client_paid = parse_amount(data.get("client_paid_amount", data.get("initial_paid_amount", 0)), "المدفوع من المسافر", allow_zero=True)
+    client_paid = parse_amount(data.get("client_paid_amount", data.get("initial_paid_amount", 0)), "المدفوع من العميل", allow_zero=True)
+    client_payer_type = clean_text(data.get("client_payer_type") or ("traveler" if person else "company")).lower()
+    client_payer_name = clean_text(data.get("client_payer_name"))
     supplier_paid = parse_amount(data.get("supplier_paid_amount", 0), "المدفوع للمورد", allow_zero=True)
     client_due_date = clean_text(data.get("client_due_date") or data.get("payment_due_date"))[:10]
     supplier_due_date = clean_text(data.get("supplier_due_date"))[:10]
@@ -75,7 +77,15 @@ def validate_direct_service_payload(data: Dict[str, Any]) -> Dict[str, Any]:
         currency_code = "USD"
 
     if client_paid > sale:
-        raise ValueError("المدفوع من المسافر لا يمكن أن يتجاوز سعر البيع")
+        raise ValueError("الدفعة الأولى لا يمكن أن تتجاوز سعر البيع")
+    if client_payer_type not in {"company", "traveler", "other"}:
+        raise ValueError("صفة الدافع الأول غير صالحة")
+    if client_payer_type == "company":
+        client_payer_name = company
+    elif client_payer_type == "traveler":
+        client_payer_name = client_payer_name or person
+    elif client_paid > 0 and not client_payer_name:
+        raise ValueError("اسم الدافع الفعلي مطلوب")
     if supplier_paid > cost:
         raise ValueError("المدفوع للمورد لا يمكن أن يتجاوز التكلفة")
 
@@ -108,6 +118,8 @@ def validate_direct_service_payload(data: Dict[str, Any]) -> Dict[str, Any]:
         "print_description": print_description,
         "supplier_only": supplier_only,
         "client_paid_amount": client_paid,
+        "client_payer_type": client_payer_type,
+        "client_payer_name": client_payer_name,
         "supplier_paid_amount": supplier_paid,
         "client_due_date": client_due_date,
         "supplier_due_date": supplier_due_date,

@@ -83,6 +83,26 @@ class AddEditExpenseDialog(ft.AlertDialog):
             width=170,
             disabled=self.expense_id is not None,
         )
+        self.initial_payer_dropdown = ft.Dropdown(
+            label="الدافع الفعلي للدفعة الأولى",
+            value="traveler" if (expense or {}).get("person_name") else "company",
+            options=[],
+            width=dialog_width - 20,
+            disabled=self.expense_id is not None,
+            filled=True,
+            on_change=self._update_initial_payer_visibility,
+        )
+        self.initial_payer_name_field = ft.TextField(
+            label="اسم الدافع الفعلي",
+            width=dialog_width - 20,
+            visible=False,
+            disabled=self.expense_id is not None,
+            hint_text="يظهر في كشف الشركة كدافع بالنيابة",
+        )
+        self.initial_payer_hint = ft.Text(
+            "صاحب الحساب يبقى الشركة؛ اسم الدافع يوضح فقط من سلّم المبلغ.",
+            size=11, color=ft.Colors.GREY_600, visible=self.expense_id is None,
+        )
 
         self.currency_dropdown = ft.Dropdown(
             label=translate('currency'),
@@ -190,6 +210,9 @@ class AddEditExpenseDialog(ft.AlertDialog):
                 self.company_field,
                 ft.Row([self.amount_field, self.currency_dropdown], spacing=10, wrap=True),
                 ft.Row([self.initial_paid_field, self.payment_method_dropdown], spacing=10, wrap=True),
+                self.initial_payer_dropdown,
+                self.initial_payer_name_field,
+                self.initial_payer_hint,
                 ft.Text("اتجاه القيد", size=13, weight=ft.FontWeight.BOLD, color=ft.Colors.GREY_700),
                 self.type_selector,
                 ft.Text("لنا: مبلغ مستحق للشركة · له: مبلغ مستحق على الشركة", size=11, color=ft.Colors.GREY_600),
@@ -225,11 +248,89 @@ class AddEditExpenseDialog(ft.AlertDialog):
         self.shape = ft.RoundedRectangleBorder(radius=15)
 
         self.amount_field.on_change = self._update_conversion
-        self.initial_paid_field.on_change = self._update_conversion
+        self.initial_paid_field.on_change = self._on_initial_paid_change
         self.currency_dropdown.on_change = self._update_conversion
         self.service_dropdown.on_change = self._update_operation_label
+        self.type_selector.on_change = self._on_entry_type_change
+        self.person_field.on_change = self._on_person_change
         self._update_operation_label(None)
-        self._update_conversion(None)
+        self._update_initial_payer_options()
+        self._on_initial_paid_change(None)
+
+    def _on_entry_type_change(self, e=None):
+        self._update_initial_payer_options()
+        self._update_conversion(e)
+
+    def _on_person_change(self, e=None):
+        self._update_initial_payer_options()
+
+    def _on_initial_paid_change(self, e=None):
+        self._update_conversion(e)
+        try:
+            paid = float(self.initial_paid_field.value or 0)
+        except Exception:
+            paid = 0.0
+        visible = self.expense_id is None and paid > 0.005
+        self.initial_payer_dropdown.visible = visible
+        self.initial_payer_hint.visible = visible
+        self.initial_payer_name_field.visible = visible and self.initial_payer_dropdown.value == "other"
+        try:
+            self._page.update()
+        except Exception:
+            pass
+
+    def _update_initial_payer_options(self):
+        if self.expense_id is not None:
+            return
+        entry_type = self._selected_entry_type() or "incoming"
+        person = normalize_text(self.person_field.value)
+        if entry_type == "outgoing":
+            options = [
+                ft.dropdown.Option("office", "المكتب"),
+                ft.dropdown.Option("other", "دافع آخر"),
+            ]
+            allowed = {"office", "other"}
+            default = "office"
+        else:
+            options = [ft.dropdown.Option("company", f"الشركة نفسها — {normalize_text(self.company_field.value) or 'الحساب'}")]
+            if person:
+                options.append(ft.dropdown.Option("traveler", f"المسافر / الزبون — {person}"))
+            options.append(ft.dropdown.Option("other", "شخص آخر يدفع نيابة عن الشركة"))
+            allowed = {"company", "other"} | ({"traveler"} if person else set())
+            default = "traveler" if person else "company"
+        self.initial_payer_dropdown.options = options
+        if self.initial_payer_dropdown.value not in allowed:
+            self.initial_payer_dropdown.value = default
+        self._update_initial_payer_visibility()
+
+    def _update_initial_payer_visibility(self, e=None):
+        self.initial_payer_name_field.visible = (
+            self.expense_id is None
+            and self.initial_payer_dropdown.visible
+            and self.initial_payer_dropdown.value == "other"
+        )
+        try:
+            self._page.update()
+        except Exception:
+            pass
+
+    def _resolved_initial_payer(self, entry_type, person_name):
+        if entry_type == "outgoing":
+            payer_type = str(self.initial_payer_dropdown.value or "office")
+            if payer_type == "office":
+                return "office", "المكتب"
+        else:
+            payer_type = str(self.initial_payer_dropdown.value or ("traveler" if person_name else "company"))
+            if payer_type == "company":
+                return "company", normalize_text(self.company_field.value)
+            if payer_type == "traveler":
+                if not person_name:
+                    raise ValueError("حدد اسم المسافر الذي دفع")
+                return "traveler", person_name
+        name = normalize_text(self.initial_payer_name_field.value)
+        if not name:
+            raise ValueError("اسم الدافع الفعلي مطلوب")
+        return "other", name
 
     def _update_operation_label(self, e):
         try:
@@ -339,6 +440,14 @@ class AddEditExpenseDialog(ft.AlertDialog):
         operation_type = SERVICE_TO_OPERATION.get(service_type, 'normal')
         payment_due_date = (self.payment_due_field.value or '').strip() if amount > effective_paid + 0.005 else None
         payment_note = (self.payment_note_field.value or '').strip() if payment_due_date else None
+        initial_payer_type = None
+        initial_payer_name = ""
+        if self.expense_id is None and initial_paid > 0.005:
+            try:
+                initial_payer_type, initial_payer_name = self._resolved_initial_payer(type_val, person_name)
+            except Exception as ex:
+                self._show_snackbar(str(ex), True)
+                return
 
         user = UserSession.get_current()
         user_id = user['id'] if user else None
@@ -360,6 +469,8 @@ class AddEditExpenseDialog(ft.AlertDialog):
                     service_type=service_type, operation_type=operation_type,
                     initial_paid_amount=initial_paid,
                     payment_method=self.payment_method_dropdown.value or "cash",
+                    initial_payer_type=initial_payer_type,
+                    initial_payer_name=initial_payer_name,
                 )
             self.operation_date.remember()
             self._close()

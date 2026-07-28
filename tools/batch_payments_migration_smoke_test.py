@@ -45,8 +45,12 @@ def main():
           ledger_expense_id INTEGER, status TEXT NOT NULL DEFAULT 'posted', created_by INTEGER, created_at TEXT, updated_by INTEGER, updated_at TEXT);
         INSERT INTO settings(key,value) VALUES ('schema_version','24');
         INSERT INTO exchange_rates(currency_code,rate_to_usd,updated_at) VALUES ('USD',1.0,'2026-07-27');
-        INSERT INTO expenses(company_name,amount,amount_base,type,date,amount_original,currency_original,exchange_rate_to_usd)
-          VALUES ('شركة قديمة',100,100,'incoming','2026-07-01',100,'USD',1.0);
+        INSERT INTO expenses(company_name,amount,amount_base,type,date,amount_original,currency_original,exchange_rate_to_usd,person_name,source_type,is_settleable)
+          VALUES ('شركة قديمة',100,100,'incoming','2026-07-01',100,'USD',1.0,'مسافر قديم','direct_service_client',1);
+        INSERT INTO expenses(company_name,amount,amount_base,type,date,amount_original,currency_original,exchange_rate_to_usd,person_name,source_type,is_settleable)
+          VALUES ('شركة قديمة',10,10,'outgoing','2026-07-02',10,'USD',1.0,'مسافر قديم','payment_received',0);
+        INSERT INTO payments(reference,target_expense_id,company_name,person_name,source_type,amount_original,currency_original,exchange_rate_to_usd,amount_base,direction,date,ledger_expense_id)
+          VALUES ('PAY-LEGACY',1,'شركة قديمة','مسافر قديم','direct_service_client',10,'USD',1.0,10,'received','2026-07-02',2);
         """
     )
     conn.commit()
@@ -62,11 +66,18 @@ def main():
         assert "notification_state" in tables
         payment_cols = {row[1] for row in conn.execute("PRAGMA table_info(payments)")}
         assert "batch_id" in payment_cols
+        assert {"payer_type", "payer_name"} <= payment_cols
+        expense_cols = {row[1] for row in conn.execute("PRAGMA table_info(expenses)")}
+        assert {"payment_payer_type", "payment_payer_name"} <= expense_cols
         version = conn.execute("SELECT value FROM settings WHERE key='schema_version'").fetchone()[0]
-        assert version == "26", version
+        assert version == "27", version
         assert conn.execute("SELECT value FROM settings WHERE key='notifications/enabled'").fetchone()[0] == "true"
         assert conn.execute("SELECT COUNT(*) FROM sqlite_master WHERE type='trigger' AND name LIKE 'trg_notifications_%'").fetchone()[0] == 9
-        assert conn.execute("SELECT COUNT(*) FROM expenses WHERE company_name='شركة قديمة'").fetchone()[0] == 1
+        assert conn.execute("SELECT COUNT(*) FROM expenses WHERE company_name='شركة قديمة'").fetchone()[0] == 2
+        legacy_payment = conn.execute("SELECT payer_type,payer_name FROM payments WHERE reference='PAY-LEGACY'").fetchone()
+        assert legacy_payment == ('traveler', 'مسافر قديم'), legacy_payment
+        legacy_settlement = conn.execute("SELECT payment_payer_type,payment_payer_name FROM expenses WHERE id=2").fetchone()
+        assert legacy_settlement == ('traveler', 'مسافر قديم'), legacy_settlement
     finally:
         conn.close()
     print("PHASE108_BATCH_PAYMENTS_MIGRATION_OK")

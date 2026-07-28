@@ -34,7 +34,7 @@ def migration_and_planner_checks():
     db_path = get_local_db_path()
     with sqlite3.connect(db_path) as conn:
         version = conn.execute("SELECT value FROM settings WHERE key='schema_version'").fetchone()[0]
-        assert version == "26", version
+        assert version == "27", version
         tables = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
         assert {"local_notification_schedule", "notification_state"} <= tables
         triggers = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='trigger'")}

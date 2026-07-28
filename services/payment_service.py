@@ -22,6 +22,86 @@ PAYMENT_STATUS_PAID = "paid"
 PAYMENT_STATUS_NOT_APPLICABLE = "not_applicable"
 PAYMENT_EPSILON = Decimal("0.005")
 
+PAYER_COMPANY = "company"
+PAYER_TRAVELER = "traveler"
+PAYER_OTHER = "other"
+PAYER_OFFICE = "office"
+PAYER_LEGACY = "legacy"
+VALID_PAYER_TYPES = {PAYER_COMPANY, PAYER_TRAVELER, PAYER_OTHER, PAYER_OFFICE, PAYER_LEGACY}
+
+
+def payer_type_label(payer_type: str) -> str:
+    return {
+        PAYER_COMPANY: "الشركة",
+        PAYER_TRAVELER: "المسافر / الزبون",
+        PAYER_OTHER: "شخص آخر",
+        PAYER_OFFICE: "المكتب",
+        PAYER_LEGACY: "دافع سابق",
+    }.get(str(payer_type or ""), "دافع غير محدد")
+
+
+def normalize_payment_payer(
+    target: Dict[str, Any],
+    *,
+    direction: str,
+    payer_type: str | None = None,
+    payer_name: str | None = None,
+) -> Dict[str, str]:
+    """Resolve the actual cash payer without changing the account owner.
+
+    ``target.company_name`` remains the ledger/account owner. ``person_name`` is
+    the service beneficiary. These fields only identify who physically paid.
+    """
+    account_company = str(target.get("company_name") or "").strip()
+    beneficiary = str(target.get("person_name") or "").strip()
+    clean_type = str(payer_type or "").strip().lower()
+    clean_name = str(payer_name or "").strip()
+
+    if clean_type not in VALID_PAYER_TYPES:
+        if direction == "paid":
+            clean_type = PAYER_OFFICE
+        elif beneficiary:
+            clean_type = PAYER_TRAVELER
+        else:
+            clean_type = PAYER_COMPANY
+
+    if clean_type == PAYER_COMPANY:
+        clean_name = account_company
+    elif clean_type == PAYER_TRAVELER:
+        clean_name = clean_name or beneficiary
+        if not clean_name:
+            raise ValueError("حدد اسم المسافر أو الزبون الذي دفع")
+    elif clean_type == PAYER_OTHER:
+        if not clean_name:
+            raise ValueError("اسم الدافع الفعلي مطلوب")
+    elif clean_type == PAYER_OFFICE:
+        clean_name = clean_name or "المكتب"
+    elif clean_type == PAYER_LEGACY:
+        clean_name = clean_name or beneficiary or account_company or "غير محدد"
+
+    return {"payer_type": clean_type, "payer_name": clean_name}
+
+
+def payment_print_description(
+    *,
+    direction: str,
+    account_company: str,
+    beneficiary: str,
+    payer_type: str,
+    payer_name: str,
+) -> str:
+    account_company = str(account_company or "").strip()
+    beneficiary = str(beneficiary or "").strip()
+    payer_name = str(payer_name or "").strip()
+    if direction == "received":
+        if payer_type == PAYER_COMPANY or payer_name == account_company:
+            return f"دفعة مستلمة من {account_company}".strip()
+        suffix = f" نيابة عن {account_company}" if account_company else ""
+        return f"دفعة مستلمة من {payer_name}{suffix}".strip()
+    if payer_type == PAYER_OFFICE:
+        return f"دفعة مدفوعة إلى {account_company}".strip()
+    return f"دفعة مدفوعة بواسطة {payer_name} إلى {account_company}".strip()
+
 
 def _money(value: Any) -> Decimal:
     try:
@@ -168,6 +248,8 @@ def insert_payment_in_transaction(
     payment_method: str = "cash",
     reference_number: str = "",
     notes: str = "",
+    payer_type: str | None = None,
+    payer_name: str | None = None,
     user_id: int = 1,
     username: str = "",
     reference: str | None = None,
@@ -199,8 +281,17 @@ def insert_payment_in_transaction(
     settlement_type = "outgoing" if direction == "received" else "incoming"
     source_type = PAYMENT_SOURCE_RECEIVED if direction == "received" else PAYMENT_SOURCE_PAID
     action_label = "دفعة مستلمة" if direction == "received" else "دفعة مدفوعة"
-    print_description = f"{action_label} - {target.get('person_name') or target.get('company_name') or ''}".strip(" -")
-    settlement_notes = f"{action_label} للقيد #{target['id']}"
+    payer = normalize_payment_payer(
+        target, direction=direction, payer_type=payer_type, payer_name=payer_name
+    )
+    print_description = payment_print_description(
+        direction=direction,
+        account_company=target.get("company_name") or "",
+        beneficiary=target.get("person_name") or "",
+        payer_type=payer["payer_type"],
+        payer_name=payer["payer_name"],
+    )
+    settlement_notes = f"{print_description}. تسوية للقيد #{target['id']}"
     if target.get("source_ref"):
         settlement_notes += f" / {target.get('source_ref')}"
     if notes:
@@ -232,6 +323,8 @@ def insert_payment_in_transaction(
         "internal_note": f"تسوية جزئية للقيد {target['id']} / {target.get('source_ref') or '-'}",
         "service_case_role": "payment",
         "linked_company_name": target.get("linked_company_name") or target.get("company_name"),
+        "payment_payer_type": payer["payer_type"],
+        "payment_payer_name": payer["payer_name"],
     })
     cur = conn.execute(
         """INSERT INTO expenses
@@ -239,14 +332,16 @@ def insert_payment_in_transaction(
          updated_by, updated_at, amount_original, currency_original, exchange_rate_to_usd,
          status, payment_due_date, payment_reminder_note, source_type, source_ref, counterparty_company_name,
          person_name, person_name_search, service_type, operation_type, is_locked, reversal_of, reversed_by,
-         print_description, internal_note, service_case_role, linked_company_name, is_settleable, payment_status)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+         print_description, internal_note, service_case_role, linked_company_name, is_settleable, payment_status,
+         payment_payer_type, payment_payer_name)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
         (
             payload["company_name"], payload["amount"], payload["amount_base"], payload["type"], payload["date"], payload.get("notes", ""), payload["currency"],
             user_id, now, user_id, now, payload["amount_original"], payload["currency_original"], payload["exchange_rate_to_usd"],
             "approved", None, None, source_type, reference, payload.get("counterparty_company_name"),
             payload.get("person_name"), payload.get("person_name_search"), payload.get("service_type"), payload.get("operation_type"), 1, None, None,
             payload.get("print_description"), payload.get("internal_note"), "payment", payload.get("linked_company_name"), 0, PAYMENT_STATUS_NOT_APPLICABLE,
+            payer["payer_type"], payer["payer_name"],
         ),
     )
     ledger_expense_id = int(cur.lastrowid)
@@ -254,12 +349,13 @@ def insert_payment_in_transaction(
         """INSERT INTO payments
         (reference, target_expense_id, company_name, person_name, source_type, source_ref, party_role,
          amount_original, currency_original, exchange_rate_to_usd, amount_base, direction, payment_method,
-         date, reference_number, notes, ledger_expense_id, status, created_by, created_at, updated_by, updated_at)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+         date, reference_number, notes, ledger_expense_id, payer_type, payer_name, status, created_by, created_at, updated_by, updated_at)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
         (
             reference, int(target["id"]), target.get("company_name"), target.get("person_name"), target.get("source_type"), target.get("source_ref"), target.get("service_case_role") or "normal",
             float(amount_dec), currency_code, rate, amount_base, direction, str(payment_method or "cash"), date,
-            str(reference_number or "").strip(), str(notes or "").strip(), ledger_expense_id, "posted", user_id, now, user_id, now,
+            str(reference_number or "").strip(), str(notes or "").strip(), ledger_expense_id, payer["payer_type"], payer["payer_name"],
+            "posted", user_id, now, user_id, now,
         ),
     )
     payment_id = int(cur.lastrowid)
@@ -268,7 +364,8 @@ def insert_payment_in_transaction(
         "INSERT INTO audit_log (user_id, username, action, table_name, record_id, details, ip_address, timestamp) VALUES (?,?,?,?,?,?,?,?)",
         (
             user_id, username or "", action_label, "payments", payment_id,
-            f"{reference} | القيد {target['id']} | {float(amount_dec):.2f} {currency_code} | المتبقي {summary_after['remaining_amount_original']:.2f}",
+            f"{reference} | حساب {target.get('company_name')} | الدافع {payer['payer_name']} ({payer_type_label(payer['payer_type'])}) | "
+            f"القيد {target['id']} | {float(amount_dec):.2f} {currency_code} | المتبقي {summary_after['remaining_amount_original']:.2f}",
             "127.0.0.1", now,
         ),
     )
@@ -277,6 +374,10 @@ def insert_payment_in_transaction(
         "id": payment_id,
         "reference": reference,
         "ledger_expense_id": ledger_expense_id,
+        "account_company_name": target.get("company_name"),
+        "beneficiary_name": target.get("person_name") or "",
+        "payer_type": payer["payer_type"],
+        "payer_name": payer["payer_name"],
         **summary_after,
     }
 

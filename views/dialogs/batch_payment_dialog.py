@@ -73,6 +73,23 @@ class BatchPaymentDialog(ft.AlertDialog):
             width=230,
             filled=True,
         )
+        self.payer_field = ft.Dropdown(
+            label="الدافع الفعلي",
+            options=[],
+            width=width - 24,
+            filled=True,
+            on_change=self._payer_changed,
+        )
+        self.payer_name_field = ft.TextField(
+            label="اسم الدافع الفعلي",
+            width=width - 24,
+            visible=False,
+            hint_text="الدافع لا يغيّر صاحب الحساب أو جهة الذمة",
+        )
+        self.payer_hint = ft.Text(
+            "توزع الدفعة على مطالبات الشركة المختارة، بينما يُحفظ اسم من سلّم المبلغ فعليًا.",
+            size=11, color=MUTED,
+        )
         self.method_field = ft.Dropdown(
             label="طريقة الدفع",
             value="cash",
@@ -114,6 +131,9 @@ class BatchPaymentDialog(ft.AlertDialog):
                 ),
                 self.scope_field,
                 ft.Row([self.amount_field, self.mode_field], spacing=10, wrap=True),
+                self.payer_field,
+                self.payer_name_field,
+                self.payer_hint,
                 ft.Row([self.payment_date, self.method_field, self.reference_field], spacing=10, wrap=True),
                 self.notes_field,
                 ft.Divider(),
@@ -171,6 +191,52 @@ class BatchPaymentDialog(ft.AlertDialog):
         self._load_scope()
         self._safe_update()
 
+    def _update_payer_options(self, scope):
+        direction = scope.get("direction")
+        company = str(scope.get("company_name") or "").strip()
+        person = str(scope.get("person_name") or "").strip()
+        if direction == "paid":
+            options = [
+                ft.dropdown.Option("office", "المكتب"),
+                ft.dropdown.Option("other", "دافع آخر"),
+            ]
+            allowed = {"office", "other"}
+            default = "office"
+        else:
+            options = [ft.dropdown.Option("company", f"الشركة نفسها — {company}")]
+            if person:
+                options.append(ft.dropdown.Option("traveler", f"المسافر / الزبون — {person}"))
+            options.append(ft.dropdown.Option("other", "مسافر أو شخص آخر يدفع بالنيابة"))
+            allowed = {"company", "other"} | ({"traveler"} if person else set())
+            default = "traveler" if person else "company"
+        self.payer_field.options = options
+        if self.payer_field.value not in allowed:
+            self.payer_field.value = default
+        if self.payer_field.value == "other" and person and not self.payer_name_field.value:
+            self.payer_name_field.value = person
+        self._payer_changed()
+
+    def _payer_changed(self, e=None):
+        self.payer_name_field.visible = self.payer_field.value == "other"
+        self._safe_update()
+
+    def _resolved_payer(self, scope):
+        payer_type = str(self.payer_field.value or "").strip()
+        company = str(scope.get("company_name") or "").strip()
+        person = str(scope.get("person_name") or "").strip()
+        if payer_type == "company":
+            return payer_type, company
+        if payer_type == "traveler":
+            if not person:
+                raise ValueError("حدد اسم المسافر الدافع")
+            return payer_type, person
+        if payer_type == "office":
+            return payer_type, "المكتب"
+        name = str(self.payer_name_field.value or "").strip()
+        if not name:
+            raise ValueError("اسم الدافع الفعلي مطلوب")
+        return "other", name
+
     def _mode_changed(self, e=None):
         manual = self.mode_field.value == "manual"
         for field in self.manual_fields.values():
@@ -184,7 +250,10 @@ class BatchPaymentDialog(ft.AlertDialog):
         self.manual_fields = {}
         if not scope:
             self.claims_host.controls = []
+            self.payer_field.options = []
+            self.payer_field.value = None
             return
+        self._update_payer_options(scope)
         self.claims = self.repo.list_outstanding(
             company_name=scope["company_name"],
             person_name=scope["person_name"] if scope.get("person_name") else None,
@@ -274,6 +343,7 @@ class BatchPaymentDialog(ft.AlertDialog):
             if amount <= 0:
                 raise ValueError("مبلغ الدفعة يجب أن يكون أكبر من صفر")
             date = self.payment_date.require_value("تاريخ الدفعة")
+            payer_type, payer_name = self._resolved_payer(scope)
             allocations = self._manual_allocations() if self.mode_field.value == "manual" else []
             if self.mode_field.value == "manual" and sum(item["amount"] for item in allocations) > amount + 0.005:
                 raise ValueError("مجموع التوزيع اليدوي أكبر من مبلغ الدفعة")
@@ -290,6 +360,8 @@ class BatchPaymentDialog(ft.AlertDialog):
             "payment_method": self.method_field.value or "cash",
             "reference_number": self.reference_field.value or "",
             "notes": self.notes_field.value or "",
+            "payer_type": payer_type,
+            "payer_name": payer_name,
             "allocation_mode": self.mode_field.value or "oldest",
             "allocations": allocations,
         }
@@ -363,7 +435,7 @@ class BatchPaymentHistoryDialog(ft.AlertDialog):
                     ft.Icon(ft.Icons.RECEIPT_LONG_OUTLINED, color=PRIMARY),
                     ft.Column([
                         ft.Text(f"{direction} · {row.get('company_name')}", weight=ft.FontWeight.BOLD),
-                        ft.Text(f"{row.get('person_name') or 'كل المطالبات'} · {row.get('date')} · {row.get('reference')}", size=10, color=MUTED),
+                        ft.Text(f"{row.get('person_name') or 'كل المطالبات'} · الدافع: {row.get('payer_name') or row.get('company_name')} · {row.get('date')} · {row.get('reference')}", size=10, color=MUTED),
                         ft.Text(
                             f"المبلغ {currency.format_amount_ui(float(row.get('amount_original') or 0), code)} · "
                             f"الموزع {currency.format_amount_ui(float(row.get('allocated_amount_original') or 0), code)} · "

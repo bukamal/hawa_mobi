@@ -135,7 +135,9 @@ def validate_service_case_payload(data: Dict[str, Any]) -> Dict[str, Any]:
     date = clean_text(data.get("date")) or datetime.datetime.now().strftime("%Y-%m-%d")
     currency_code = clean_text(data.get("currency_original") or data.get("currency") or "USD").upper()
     notes = clean_text(data.get("notes"))
-    client_paid = parse_amount(data.get("client_paid_amount", data.get("initial_paid_amount", 0)), "المدفوع من المسافر")
+    client_paid = parse_amount(data.get("client_paid_amount", data.get("initial_paid_amount", 0)), "الدفعة الأولى")
+    client_payer_type = clean_text(data.get("client_payer_type") or ("traveler" if person else "company")).lower()
+    client_payer_name = clean_text(data.get("client_payer_name"))
     client_due_date = clean_text(data.get("client_due_date") or data.get("payment_due_date"))[:10]
     payment_reminder_note = clean_text(data.get("payment_reminder_note")) or "متابعة المبلغ المتبقي"
     payment_method = clean_text(data.get("payment_method")) or "cash"
@@ -170,7 +172,15 @@ def validate_service_case_payload(data: Dict[str, Any]) -> Dict[str, Any]:
     total_sale = sum(float(c.get("sale_amount_original") or 0) for c in components)
     total_cost = sum(float(c.get("cost_amount_original") or 0) for c in components)
     if client_paid > total_sale:
-        raise ValueError("المدفوع من المسافر لا يمكن أن يتجاوز إجمالي البيع")
+        raise ValueError("الدفعة الأولى لا يمكن أن تتجاوز إجمالي البيع")
+    if client_payer_type not in {"company", "traveler", "other"}:
+        raise ValueError("صفة الدافع الأول غير صالحة")
+    if client_payer_type == "company":
+        client_payer_name = client
+    elif client_payer_type == "traveler":
+        client_payer_name = client_payer_name or person
+    elif client_paid > 0 and not client_payer_name:
+        raise ValueError("اسم الدافع الفعلي مطلوب")
     if total_sale == 0 and total_cost == 0:
         raise ValueError("أدخل سعر البيع أو التكلفة في بنود الخدمة")
     suppliers = [c["supplier_company_name"] for c in components if c.get("supplier_company_name")]
@@ -194,6 +204,8 @@ def validate_service_case_payload(data: Dict[str, Any]) -> Dict[str, Any]:
         "notes": notes,
         "components": components,
         "client_paid_amount": client_paid,
+        "client_payer_type": client_payer_type,
+        "client_payer_name": client_payer_name,
         "client_due_date": client_due_date,
         "payment_reminder_note": payment_reminder_note,
         "payment_method": payment_method,

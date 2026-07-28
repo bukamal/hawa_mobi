@@ -29,7 +29,7 @@ assert 'client_paid_amount' in service_dialog
 assert 'supplier_paid_amount' in service_dialog
 
 case_dialog = text('views/dialogs/service_case_dialog.py')
-assert 'المدفوع من العميل الآن' in case_dialog
+assert 'دفعة أولى على حساب الشركة' in case_dialog
 assert 'client_paid_amount' in case_dialog
 assert 'client_due_date' in case_dialog
 

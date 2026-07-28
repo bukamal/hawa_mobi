@@ -19,6 +19,7 @@ class FakeRestClient:
             "supports_expense_summary": True,
             "supports_payment_reminders": True,
             "supports_batch_payments": True,
+            "supports_payment_payer_tracking": True,
             "supports_audit_post": True,
             "endpoints": [
                 "/api/health",

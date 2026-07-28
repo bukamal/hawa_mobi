@@ -2,10 +2,10 @@
 """Regression test for the APK red-screen: Unknown control: flet_notifications."""
 from __future__ import annotations
 
-import contextlib
-import io
 import os
+import subprocess
 import shutil
+import sys
 import tempfile
 import tomllib
 import zipfile
@@ -38,46 +38,40 @@ def source_contract_checks() -> None:
     for relative in EXPECTED_FILES:
         assert (EXT / "src" / relative).is_file(), relative
 
-    workflow = (ROOT / ".github" / "workflows" / "build-apk.yml").read_text(encoding="utf-8")
-    assert 'python -m pip install --upgrade pip "setuptools>=65" wheel' in workflow, (
-        "GitHub Actions must install the PEP 517 build backend before the offline wheel test"
-    )
-    assert "import setuptools.build_meta" in workflow
-
 
 def wheel_contract_checks() -> None:
     generated = [EXT / "build", EXT / "dist", EXT / "src" / "flet_notifications.egg-info"]
     for path in generated:
         shutil.rmtree(path, ignore_errors=True)
     try:
-        try:
-            from setuptools import build_meta
-            import wheel  # noqa: F401 - validates the bdist_wheel provider
-        except Exception as exc:
-            raise AssertionError(
-                "Extension wheel backend is unavailable. Install build tooling with: "
-                'python -m pip install --upgrade "setuptools>=65" wheel'
-            ) from exc
-
         with tempfile.TemporaryDirectory(prefix="hawaa-flet-notifications-wheel-") as tmp:
-            previous_cwd = Path.cwd()
-            build_output = io.StringIO()
-            try:
-                os.chdir(EXT)
-                with contextlib.redirect_stdout(build_output), contextlib.redirect_stderr(build_output):
-                    wheel_name = build_meta.build_wheel(tmp)
-            except Exception as exc:
-                raise AssertionError(
-                    "Could not build extension wheel with setuptools.build_meta:\n"
-                    f"{build_output.getvalue()}{exc}"
-                ) from exc
-            finally:
-                os.chdir(previous_cwd)
-
-            wheel_path = Path(tmp) / wheel_name
-            assert wheel_path.is_file(), wheel_path
-            assert wheel_path.name.startswith("flet_notifications-0.2.1-")
-            with zipfile.ZipFile(wheel_path) as archive:
+            env = os.environ.copy()
+            env["PIP_NO_INDEX"] = "1"
+            proc = subprocess.run(
+                [
+                    sys.executable,
+                    "-m",
+                    "pip",
+                    "wheel",
+                    str(EXT),
+                    "--no-deps",
+                    "--no-build-isolation",
+                    "--disable-pip-version-check",
+                    "-w",
+                    tmp,
+                ],
+                cwd=str(ROOT),
+                env=env,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                timeout=60,
+            )
+            if proc.returncode != 0:
+                raise AssertionError(f"Could not build extension wheel:\n{proc.stdout}")
+            wheels = list(Path(tmp).glob("flet_notifications-0.2.1-*.whl"))
+            assert len(wheels) == 1, (wheels, proc.stdout)
+            with zipfile.ZipFile(wheels[0]) as archive:
                 names = set(archive.namelist())
             missing = EXPECTED_FILES - names
             assert not missing, f"Flutter payload missing from wheel: {sorted(missing)}"

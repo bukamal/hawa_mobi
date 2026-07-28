@@ -5,7 +5,6 @@ from __future__ import annotations
 import os
 import tempfile
 from pathlib import Path
-import tomllib
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -16,9 +15,7 @@ def require(path: str, text: str) -> None:
 
 
 def static_checks() -> None:
-    app = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
-    version = tuple(int(part) for part in app["project"]["version"].split("."))
-    assert version >= (1, 0, 50), version
+    require("pyproject.toml", 'version = "1.0.50"')
     require("views/design_system/interaction.py", "class DebouncedAction")
     require("views/accounts_mobile_view.py", "self._search_debouncer")
     require("views/accounts_mobile_view.py", "self._visible_limit")

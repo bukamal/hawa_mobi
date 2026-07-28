@@ -245,6 +245,8 @@ def build_rows(records: Iterable[Dict], display_currency: str | None = None) -> 
             "person_name": str(r.get("person_name") or ""),
             "service_type": str(r.get("service_type") or ""),
             "operation_type": str(r.get("operation_type") or ""),
+            "payer_type": str(r.get("payment_payer_type") or r.get("payer_type") or ""),
+            "payer_name": str(r.get("payment_payer_name") or r.get("payer_name") or ""),
         })
 
     return rows, {
@@ -297,6 +299,8 @@ def _detail_chips(row: Dict[str, str], settings: Dict[str, object], *, exclude_k
         add("الخدمة", row.get("service_type") or "")
     if _is_visible(settings, "operation_type") and "operation_type" not in exclude_keys:
         add("نوع العملية", row.get("operation_type") or "")
+    if row.get("payer_name") and "payer_name" not in exclude_keys:
+        add("الدافع الفعلي", row.get("payer_name") or "")
     if _is_visible(settings, "currency") and "currency" not in exclude_keys:
         add("العملة", row.get("currency") or "", ltr=True)
     if _is_visible(settings, "historical_currency_value") and "historical_currency_value" not in exclude_keys:

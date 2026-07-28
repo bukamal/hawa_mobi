@@ -64,7 +64,7 @@ class DirectServiceDialog(ft.AlertDialog):
 
         default_service = "تذكرة سفر" if "تذكرة سفر" in SERVICE_TYPES else ("تأشيرة سياحية" if "تأشيرة سياحية" in SERVICE_TYPES else "أخرى")
         self.company_field = SearchableTextField(
-            label="الشركة / الحساب",
+            label="الشركة صاحبة الذمة / الحساب",
             value=self.service.get("company_name") or company_name or "",
             width=field_width,
             hint_text="ابحث عن شركة أو اكتب اسمًا جديدًا",
@@ -72,7 +72,7 @@ class DirectServiceDialog(ft.AlertDialog):
         )
         person_suggestions_company = lambda: self.supplier_locked_name if self.supplier_only_mode else self.company_field.value
         self.person_field = SearchableTextField(
-            label="اسم الزبون / المسافر",
+            label="المسافر / الزبون المستفيد",
             value=self.service.get("person_name") or "",
             width=field_width,
             hint_text="ابحث عن زبون سابق أو اكتب اسمًا جديدًا",
@@ -87,7 +87,7 @@ class DirectServiceDialog(ft.AlertDialog):
             border_radius=10,
         )
         self.sale_field = ft.TextField(
-            label="سعر البيع على الزبون",
+            label="إجمالي المطالبة على الشركة",
             value=str(self.service.get("sale_amount_original") or ""),
             keyboard_type=ft.KeyboardType.NUMBER,
             width=half_width,
@@ -114,7 +114,7 @@ class DirectServiceDialog(ft.AlertDialog):
             border_radius=10,
         )
         self.client_paid_field = ft.TextField(
-            label="المدفوع من المسافر الآن",
+            label="دفعة من المسافر نيابة عن الشركة",
             value="" if self.is_edit else "0",
             keyboard_type=ft.KeyboardType.NUMBER,
             width=half_width,
@@ -122,6 +122,33 @@ class DirectServiceDialog(ft.AlertDialog):
             hint_text="دفعة أولى اختيارية",
             filled=True,
             border_radius=10,
+        )
+        self.client_payer_dropdown = ft.Dropdown(
+            label="الدافع الفعلي للدفعة الأولى",
+            value="traveler",
+            options=[
+                ft.dropdown.Option("company", "الشركة صاحبة الحساب"),
+                ft.dropdown.Option("traveler", "المسافر نيابة عن الشركة"),
+                ft.dropdown.Option("other", "شخص آخر نيابة عن الشركة"),
+            ],
+            width=half_width,
+            disabled=self.is_edit or self.supplier_only_mode,
+            filled=True,
+            border_radius=10,
+        )
+        self.client_payer_name_field = ft.TextField(
+            label="اسم الدافع الآخر",
+            width=half_width,
+            visible=False,
+            disabled=self.is_edit or self.supplier_only_mode,
+            hint_text="اسم الشخص الذي سلّم الدفعة",
+            filled=True,
+            border_radius=10,
+        )
+        self.client_payer_hint = ft.Text(
+            "تُسجّل الدفعة في كشف الشركة صاحبة الحساب، ويُحفظ اسم من دفع فعليًا للمعلومة فقط.",
+            size=11,
+            color=LIGHT_TEXT_SECONDARY,
         )
         self.supplier_paid_field = ft.TextField(
             label="المدفوع للمورد الآن",
@@ -152,7 +179,7 @@ class DirectServiceDialog(ft.AlertDialog):
         client_entry = next((x for x in existing_entries if x.get("source_type") == "direct_service_client"), {})
         supplier_entry = next((x for x in existing_entries if x.get("source_type") == "direct_service_supplier"), {})
         self.client_due_field = ft.TextField(
-            label="استحقاق المتبقي على المسافر",
+            label="استحقاق المتبقي على الشركة",
             value=client_entry.get("payment_due_date") or "",
             hint_text="YYYY-MM-DD",
             width=half_width,
@@ -250,6 +277,8 @@ class DirectServiceDialog(ft.AlertDialog):
         for field in (self.sale_field, self.cost_field, self.client_paid_field, self.supplier_paid_field):
             field.on_change = self._update_profit
         self.currency_dropdown.on_change = self._update_profit
+        self.client_payer_dropdown.on_change = self._client_payer_changed
+        self._client_payer_changed(None)
         self._update_profit(None)
 
         party_controls = [self.info_box, self.error_box, self.supplier_badge, self.company_field, self.person_field, self.service_dropdown]
@@ -257,6 +286,8 @@ class DirectServiceDialog(ft.AlertDialog):
             ft.Row([self.sale_field, self.currency_dropdown], spacing=12, wrap=True),
             ft.Row([self.cost_field, self.supplier_paid_field], spacing=12, wrap=True),
             ft.Row([self.client_paid_field, self.payment_method_dropdown], spacing=12, wrap=True),
+            ft.Row([self.client_payer_dropdown, self.client_payer_name_field], spacing=12, wrap=True),
+            self.client_payer_hint,
             self.supplier_field,
             ft.Row([self.client_due_field, self.supplier_due_field], spacing=12, wrap=True),
             self.payment_reminder_field,
@@ -331,6 +362,28 @@ class DirectServiceDialog(ft.AlertDialog):
         self.error_text.value = ""
         self.error_box.visible = False
 
+    def _client_payer_changed(self, e):
+        self.client_payer_name_field.visible = self.client_payer_dropdown.value == "other"
+        try:
+            self._page.update()
+        except Exception:
+            pass
+
+    def _resolve_client_payer(self, *, require_name: bool = False):
+        payer_type = (self.client_payer_dropdown.value or "traveler").strip().lower()
+        company = self.supplier_locked_name if self.supplier_only_mode else normalize_text(self.company_field.value)
+        traveler = normalize_text(self.person_field.value)
+        if payer_type == "company":
+            return payer_type, company
+        if payer_type == "traveler":
+            if require_name and not traveler:
+                raise ValueError("اسم المسافر الدافع مطلوب")
+            return payer_type, traveler
+        payer_name = normalize_text(self.client_payer_name_field.value)
+        if require_name and not payer_name:
+            raise ValueError("اسم الدافع الفعلي مطلوب")
+        return "other", payer_name
+
     def _amounts(self):
         sale = parse_non_negative_amount(self.sale_field.value or 0)
         cost = parse_non_negative_amount(self.cost_field.value or 0)
@@ -345,8 +398,8 @@ class DirectServiceDialog(ft.AlertDialog):
             supplier_paid = parse_non_negative_amount(self.supplier_paid_field.value or 0) if not self.is_edit else 0
             self.profit_text.value = (
                 f"البيع {currency.format_amount_ui(sale, code)}  ·  "
-                f"مدفوع المسافر {currency.format_amount_ui(client_paid, code)}  ·  "
-                f"متبقي المسافر {currency.format_amount_ui(max(sale-client_paid,0), code)}\n"
+                f"مدفوع على حساب الشركة {currency.format_amount_ui(client_paid, code)}  ·  "
+                f"متبقي على الشركة {currency.format_amount_ui(max(sale-client_paid,0), code)}\n"
                 f"التكلفة {currency.format_amount_ui(cost, code)}  ·  "
                 f"مدفوع المورد {currency.format_amount_ui(supplier_paid, code)}  ·  "
                 f"متبقي المورد {currency.format_amount_ui(max(cost-supplier_paid,0), code)}  ·  "
@@ -375,7 +428,7 @@ class DirectServiceDialog(ft.AlertDialog):
             elif index == 1:
                 sale, cost = self._amounts()
                 if sale <= 0:
-                    raise ValueError("سعر البيع يجب أن يكون أكبر من صفر")
+                    raise ValueError("إجمالي المطالبة يجب أن يكون أكبر من صفر")
                 supplier = self.supplier_locked_name if self.supplier_only_mode else normalize_text(self.supplier_field.value)
                 company = self.supplier_locked_name if self.supplier_only_mode else normalize_text(self.company_field.value)
                 if supplier and supplier == company and not self.supplier_only_mode:
@@ -383,7 +436,9 @@ class DirectServiceDialog(ft.AlertDialog):
                 client_paid = parse_non_negative_amount(self.client_paid_field.value or 0) if not self.is_edit else 0
                 supplier_paid = parse_non_negative_amount(self.supplier_paid_field.value or 0) if not self.is_edit else 0
                 if client_paid > sale:
-                    raise ValueError("المدفوع من المسافر لا يمكن أن يتجاوز سعر البيع")
+                    raise ValueError("الدفعة الأولى لا يمكن أن تتجاوز إجمالي المطالبة")
+                if client_paid > 0:
+                    self._resolve_client_payer(require_name=True)
                 if supplier_paid > cost:
                     raise ValueError("المدفوع للمورد لا يمكن أن يتجاوز التكلفة")
                 if supplier_paid > 0 and not supplier:
@@ -408,12 +463,18 @@ class DirectServiceDialog(ft.AlertDialog):
         profit = sale - cost
         company = self.supplier_locked_name if self.supplier_only_mode else normalize_text(self.company_field.value)
         supplier = self.supplier_locked_name if self.supplier_only_mode else normalize_text(self.supplier_field.value)
+        payer_type, payer_name = self._resolve_client_payer(require_name=False)
+        payer_label = {
+            "company": "الشركة صاحبة الحساب",
+            "traveler": "المسافر نيابة عن الشركة",
+            "other": "شخص آخر نيابة عن الشركة",
+        }.get(payer_type, payer_type)
         self.review_host.controls = [
             financial_summary(
                 "الأثر المالي المتوقع",
                 [
                     ("سعر البيع", currency.format_amount_ui(sale, code), FINANCIAL_RECEIVABLE),
-                    ("المدفوع من المسافر", currency.format_amount_ui(parse_non_negative_amount(self.client_paid_field.value or 0) if not self.is_edit else 0, code), FINANCIAL_RECEIVABLE),
+                    ("الدفعة الأولى", currency.format_amount_ui(parse_non_negative_amount(self.client_paid_field.value or 0) if not self.is_edit else 0, code), FINANCIAL_RECEIVABLE),
                     ("تكلفة المورد", currency.format_amount_ui(cost, code), FINANCIAL_PAYABLE),
                     ("المدفوع للمورد", currency.format_amount_ui(parse_non_negative_amount(self.supplier_paid_field.value or 0) if not self.is_edit else 0, code), FINANCIAL_PAYABLE),
                     ("الربح", currency.format_amount_ui(profit, code), STATE_SUCCESS if profit >= 0 else STATE_DANGER),
@@ -426,6 +487,7 @@ class DirectServiceDialog(ft.AlertDialog):
                     review_row("الحساب", company, icon=ft.Icons.BUSINESS_OUTLINED),
                     review_row("المسافر", normalize_text(self.person_field.value), icon=ft.Icons.PERSON_OUTLINE),
                     review_row("الخدمة", self.service_dropdown.value or "—", icon=ft.Icons.CARD_TRAVEL_OUTLINED),
+                    review_row("الدافع الفعلي", f"{payer_name or '—'} — {payer_label}", icon=ft.Icons.PAYMENTS_OUTLINED),
                     review_row("المورد", supplier or "تكلفة داخلية بلا قيد مورد", icon=ft.Icons.LOCAL_SHIPPING_OUTLINED),
                 ],
                 icon=ft.Icons.SUMMARIZE_OUTLINED,
@@ -439,6 +501,7 @@ class DirectServiceDialog(ft.AlertDialog):
         else:
             company_name = normalize_text(self.company_field.value)
             supplier_name = normalize_text(self.supplier_field.value)
+        payer_type, payer_name = self._resolve_client_payer(require_name=False)
         payload = {
             "company_name": company_name,
             "person_name": normalize_text(self.person_field.value),
@@ -451,6 +514,8 @@ class DirectServiceDialog(ft.AlertDialog):
             "notes": self.notes_field.value or "",
             "supplier_only": self.supplier_only_mode,
             "client_paid_amount": 0 if self.is_edit else (self.client_paid_field.value or 0),
+            "client_payer_type": payer_type,
+            "client_payer_name": payer_name,
             "supplier_paid_amount": 0 if self.is_edit else (self.supplier_paid_field.value or 0),
             "client_due_date": normalize_text(self.client_due_field.value),
             "supplier_due_date": normalize_text(self.supplier_due_field.value),

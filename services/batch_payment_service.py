@@ -15,6 +15,8 @@ from services.payment_service import (
     _money,
     get_payment_summary,
     insert_payment_in_transaction,
+    normalize_payment_payer,
+    payer_type_label,
     sync_payment_state,
 )
 
@@ -144,8 +146,10 @@ def _insert_new_credit_expense(
         "service_type": service_type,
         "operation_type": source_type,
         "is_locked": 1,
-        "print_description": f"{service_type} - {batch['company_name']}",
+        "print_description": f"{service_type} - {batch['company_name']} · الدافع {batch.get('payer_name') or batch['company_name']}",
         "internal_note": f"المبلغ الزائد غير الموزع من {batch['reference']}",
+        "payment_payer_type": batch.get("payer_type"),
+        "payment_payer_name": batch.get("payer_name"),
         "service_case_role": "credit",
         "linked_company_name": batch["company_name"],
     })
@@ -155,14 +159,16 @@ def _insert_new_credit_expense(
          updated_by, updated_at, amount_original, currency_original, exchange_rate_to_usd,
          status, payment_due_date, payment_reminder_note, source_type, source_ref, counterparty_company_name,
          person_name, person_name_search, service_type, operation_type, is_locked, reversal_of, reversed_by,
-         print_description, internal_note, service_case_role, linked_company_name, is_settleable, payment_status)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+         print_description, internal_note, service_case_role, linked_company_name, is_settleable, payment_status,
+         payment_payer_type, payment_payer_name)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
         (
             payload["company_name"], payload["amount"], payload["amount_base"], payload["type"], payload["date"], payload.get("notes", ""), payload["currency"],
             user_id, now, user_id, now, payload["amount_original"], payload["currency_original"], payload["exchange_rate_to_usd"],
             "approved", None, None, source_type, batch["reference"], payload.get("counterparty_company_name"),
             payload.get("person_name"), payload.get("person_name_search"), service_type, source_type, 1, None, None,
             payload.get("print_description"), payload.get("internal_note"), "credit", payload.get("linked_company_name"), 1, PAYMENT_STATUS_UNPAID,
+            payload.get("payment_payer_type"), payload.get("payment_payer_name"),
         ),
     )
     return int(cur.lastrowid)
@@ -208,6 +214,8 @@ def create_payment_batch_in_transaction(
     payment_method: str = "cash",
     reference_number: str = "",
     notes: str = "",
+    payer_type: str | None = None,
+    payer_name: str = "",
     allocation_mode: str = BATCH_MODE_OLDEST,
     allocations: Iterable[Dict[str, Any]] | None = None,
     user_id: int = 1,
@@ -228,6 +236,10 @@ def create_payment_batch_in_transaction(
     allocation_mode = str(allocation_mode or BATCH_MODE_OLDEST)
     if allocation_mode not in {BATCH_MODE_OLDEST, BATCH_MODE_MANUAL}:
         raise ValueError("طريقة توزيع الدفعة غير صالحة")
+    payer = normalize_payment_payer(
+        {"company_name": company_name, "person_name": person_name},
+        direction=direction, payer_type=payer_type, payer_name=payer_name,
+    )
 
     now = now or datetime.datetime.now().isoformat()
     date = str(date or now[:10])[:10]
@@ -239,13 +251,13 @@ def create_payment_batch_in_transaction(
         """INSERT INTO payment_batches
         (reference, company_name, person_name, direction, amount_original, currency_original,
          exchange_rate_to_usd, amount_base, payment_method, date, reference_number, notes,
-         allocation_mode, allocated_amount_original, credit_amount_original, credit_expense_id,
+         allocation_mode, allocated_amount_original, credit_amount_original, credit_expense_id, payer_type, payer_name,
          status, created_by, created_at, updated_by, updated_at)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
         (
             reference, company_name, person_name or None, direction, float(amount_dec), currency_code,
             rate, amount_base, str(payment_method or "cash"), date, str(reference_number or "").strip(),
-            str(notes or "").strip(), allocation_mode, 0.0, 0.0, None, BATCH_STATUS_POSTED,
+            str(notes or "").strip(), allocation_mode, 0.0, 0.0, None, payer["payer_type"], payer["payer_name"], BATCH_STATUS_POSTED,
             user_id, now, user_id, now,
         ),
     )
@@ -300,6 +312,8 @@ def create_payment_batch_in_transaction(
             payment_method=payment_method,
             reference_number=reference_number,
             notes=(f"دفعة مجمعة {reference}. {notes}".strip()),
+            payer_type=payer["payer_type"],
+            payer_name=payer["payer_name"],
             user_id=user_id,
             username=username,
             reference=f"{reference}-A{index:03d}",
@@ -333,7 +347,8 @@ def create_payment_batch_in_transaction(
         "INSERT INTO audit_log (user_id, username, action, table_name, record_id, details, ip_address, timestamp) VALUES (?,?,?,?,?,?,?,?)",
         (
             user_id, username or "", "تسجيل دفعة مجمعة", "payment_batches", batch_id,
-            f"{reference} | {company_name} | {float(amount_dec):.2f} {currency_code} | موزع {float(allocated_total):.2f} | رصيد {float(credit_amount):.2f}",
+            f"{reference} | حساب {company_name} | الدافع {payer['payer_name']} ({payer_type_label(payer['payer_type'])}) | "
+            f"{float(amount_dec):.2f} {currency_code} | موزع {float(allocated_total):.2f} | رصيد {float(credit_amount):.2f}",
             "127.0.0.1", now,
         ),
     )
@@ -343,6 +358,8 @@ def create_payment_batch_in_transaction(
         "reference": reference,
         "company_name": company_name,
         "person_name": person_name,
+        "payer_type": payer["payer_type"],
+        "payer_name": payer["payer_name"],
         "direction": direction,
         "amount_original": float(amount_dec),
         "currency_original": currency_code,

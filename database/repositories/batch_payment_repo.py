@@ -94,6 +94,8 @@ class BatchPaymentRepository(BaseRepository):
                 payment_method=data.get("payment_method") or "cash",
                 reference_number=data.get("reference_number") or "",
                 notes=data.get("notes") or "",
+                payer_type=data.get("payer_type"),
+                payer_name=data.get("payer_name") or "",
                 allocation_mode=data.get("allocation_mode") or "oldest",
                 allocations=data.get("allocations") or [],
                 user_id=uid,

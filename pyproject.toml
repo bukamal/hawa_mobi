@@ -28,7 +28,7 @@ org = "com.hawaa"
 product = "هوى الشام"
 company = "Hawaa"
 copyright = "Copyright (C) 2026 Hawaa"
-build_number = 1095
+build_number = 1100
 android_permissions = [
     "android.permission.INTERNET",
     "android.permission.CAMERA",

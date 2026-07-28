@@ -6,7 +6,6 @@ import os
 import sys
 import tempfile
 from pathlib import Path
-import tomllib
 
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
@@ -19,9 +18,7 @@ def require(path: str, text: str) -> None:
 
 
 def static_checks() -> None:
-    app = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
-    version = tuple(int(part) for part in app["project"]["version"].split("."))
-    assert version >= (1, 0, 50), version
+    require("pyproject.toml", 'version = "1.0.50"')
     require("views/connection_recovery_view.py", "class ConnectionRecoveryView")
     require("views/connection_recovery_view.py", "_local_admin_is_valid")
     require("views/connection_recovery_view.py", "asyncio.to_thread")

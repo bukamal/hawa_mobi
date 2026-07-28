@@ -28,15 +28,7 @@ jobs:
 
       - name: Install Python dependencies
         run: |
-          python -m pip install --upgrade pip "setuptools>=65" wheel
-          python - <<'PYBUILD'
-          import setuptools
-          import setuptools.build_meta
-          import wheel
-          print("Setuptools:", setuptools.__version__)
-          print("Wheel:", wheel.__version__)
-          print("Build backend: setuptools.build_meta")
-          PYBUILD
+          python -m pip install --upgrade pip
           python -m pip install -e extensions/flet_notifications
           python -m pip install -e .
           python - <<'PY'
@@ -71,8 +63,8 @@ jobs:
           flet build apk --verbose --clear-cache \
             --product "هوى الشام" \
             --org com.hawaa \
-            --build-number 1095 \
-            --build-version 1.0.55
+            --build-number 1094 \
+            --build-version 1.0.54
           FIRST_BUILD_EXIT=$?
           set -e
           echo "Initial Flet build exit: $FIRST_BUILD_EXIT"

@@ -50,6 +50,7 @@ _PAIRING_TOKENS: Dict[str, Dict[str, Any]] = {}
 API_CONTRACT_VERSION = "2026.07.mobile-v1"
 PARTIAL_PAYMENTS_CONTRACT_VERSION = "partial-payments-v1"
 BATCH_PAYMENTS_CONTRACT_VERSION = "batch-payments-v1"
+PAYMENT_PAYER_CONTRACT_VERSION = "payment-payer-v1"
 CURRENCY_CONTRACT_VERSION = "historic-currency-snapshot-v1"
 REQUIRED_MOBILE_ENDPOINTS = [
     "/api/health",
@@ -110,6 +111,8 @@ def _capabilities_payload() -> Dict[str, Any]:
         "supports_dynamic_payment_balances": True,
         "supports_batch_payments": True,
         "batch_payments_contract": BATCH_PAYMENTS_CONTRACT_VERSION,
+        "supports_payment_payer_tracking": True,
+        "payment_payer_contract": PAYMENT_PAYER_CONTRACT_VERSION,
         "supports_third_party_payments": True,
         "supports_linked_intercompany_entry_editing": True,
         "supports_audit_post": True,
@@ -601,6 +604,8 @@ def add_expense():
                 payment_method=data.get("payment_method") or "cash",
                 reference_number=data.get("payment_reference") or "",
                 notes=data.get("payment_notes") or "دفعة أولى عند إنشاء القيد",
+                payer_type=data.get("initial_payer_type"),
+                payer_name=data.get("initial_payer_name") or "",
                 user_id=user.get("id") or p.get("created_by") or 1,
                 username=user.get("username", ""),
             )
@@ -737,6 +742,7 @@ def add_expense_payment(expense_id: int):
             conn, dict(row), data.get("amount"), date=data.get("date") or _now()[:10],
             payment_method=data.get("payment_method") or "cash",
             reference_number=data.get("reference_number") or "", notes=data.get("notes") or "",
+            payer_type=data.get("payer_type"), payer_name=data.get("payer_name") or "",
             user_id=user.get("id") or 1, username=user.get("username", ""),
         )
         conn.commit()
@@ -855,6 +861,8 @@ def payment_batch_add():
             payment_method=data.get("payment_method") or "cash",
             reference_number=data.get("reference_number") or "",
             notes=data.get("notes") or "",
+            payer_type=data.get("payer_type"),
+            payer_name=data.get("payer_name") or "",
             allocation_mode=data.get("allocation_mode") or "oldest",
             allocations=data.get("allocations") or [],
             user_id=user.get("id") or 1,

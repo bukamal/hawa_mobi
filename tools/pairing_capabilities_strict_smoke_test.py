@@ -14,6 +14,7 @@ def main() -> int:
         'supports_expense_summary',
         'supports_payment_reminders',
         'supports_batch_payments',
+        'supports_payment_payer_tracking',
         'supports_audit_post',
         '/api/expenses/summary',
         '/api/payment_reminders',

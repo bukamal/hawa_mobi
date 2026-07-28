@@ -13,6 +13,7 @@ from views.financial_date_field import FinancialDateField
 from views.flet_compat import close_control, open_control, run_async_task
 from views.ui_kit import PRIMARY, PRIMARY_SOFT, SUCCESS, DANGER, WARNING, MUTED, BORDER
 from services.payment_target_service import normalize_payment_target
+from services.payment_service import payer_type_label
 
 
 _PAYMENT_METHODS = [
@@ -40,7 +41,41 @@ class PaymentDialog(ft.AlertDialog):
         width = min(max(float(getattr(page, "width", 420) or 420) - 36, 320), 620)
         remaining = float(self._summary.get("remaining_amount_original") or 0)
         code = self._summary.get("currency_original") or "USD"
-        direction_label = "استلام من العميل / المسافر" if self.expense.get("type") == "incoming" else "دفع للمورد"
+        is_receivable = self.expense.get("type") == "incoming"
+        direction_label = "استلام دفعة لحساب الشركة" if is_receivable else "دفع مستحق للمورد"
+        beneficiary = str(self.expense.get("person_name") or "").strip()
+        account_company = str(self.expense.get("company_name") or "").strip()
+        payer_options = []
+        if is_receivable:
+            payer_options.append(ft.dropdown.Option("company", f"الشركة نفسها — {account_company}"))
+            if beneficiary:
+                payer_options.append(ft.dropdown.Option("traveler", f"المسافر / الزبون — {beneficiary}"))
+            payer_options.append(ft.dropdown.Option("other", "شخص آخر يدفع نيابة عن الشركة"))
+            default_payer = "traveler" if beneficiary else "company"
+        else:
+            payer_options = [
+                ft.dropdown.Option("office", "المكتب"),
+                ft.dropdown.Option("other", "دافع آخر"),
+            ]
+            default_payer = "office"
+        self.payer_field = ft.Dropdown(
+            label="الدافع الفعلي",
+            value=default_payer,
+            options=payer_options,
+            width=width - 24,
+            filled=True,
+            on_change=self._payer_changed,
+        )
+        self.payer_name_field = ft.TextField(
+            label="اسم الدافع الفعلي",
+            width=width - 24,
+            visible=False,
+            hint_text="يظهر في كشف الشركة بصفته دافعًا بالنيابة",
+        )
+        self.payer_explanation = ft.Text(
+            "صاحب الذمة يبقى الشركة؛ اسم الدافع يوضح فقط من سلّم المبلغ فعليًا.",
+            size=11, color=MUTED,
+        )
 
         self.summary_text = ft.Text(self._summary_line(), size=13, weight=ft.FontWeight.BOLD, color=PRIMARY)
         self.amount_field = ft.TextField(
@@ -70,7 +105,8 @@ class PaymentDialog(ft.AlertDialog):
             [
                 ft.Container(
                     content=ft.Column([
-                        ft.Text(f"{self.expense.get('company_name') or '—'} · {self.expense.get('person_name') or self.expense.get('service_type') or ''}", weight=ft.FontWeight.BOLD),
+                        ft.Text(f"صاحب الحساب: {account_company or '—'}", weight=ft.FontWeight.BOLD),
+                        ft.Text(f"المستفيد: {beneficiary or 'غير محدد'}", size=11, color=MUTED),
                         self.summary_text,
                     ], spacing=5),
                     bgcolor=PRIMARY_SOFT,
@@ -78,6 +114,9 @@ class PaymentDialog(ft.AlertDialog):
                     padding=12,
                 ),
                 ft.Row([self.amount_field, self.method_field], spacing=10, wrap=True),
+                self.payer_field,
+                self.payer_name_field,
+                self.payer_explanation,
                 ft.Row([self.payment_date, self.reference_field], spacing=10, wrap=True),
                 self.notes_field,
                 ft.Divider(),
@@ -125,18 +164,43 @@ class PaymentDialog(ft.AlertDialog):
                 visible=is_admin and not bool(row.get("batch_id")),
             )
             batch_hint = " · ضمن دفعة مجمعة" if row.get("batch_id") else ""
+            payer_name = str(row.get("payer_name") or row.get("person_name") or row.get("company_name") or "غير محدد")
+            payer_hint = f" · الدافع: {payer_name} ({payer_type_label(row.get('payer_type'))})"
             controls.append(ft.Container(
                 content=ft.Row([
                     ft.Icon(ft.Icons.CHECK_CIRCLE_OUTLINE, color=SUCCESS, size=19),
                     ft.Column([
                         ft.Text(amount, weight=ft.FontWeight.BOLD),
-                        ft.Text(f"{row.get('date') or '—'} · {method} · {row.get('reference_number') or row.get('reference') or ''}{batch_hint}", size=10, color=MUTED),
+                        ft.Text(f"{row.get('date') or '—'} · {method} · {row.get('reference_number') or row.get('reference') or ''}{batch_hint}{payer_hint}", size=10, color=MUTED),
                     ], spacing=2, expand=True),
                     trailing,
                 ], spacing=8),
                 border=ft.border.all(1, BORDER), border_radius=10, padding=8,
             ))
         self.history.controls = controls
+
+    def _payer_changed(self, e=None):
+        self.payer_name_field.visible = self.payer_field.value == "other"
+        try:
+            self._page.update()
+        except Exception:
+            pass
+
+    def _resolved_payer(self):
+        payer_type = str(self.payer_field.value or "").strip()
+        if payer_type == "company":
+            return payer_type, str(self.expense.get("company_name") or "").strip()
+        if payer_type == "traveler":
+            name = str(self.expense.get("person_name") or "").strip()
+            if not name:
+                raise ValueError("لا يوجد مسافر مرتبط بهذه المطالبة")
+            return payer_type, name
+        if payer_type == "office":
+            return payer_type, "المكتب"
+        name = str(self.payer_name_field.value or "").strip()
+        if not name:
+            raise ValueError("اسم الدافع الفعلي مطلوب")
+        return "other", name
 
     def _show(self, message, error=False):
         show_snackbar(self._page, message, error)
@@ -158,6 +222,7 @@ class PaymentDialog(ft.AlertDialog):
             if amount > float(self._summary.get("remaining_amount_original") or 0) + 0.005:
                 raise ValueError("مبلغ الدفعة أكبر من المتبقي")
             date = self.payment_date.require_value("تاريخ الدفعة")
+            payer_type, payer_name = self._resolved_payer()
         except Exception as ex:
             self._show(str(ex), True)
             return
@@ -167,9 +232,9 @@ class PaymentDialog(ft.AlertDialog):
             self._page.update()
         except Exception:
             pass
-        run_async_task(self._page, self._save_async, amount, date)
+        run_async_task(self._page, self._save_async, amount, date, payer_type, payer_name)
 
-    async def _save_async(self, amount, date):
+    async def _save_async(self, amount, date, payer_type, payer_name):
         try:
             result = await asyncio.to_thread(
                 lambda: self.repo.add(
@@ -179,6 +244,8 @@ class PaymentDialog(ft.AlertDialog):
                     payment_method=self.method_field.value or "cash",
                     reference_number=self.reference_field.value or "",
                     notes=self.notes_field.value or "",
+                    payer_type=payer_type,
+                    payer_name=payer_name,
                 )
             )
             self._summary = result

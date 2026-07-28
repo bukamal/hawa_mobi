@@ -28,6 +28,8 @@ def main() -> int:
     assert 'supports_amount_base' in server, "capabilities must declare amount_base support"
     assert 'supports_exchange_rate_history' in server, "capabilities must declare exchange-rate history support"
     assert 'supports_payment_reminders' in server, "capabilities must declare payment reminder support"
+    assert 'supports_payment_payer_tracking' in server, "capabilities must declare actual payer tracking"
+    assert 'payment-payer-v1' in server, "missing payment payer contract version"
     assert 'supports_audit_post' in server, "capabilities must declare audit POST support"
     assert 'supports_expense_summary' in server, "capabilities must declare expense summary support"
 

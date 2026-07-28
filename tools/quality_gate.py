@@ -116,6 +116,7 @@ def main() -> int:
         "tools/flet_notifications_extension_packaging_smoke_test.py",
         "tools/phase109_local_notifications_smoke_test.py",
         "tools/payment_reminder_button_target_smoke_test.py",
+        "tools/phase110_company_account_payer_smoke_test.py",
         "tools/phase100_design_system_smoke_test.py",
         "tools/payment_reminders_button_ui_smoke_test.py",
         "tools/phase101_accounting_workflow_wizard_smoke_test.py",

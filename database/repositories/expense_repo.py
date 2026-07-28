@@ -81,6 +81,8 @@ class ExpenseRepository(BaseRepository):
         initial_paid_amount: float = 0,
         payment_method: str = 'cash',
         payment_reference_number: str = '',
+        initial_payer_type: str | None = None,
+        initial_payer_name: str = '',
         is_settleable: bool = True,
     ) -> int:
         amount = float(amount or 0)
@@ -103,6 +105,8 @@ class ExpenseRepository(BaseRepository):
                 'initial_paid_amount': initial_paid_amount,
                 'payment_method': payment_method,
                 'payment_reference_number': payment_reference_number,
+                'initial_payer_type': initial_payer_type,
+                'initial_payer_name': initial_payer_name,
                 'is_settleable': data['is_settleable'],
             })
             return self.data.add_expense(data)
@@ -129,6 +133,7 @@ class ExpenseRepository(BaseRepository):
                 insert_payment_in_transaction(
                     conn, target, initial_paid_amount, date=date, payment_method=payment_method,
                     reference_number=payment_reference_number, notes="دفعة أولى عند إنشاء القيد",
+                    payer_type=initial_payer_type, payer_name=initial_payer_name,
                     user_id=int(user_id or user.get('id') or 1), username=user.get('username', ''), now=now,
                 )
             else:

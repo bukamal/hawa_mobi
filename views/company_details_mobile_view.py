@@ -334,6 +334,9 @@ class CompanyDetailsMobileView(ft.Column):
         person = str(record.get("person_name") or "").strip()
         service_type = str(record.get("service_type") or "غير محدد").strip()
         subtitle_parts = [part for part in (person, service_type) if part and part != "غير محدد"]
+        payer_name = str(record.get("payment_payer_name") or "").strip()
+        if payer_name and payer_name != person:
+            subtitle_parts.append(f"الدافع: {payer_name}")
 
         payment_label, payment_color = self._payment_label_and_color(record)
         direction = "لنا" if record.get("type") == "incoming" else "له"

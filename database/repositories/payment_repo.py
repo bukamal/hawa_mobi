@@ -38,6 +38,8 @@ class PaymentRepository(BaseRepository):
         payment_method: str = "cash",
         reference_number: str = "",
         notes: str = "",
+        payer_type: str | None = None,
+        payer_name: str = "",
         user_id: int | None = None,
     ) -> Dict[str, Any]:
         payload = {
@@ -46,6 +48,8 @@ class PaymentRepository(BaseRepository):
             "payment_method": payment_method,
             "reference_number": reference_number,
             "notes": notes,
+            "payer_type": payer_type,
+            "payer_name": payer_name,
         }
         if self.data.is_remote():
             return self.db.get_rest_client().add_payment(int(expense_id), payload)
@@ -65,6 +69,8 @@ class PaymentRepository(BaseRepository):
                 payment_method=payment_method,
                 reference_number=reference_number,
                 notes=notes,
+                payer_type=payer_type,
+                payer_name=payer_name,
                 user_id=uid,
                 username=user.get("username", ""),
             )

@@ -82,14 +82,14 @@ class ServiceCaseDialog(ft.AlertDialog):
             base_component = existing_components[0]
 
         self.client_field = SearchableTextField(
-            label="الشركة العميلة",
+            label="الشركة صاحبة الذمة",
             value=self.service_case.get("client_company_name") or client_company_name or "",
             width=field_width,
             hint_text="ابحث عن شركة عميلة أو اكتب اسمًا جديدًا",
             suggestions_provider=list_company_names,
         )
         self.person_field = SearchableTextField(
-            label="اسم الزبون / المسافر",
+            label="المسافر / الزبون المستفيد",
             value=self.service_case.get("person_name") or "",
             width=field_width,
             hint_text="ابحث عن زبون سابق أو اكتب اسمًا جديدًا",
@@ -139,7 +139,7 @@ class ServiceCaseDialog(ft.AlertDialog):
         )
         client_entry = dict(self.service_case.get("client_entry") or {})
         self.client_paid_field = ft.TextField(
-            label="المدفوع من العميل الآن",
+            label="دفعة أولى على حساب الشركة",
             value="0" if not self.is_edit else str(client_entry.get("paid_amount_original") or 0),
             keyboard_type=ft.KeyboardType.NUMBER,
             width=half_width,
@@ -148,6 +148,33 @@ class ServiceCaseDialog(ft.AlertDialog):
             border_radius=10,
             disabled=self.is_edit,
             helper_text="يمكن تسجيل دفعات إضافية لاحقًا من كشف الحساب" if not self.is_edit else "الدفعات السابقة لا تُعدّل من ملف الخدمة",
+        )
+        self.client_payer_dropdown = ft.Dropdown(
+            label="الدافع الفعلي للدفعة الأولى",
+            value="traveler",
+            options=[
+                ft.dropdown.Option("company", "الشركة صاحبة الحساب"),
+                ft.dropdown.Option("traveler", "المسافر نيابة عن الشركة"),
+                ft.dropdown.Option("other", "شخص آخر نيابة عن الشركة"),
+            ],
+            width=half_width,
+            filled=True,
+            border_radius=10,
+            disabled=self.is_edit,
+        )
+        self.client_payer_name_field = ft.TextField(
+            label="اسم الدافع الآخر",
+            width=half_width,
+            visible=False,
+            disabled=self.is_edit,
+            hint_text="اسم الشخص الذي سلّم الدفعة",
+            filled=True,
+            border_radius=10,
+        )
+        self.client_payer_hint = ft.Text(
+            "تظهر الدفعة في كشف الشركة صاحبة الذمة حتى لو سلّمها المسافر أو شخص آخر.",
+            size=11,
+            color=LIGHT_TEXT_SECONDARY,
         )
         self.payment_method_dropdown = ft.Dropdown(
             label="طريقة الدفعة الأولى",
@@ -291,6 +318,8 @@ class ServiceCaseDialog(ft.AlertDialog):
         ):
             field.on_change = self._update_profit
         self.currency_dropdown.on_change = self._update_profit
+        self.client_payer_dropdown.on_change = self._client_payer_changed
+        self._client_payer_changed(None)
         self._update_profit(None)
 
         party_step = section_card(
@@ -304,6 +333,8 @@ class ServiceCaseDialog(ft.AlertDialog):
                 self.supplier_field,
                 ft.Row([self.sale_field, self.cost_field], spacing=12, wrap=True),
                 ft.Row([self.currency_dropdown, self.client_paid_field], spacing=12, wrap=True),
+                ft.Row([self.client_payer_dropdown, self.client_payer_name_field], spacing=12, wrap=True),
+                self.client_payer_hint,
                 ft.Row([self.payment_method_dropdown, self.client_due_field], spacing=12, wrap=True),
                 self.payment_reminder_field,
                 ft.Container(content=self.profit_text, bgcolor="#F8FAFC", border_radius=12, padding=12),
@@ -380,6 +411,28 @@ class ServiceCaseDialog(ft.AlertDialog):
         self.error_text.value = ""
         self.error_box.visible = False
 
+    def _client_payer_changed(self, e):
+        self.client_payer_name_field.visible = self.client_payer_dropdown.value == "other"
+        try:
+            self._page.update()
+        except Exception:
+            pass
+
+    def _resolve_client_payer(self, *, require_name: bool = False):
+        payer_type = (self.client_payer_dropdown.value or "traveler").strip().lower()
+        company = normalize_text(self.client_field.value)
+        traveler = normalize_text(self.person_field.value)
+        if payer_type == "company":
+            return payer_type, company
+        if payer_type == "traveler":
+            if require_name and not traveler:
+                raise ValueError("اسم المسافر الدافع مطلوب")
+            return payer_type, traveler
+        payer_name = normalize_text(self.client_payer_name_field.value)
+        if require_name and not payer_name:
+            raise ValueError("اسم الدافع الفعلي مطلوب")
+        return "other", payer_name
+
     def _amounts(self):
         sale = (
             parse_non_negative_amount(self.sale_field.value or 0)
@@ -431,7 +484,7 @@ class ServiceCaseDialog(ft.AlertDialog):
             client = normalize_text(self.client_field.value)
             if index == 0:
                 if not client:
-                    raise ValueError("الشركة العميلة مطلوبة")
+                    raise ValueError("الشركة صاحبة الذمة مطلوبة")
                 if not normalize_text(self.person_field.value):
                     raise ValueError("اسم الزبون / المسافر مطلوب")
                 if not self.service_dropdown.value:
@@ -448,7 +501,9 @@ class ServiceCaseDialog(ft.AlertDialog):
                     raise ValueError("لا يمكن أن تكون الشركة العميلة هي المورد نفسه")
                 paid = parse_non_negative_amount(self.client_paid_field.value or 0)
                 if paid > sale + 0.005:
-                    raise ValueError("المبلغ المدفوع من العميل أكبر من إجمالي البيع الحالي")
+                    raise ValueError("الدفعة الأولى أكبر من إجمالي المطالبة الحالي")
+                if paid > 0:
+                    self._resolve_client_payer(require_name=True)
                 due = normalize_text(self.client_due_field.value)
                 if sale - paid > 0.005 and due and (len(due) != 10 or due[4:5] != "-" or due[7:8] != "-"):
                     raise ValueError("تاريخ الاستحقاق يجب أن يكون بصيغة YYYY-MM-DD")
@@ -498,13 +553,19 @@ class ServiceCaseDialog(ft.AlertDialog):
         margin_color = STATE_SUCCESS if profit >= 0 else STATE_DANGER
         if sale > 0 and 0 <= profit < sale * 0.1:
             margin_color = STATE_WARNING
+        payer_type, payer_name = self._resolve_client_payer(require_name=False)
+        payer_label = {
+            "company": "الشركة صاحبة الحساب",
+            "traveler": "المسافر نيابة عن الشركة",
+            "other": "شخص آخر نيابة عن الشركة",
+        }.get(payer_type, payer_type)
         self.review_host.controls = [
             financial_summary(
                 "الأثر المالي المتوقع",
                 [
-                    ("إجمالي البيع على العميل", currency.format_amount_ui(sale, code), FINANCIAL_RECEIVABLE),
-                    ("المدفوع من العميل", currency.format_amount_ui(paid, code), STATE_SUCCESS),
-                    ("المتبقي على العميل", currency.format_amount_ui(remaining, code), STATE_WARNING if remaining > 0.005 else STATE_SUCCESS),
+                    ("إجمالي المطالبة على الشركة", currency.format_amount_ui(sale, code), FINANCIAL_RECEIVABLE),
+                    ("المدفوع على حساب الشركة", currency.format_amount_ui(paid, code), STATE_SUCCESS),
+                    ("المتبقي على الشركة", currency.format_amount_ui(remaining, code), STATE_WARNING if remaining > 0.005 else STATE_SUCCESS),
                     ("إجمالي المستحق للموردين", currency.format_amount_ui(cost, code), FINANCIAL_PAYABLE),
                     ("الربح الداخلي", currency.format_amount_ui(profit, code), margin_color),
                 ],
@@ -513,8 +574,9 @@ class ServiceCaseDialog(ft.AlertDialog):
             section_card(
                 "أطراف العملية",
                 [
-                    review_row("الشركة العميلة", normalize_text(self.client_field.value), icon=ft.Icons.BUSINESS_OUTLINED),
-                    review_row("المسافر", normalize_text(self.person_field.value), icon=ft.Icons.PERSON_OUTLINE),
+                    review_row("الشركة صاحبة الذمة", normalize_text(self.client_field.value), icon=ft.Icons.BUSINESS_OUTLINED),
+                    review_row("المسافر المستفيد", normalize_text(self.person_field.value), icon=ft.Icons.PERSON_OUTLINE),
+                    review_row("الدافع الفعلي", f"{payer_name or '—'} — {payer_label}", icon=ft.Icons.PAYMENTS_OUTLINED),
                     *component_rows,
                 ],
                 icon=ft.Icons.ACCOUNT_TREE_OUTLINED,
@@ -548,6 +610,7 @@ class ServiceCaseDialog(ft.AlertDialog):
                     "cost_amount_original": self.transport_cost_field.value,
                 }
             )
+        payer_type, payer_name = self._resolve_client_payer(require_name=False)
         payload = {
             "client_company_name": normalize_text(self.client_field.value),
             "supplier_company_name": normalize_text(self.supplier_field.value),
@@ -557,6 +620,8 @@ class ServiceCaseDialog(ft.AlertDialog):
             "date": self.operation_date.require_value("تاريخ الخدمة"),
             "notes": self.notes_field.value or "",
             "client_paid_amount": 0 if self.is_edit else self.client_paid_field.value,
+            "client_payer_type": payer_type,
+            "client_payer_name": payer_name,
             "payment_method": self.payment_method_dropdown.value or "cash",
             "client_due_date": normalize_text(self.client_due_field.value) or None,
             "payment_reminder_note": normalize_text(self.payment_reminder_field.value),

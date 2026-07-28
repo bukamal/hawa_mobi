@@ -226,12 +226,12 @@ class DirectServiceRepository(BaseRepository):
             supplier_expense_id = self._insert_expense(conn, supplier_payload) if supplier_payload else None
             if client_expense_id and float(payload.get("client_paid_amount") or 0) > 0:
                 target = dict(conn.execute("SELECT * FROM expenses WHERE id=?", (client_expense_id,)).fetchone())
-                insert_payment_in_transaction(conn, target, payload.get("client_paid_amount"), date=payload["date"], payment_method=payload.get("payment_method") or "cash", notes="دفعة أولى من المسافر", user_id=uid, username=user.get("username", ""), now=now)
+                insert_payment_in_transaction(conn, target, payload.get("client_paid_amount"), date=payload["date"], payment_method=payload.get("payment_method") or "cash", notes="دفعة أولى على حساب الشركة", payer_type=payload.get("client_payer_type") or "traveler", payer_name=payload.get("client_payer_name") or payload.get("person_name") or "", user_id=uid, username=user.get("username", ""), now=now)
             elif client_expense_id:
                 sync_payment_state(conn, client_expense_id, now=now)
             if supplier_expense_id and float(payload.get("supplier_paid_amount") or 0) > 0:
                 target = dict(conn.execute("SELECT * FROM expenses WHERE id=?", (supplier_expense_id,)).fetchone())
-                insert_payment_in_transaction(conn, target, payload.get("supplier_paid_amount"), date=payload["date"], payment_method=payload.get("payment_method") or "cash", notes="دفعة أولى للمورد", user_id=uid, username=user.get("username", ""), now=now)
+                insert_payment_in_transaction(conn, target, payload.get("supplier_paid_amount"), date=payload["date"], payment_method=payload.get("payment_method") or "cash", notes="دفعة أولى للمورد", payer_type="office", payer_name="المكتب", user_id=uid, username=user.get("username", ""), now=now)
             elif supplier_expense_id:
                 sync_payment_state(conn, supplier_expense_id, now=now)
             note_payload = client_payload or supplier_payload or {"internal_note": internal_note(reference, payload, sale_base, cost_base)}
