@@ -2,6 +2,7 @@
 """Regression test for the APK red-screen: Unknown control: flet_notifications."""
 from __future__ import annotations
 
+import importlib.util
 import os
 import subprocess
 import shutil
@@ -39,7 +40,27 @@ def source_contract_checks() -> None:
         assert (EXT / "src" / relative).is_file(), relative
 
 
+def _build_backend_available() -> bool:
+    try:
+        return importlib.util.find_spec("setuptools.build_meta") is not None
+    except ModuleNotFoundError:
+        return False
+
+
 def wheel_contract_checks() -> None:
+    # The source checks above are deterministic and catch the original missing
+    # Flutter payload regression. Building a real wheel adds a stronger check,
+    # but some minimal Python runtimes (including a fresh actions/setup-python
+    # installation) do not bundle setuptools. Do not fail with pip's opaque
+    # BackendUnavailable traceback in that case; CI installs the backend
+    # explicitly before the quality gate and therefore still runs this check.
+    if not _build_backend_available():
+        print(
+            "flet_notifications wheel build skipped: setuptools.build_meta is "
+            "not installed; static extension packaging contract passed"
+        )
+        return
+
     generated = [EXT / "build", EXT / "dist", EXT / "src" / "flet_notifications.egg-info"]
     for path in generated:
         shutil.rmtree(path, ignore_errors=True)

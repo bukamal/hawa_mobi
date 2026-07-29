@@ -28,7 +28,18 @@ jobs:
 
       - name: Install Python dependencies
         run: |
-          python -m pip install --upgrade pip
+          # Python 3.12 from actions/setup-python may not include setuptools.
+          # The notification-extension wheel regression test intentionally uses
+          # --no-build-isolation, so the PEP 517 backend must exist in this
+          # interpreter rather than only inside pip's temporary build env.
+          python -m pip install --upgrade pip "setuptools>=65" wheel
+          python - <<'PY'
+          import setuptools
+          import setuptools.build_meta
+          import wheel
+          print('Setuptools:', setuptools.__version__)
+          print('Wheel backend: available')
+          PY
           python -m pip install -e extensions/flet_notifications
           python -m pip install -e .
           python - <<'PY'
@@ -63,8 +74,8 @@ jobs:
           flet build apk --verbose --clear-cache \
             --product "هوى الشام" \
             --org com.hawaa \
-            --build-number 1094 \
-            --build-version 1.0.54
+            --build-number 1100 \
+            --build-version 1.0.55
           FIRST_BUILD_EXIT=$?
           set -e
           echo "Initial Flet build exit: $FIRST_BUILD_EXIT"

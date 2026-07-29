@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 import ast
+import tomllib
 
 ROOT = Path(__file__).resolve().parents[1]
 VIEWS = ROOT / "views"
@@ -43,9 +44,12 @@ def main() -> int:
     all_view_text = "\n".join(p.read_text(encoding="utf-8") for p in VIEWS.rglob("*.py"))
     assert "ft.Colors.INDIGO" not in all_view_text, "Legacy Indigo styling remains"
 
-    pyproject = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
-    assert 'version = "1.0.50"' in pyproject
-    assert 'color = "#0A3F70"' in pyproject
+    pyproject_text = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
+    pyproject = tomllib.loads(pyproject_text)
+    version = str(pyproject["project"]["version"])
+    numeric = tuple(int(part) for part in version.split(".")[:3])
+    assert numeric >= (1, 0, 50), version
+    assert pyproject["tool"]["flet"]["splash"]["color"] == "#0A3F70"
 
     # Runtime constructor check with pinned Flet is intentionally light and has
     # no database/network dependency.
