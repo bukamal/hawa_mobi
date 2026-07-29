@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import tomllib
 import sys
 import tempfile
 from pathlib import Path
@@ -18,7 +19,10 @@ def require(path: str, text: str) -> None:
 
 
 def static_checks() -> None:
-    require("pyproject.toml", 'version = "1.0.50"')
+    pyproject = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+    version = str(pyproject["project"]["version"])
+    numeric = tuple(int(part) for part in version.split(".")[:3])
+    assert numeric >= (1, 0, 50), version
     require("views/connection_recovery_view.py", "class ConnectionRecoveryView")
     require("views/connection_recovery_view.py", "_local_admin_is_valid")
     require("views/connection_recovery_view.py", "asyncio.to_thread")

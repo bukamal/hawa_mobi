@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import tomllib
 import tempfile
 from pathlib import Path
 
@@ -15,7 +16,10 @@ def require(path: str, text: str) -> None:
 
 
 def static_checks() -> None:
-    require("pyproject.toml", 'version = "1.0.50"')
+    pyproject = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+    version = str(pyproject["project"]["version"])
+    numeric = tuple(int(part) for part in version.split(".")[:3])
+    assert numeric >= (1, 0, 50), version
     require("views/design_system/interaction.py", "class DebouncedAction")
     require("views/accounts_mobile_view.py", "self._search_debouncer")
     require("views/accounts_mobile_view.py", "self._visible_limit")
