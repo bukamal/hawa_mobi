@@ -4,49 +4,61 @@
 Views must use semantic tokens rather than raw colors and arbitrary dimensions.
 The legacy aliases are intentionally kept in ``views.ui_kit`` for backwards
 compatibility with older screens while Phase 100 migrates the complete project.
+
+Palette follows the Nano visual language: deep teal brand, slate neutrals,
+semantic success/danger/warning states.
 """
 from __future__ import annotations
 
-# Brand. Keep the supplied visual identity seed used by reports and launcher.
-BRAND_PRIMARY = "#0A3F70"
-BRAND_PRIMARY_DARK = "#062B4D"
-BRAND_PRIMARY_LIGHT = "#EAF4FF"
-BRAND_PRIMARY_TINT = "#F4F8FC"
-BRAND_ACCENT = "#168AAD"
+# Brand — deep teal identity (Nano style).
+BRAND_PRIMARY = "#0F766E"
+BRAND_PRIMARY_DARK = "#115E59"
+BRAND_PRIMARY_LIGHT = "#CCFBF1"
+BRAND_PRIMARY_TINT = "#F0FDFA"
+BRAND_PRIMARY_BORDER = "#99F6E4"
+BRAND_ACCENT = "#14B8A6"
 BRAND_GOLD = "#D9A441"
 
 # Light semantic surfaces.
-LIGHT_BACKGROUND = "#F5F7FA"
+LIGHT_BACKGROUND = "#F8FAFC"
 LIGHT_SURFACE = "#FFFFFF"
-LIGHT_SURFACE_ALT = "#F8FAFC"
+LIGHT_SURFACE_ALT = "#F1F5F9"
 LIGHT_SURFACE_RAISED = "#FFFFFF"
-LIGHT_TEXT_PRIMARY = "#17212B"
+LIGHT_TEXT_PRIMARY = "#0F172A"
 LIGHT_TEXT_SECONDARY = "#64748B"
+LIGHT_TEXT_MUTED = "#475569"
+LIGHT_TEXT_FAINT = "#94A3B8"
 LIGHT_BORDER = "#E2E8F0"
-LIGHT_DIVIDER = "#EDF2F7"
+LIGHT_DIVIDER = "#E5E7EB"
 
 # Dark semantic surfaces.
-DARK_BACKGROUND = "#0D141C"
-DARK_SURFACE = "#17212B"
-DARK_SURFACE_ALT = "#1E2A36"
-DARK_SURFACE_RAISED = "#243240"
+DARK_BACKGROUND = "#0F172A"
+DARK_SURFACE = "#1E293B"
+DARK_SURFACE_ALT = "#243244"
+DARK_SURFACE_RAISED = "#334155"
 DARK_TEXT_PRIMARY = "#F1F5F9"
 DARK_TEXT_SECONDARY = "#94A3B8"
+DARK_TEXT_MUTED = "#CBD5E1"
+DARK_TEXT_FAINT = "#64748B"
 DARK_BORDER = "#334155"
-DARK_DIVIDER = "#263646"
+DARK_DIVIDER = "#475569"
 
 # Financial and state colors.
 FINANCIAL_RECEIVABLE = "#2563EB"   # لنا
-FINANCIAL_PAYABLE = "#D97706"      # له
-STATE_SUCCESS = "#1FA56A"
-STATE_SUCCESS_SOFT = "#E9F8F0"
-STATE_DANGER = "#E54848"
-STATE_DANGER_SOFT = "#FDECEC"
-STATE_WARNING = "#D9A441"
-STATE_WARNING_SOFT = "#FFF7E3"
-STATE_INFO = "#0369A1"
-STATE_INFO_SOFT = "#E8F4FA"
+FINANCIAL_PAYABLE = "#EA580C"      # له
+STATE_SUCCESS = "#16A34A"
+STATE_SUCCESS_SOFT = "#ECFDF5"
+STATE_DANGER = "#EF4444"
+STATE_DANGER_SOFT = "#FEF2F2"
+STATE_WARNING = "#D97706"
+STATE_WARNING_SOFT = "#FFFBEB"
+STATE_INFO = "#0D9488"
+STATE_INFO_SOFT = "#F0FDFA"
 STATE_DISABLED = "#94A3B8"
+
+# Elevation tint (soft, low-opacity shadows resolve against the border).
+SHADOW_LIGHT = "#E2E8F0"
+SHADOW_DARK = "#475569"
 
 # Type scale.
 TEXT_CAPTION = 11
@@ -70,8 +82,8 @@ SPACE_8 = 32
 # Shape and touch.
 RADIUS_FIELD = 10
 RADIUS_BUTTON = 10
-RADIUS_CARD = 14
-RADIUS_DIALOG = 18
+RADIUS_CARD = 16
+RADIUS_DIALOG = 20
 RADIUS_SHEET = 24
 TOUCH_TARGET = 48
 

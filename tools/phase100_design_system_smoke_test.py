@@ -49,7 +49,7 @@ def main() -> int:
     version = str(pyproject["project"]["version"])
     numeric = tuple(int(part) for part in version.split(".")[:3])
     assert numeric >= (1, 0, 50), version
-    assert pyproject["tool"]["flet"]["splash"]["color"] == "#0A3F70"
+    assert pyproject["tool"]["flet"]["splash"]["color"] == "#0F766E"
 
     # Runtime constructor check with pinned Flet is intentionally light and has
     # no database/network dependency.

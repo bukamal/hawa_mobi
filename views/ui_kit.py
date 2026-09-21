@@ -24,33 +24,36 @@ from views.design_system.components import (
     app_surface, icon_badge, screen_header, modern_text_field,
     primary_action, secondary_action, danger_action, semantic_chip,
     metric_card, section_title,
+    status_pill, kpi_card, pulse_card, pulse_metric_chip,
+    SegmentedToggle, SegmentOption, SmartAmountField,
 )
 from views.design_system.responsive import responsive_container, responsive_grid
+from views.design_system.toast import toast
 
 # Backwards-compatible public tokens.  The exact brand constants are retained
 # because reports, launcher assets and smoke tests share the supplied identity.
-PRIMARY = "#0A3F70"
-PRIMARY_DARK = "#062B4D"
-PRIMARY_SOFT = "#EAF4FF"
-PRIMARY_TINT = "#F4F8FC"
-ACCENT = "#168AAD"
-ACCENT_DARK = "#0E6985"
-PAGE_BG = "#F5F7FA"
+PRIMARY = "#0F766E"
+PRIMARY_DARK = "#115E59"
+PRIMARY_SOFT = "#F0FDFA"
+PRIMARY_TINT = "#F8FFFE"
+ACCENT = "#14B8A6"
+ACCENT_DARK = "#0D9488"
+PAGE_BG = "#F8FAFC"
 CARD_BG = ft.Colors.WHITE
 MUTED = "#64748B"
-TEXT = "#17212B"
+TEXT = "#0F172A"
 BORDER = "#E2E8F0"
-DANGER = "#E54848"
-DANGER_SOFT = "#FDECEC"
-SUCCESS = "#1FA56A"
-SUCCESS_SOFT = "#E9F8F0"
-WARNING = "#D9A441"
-WARNING_SOFT = "#FFF7E3"
-INFO = "#0369A1"
-INFO_SOFT = "#E8F4FA"
-SHADOW = "#CBD5E1"
+DANGER = "#EF4444"
+DANGER_SOFT = "#FEF2F2"
+SUCCESS = "#16A34A"
+SUCCESS_SOFT = "#ECFDF5"
+WARNING = "#D97706"
+WARNING_SOFT = "#FFFBEB"
+INFO = "#0D9488"
+INFO_SOFT = "#F0FDFA"
+SHADOW = "#E2E8F0"
 RECEIVABLE = "#2563EB"
-PAYABLE = "#D97706"
+PAYABLE = "#EA580C"
 
 ASSET_APP_SYMBOL = "/app_logo.png"
 ASSET_APP_WORDMARK = "/brand/app_wordmark.png"
@@ -75,7 +78,7 @@ def app_mark(size=86, color=PRIMARY, dark=False):
         height=size,
         border_radius=max(18, size // 5),
         bgcolor=ft.Colors.WHITE,
-        border=_full_border("#E2EBF5"),
+        border=_full_border("#CCFBF1"),
         shadow=ft.BoxShadow(blur_radius=18, spread_radius=0, color=ft.Colors.BLACK12),
         padding=max(5, size // 16),
         content=ft.Image(src=ASSET_APP_SYMBOL, width=size, height=size, fit=image_fit("contain")),
@@ -88,7 +91,7 @@ def brand_wordmark(width=260, height=92, dark=True):
 
 def app_brand(title='هوى الشام', subtitle='نظام الحسابات الداخلية', size=86, color=PRIMARY, dark=False, wordmark=False):
     text_color = ft.Colors.WHITE if not dark else TEXT
-    sub_color = "#DCE9F5" if not dark else MUTED
+    sub_color = "#CCFBF1" if not dark else MUTED
     controls = [app_mark(size=size, color=color, dark=dark)]
     if wordmark:
         controls.append(brand_wordmark(width=max(220, int(size * 3.4)), height=max(70, int(size * 1.1)), dark=dark))
@@ -107,7 +110,7 @@ def app_brand(title='هوى الشام', subtitle='نظام الحسابات ا�
 
 
 def brand_background(content, padding=24, dark=True):
-    colors = ["#061B33", PRIMARY_DARK, PRIMARY, "#0E5B95"] if dark else ["#EEF5FB", PAGE_BG, "#FFFFFF"]
+    colors = ["#042F2E", PRIMARY_DARK, PRIMARY, "#14B8A6"] if dark else ["#F0FDFA", PAGE_BG, "#FFFFFF"]
     return ft.Container(
         expand=True,
         padding=padding,
@@ -187,10 +190,16 @@ def summary_bar(items, visible=True, bgcolor=PRIMARY_TINT):
 
 
 def empty_state(title, subtitle=None, icon=ft.Icons.INFO_OUTLINE, padding=50, action=None):
+    """Nano-style actionable empty state: icon medallion, direct headline,
+    optional hint and an optional action control."""
     controls = [
-        icon_badge(icon, color=MUTED, bgcolor=PRIMARY_TINT, size=34, padding=16),
-        ft.Text(title, size=17, weight=ft.FontWeight.BOLD, color=TEXT, text_align=ft.TextAlign.CENTER),
-        ft.Text(subtitle or "", size=12, color=MUTED, visible=bool(subtitle), text_align=ft.TextAlign.CENTER),
+        ft.Container(
+            ft.Icon(icon, size=30, color="#94A3B8"),
+            width=64, height=64, alignment=ft.alignment.center,
+            bgcolor="#F1F5F9", border_radius=20,
+        ),
+        ft.Text(title, size=13, weight=ft.FontWeight.W_600, color="#475569", text_align=ft.TextAlign.CENTER),
+        ft.Text(subtitle or "", size=11, color="#94A3B8", visible=bool(subtitle), text_align=ft.TextAlign.CENTER),
     ]
     if action is not None:
         controls.append(action)

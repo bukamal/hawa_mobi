@@ -14,11 +14,11 @@ import flet as ft
 try:
     from views.ui_kit import PRIMARY, PRIMARY_SOFT, TEXT, MUTED, BORDER
 except Exception:  # Static/compile-only environments
-    PRIMARY = "#0A3F70"
-    PRIMARY_SOFT = "#EAF4FF"
-    TEXT = "#172033"
-    MUTED = "#667085"
-    BORDER = "#D8E4EE"
+    PRIMARY = "#0F766E"
+    PRIMARY_SOFT = "#F0FDFA"
+    TEXT = "#0F172A"
+    MUTED = "#64748B"
+    BORDER = "#E2E8F0"
 
 LookupProvider = Callable[[str, int], List[Dict[str, Any]]]
 

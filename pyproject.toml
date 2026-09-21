@@ -1,82 +1,87 @@
 [project]
-name = "hawaa-accounting"
-version = "1.0.55"
-description = "نظام حسابات هوى الشام الداخلي"
+name = "hf-offline"
+version = "0.1.0"
+description = "HF — ورشة إصلاح الهاتف الذكي: أدوات تشخيص وصيانة برمجية تعمل محليًا (Flet)"
 requires-python = ">=3.10"
 dependencies = [
-    "flet==0.28.3",
-    "requests>=2.25.0",
-    "flet-permission-handler==0.1.0",
-    "Pillow>=10.0.0",
-    "cryptography==43.0.1",
-    "flet-notifications==0.2.1",
+  "flet==0.85.2",
 ]
+
+[project.optional-dependencies]
+dev = [
+  "ruff>=0.6",
+  "pytest>=8.0",
+  "pytest-cov>=5.0",
+]
+
+[tool.ruff]
+line-length = 320  # intentionally keep single-line Flet control trees
+target-version = "py310"
+exclude = ["build", "dist", "extensions"]
+
+[tool.ruff.lint]
+select = [
+  "F",   # pyflakes: unused imports/vars, undefined names, etc.
+  "E9",  # syntax errors
+  "B",   # bugbear: common real-world bug patterns
+]
+ignore = [
+  "B008",  # Flet control factories in default args are intentional
+]
+
+[tool.pytest.ini_options]
+minversion = "8.0"
+testpaths = ["tests/unit", "tests/integration"]
+pythonpath = ["src"]
+addopts = "-q --strict-markers"
+markers = [
+  "unit: fast pure-python tests (no UI runtime needed)",
+  "integration: tests that build a real AppContext / database",
+]
+
+[tool.coverage.run]
+source = ["hf_offline"]
+branch = true
+omit = ["*/__pycache__/*"]
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = false
+fail_under = 10
 
 [build-system]
 requires = ["setuptools>=65", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools]
-py-modules = ["main", "config", "currency"]
+package-dir = {"" = "src"}
 
 [tool.setuptools.packages.find]
-include = ["auth*", "database*", "i18n*", "views*", "services*", "reports*"]
+where = ["src"]
 
 [tool.flet]
-permissions = ["camera", "storage"]
-org = "com.hawaa"
-product = "هوى الشام"
-company = "Hawaa"
-copyright = "Copyright (C) 2026 Hawaa"
-build_number = 1100
+org = "com.hfworkshop"
+product = "HF | إتش-إف"
+company = "HF Workshop"
+copyright = "Copyright © 2026"
+build_number = 1
 android_permissions = [
-    "android.permission.INTERNET",
-    "android.permission.CAMERA",
-    "android.permission.READ_EXTERNAL_STORAGE",
-    "android.permission.WRITE_EXTERNAL_STORAGE",
-    "android.permission.READ_MEDIA_IMAGES",
-    "android.permission.READ_MEDIA_VIDEO",
-    "android.permission.READ_MEDIA_AUDIO",
-    "android.permission.MANAGE_EXTERNAL_STORAGE",
-    "android.permission.POST_NOTIFICATIONS",
-    "android.permission.RECEIVE_BOOT_COMPLETED"
+  "android.permission.CAMERA",
 ]
 
 [tool.flet.app]
-path = "."
+path = "src"
 module = "main"
 
-[tool.setuptools.package-data]
-"*" = ["assets/*.png", "assets/icons/*.png", "assets/brand/*.png", "assets/android_res/*/*.png"]
-
 [tool.flet.splash]
-color = "#0A3F70"
-dark_color = "#082040"
+color = "#0F766E"
+dark_color = "#115E59"
 android = true
 ios = true
 web = true
 
 [tool.flet.android]
-adaptive_icon_background = "#0A3F70"
+adaptive_icon_background = "#0F766E"
 
 [tool.flet.android.manifest_application]
 allowBackup = "false"
-
-[tool.flet.android.permission]
-"android.permission.INTERNET" = true
-"android.permission.CAMERA" = true
-"android.permission.READ_EXTERNAL_STORAGE" = true
-"android.permission.WRITE_EXTERNAL_STORAGE" = true
-
-"android.permission.READ_MEDIA_IMAGES" = true
-
-"android.permission.READ_MEDIA_VIDEO" = true
-
-"android.permission.READ_MEDIA_AUDIO" = true
-
-"android.permission.MANAGE_EXTERNAL_STORAGE" = true
-"android.permission.POST_NOTIFICATIONS" = true
-"android.permission.RECEIVE_BOOT_COMPLETED" = true
-
-[tool.flet.dev_packages]
-"flet-notifications" = "extensions/flet_notifications"

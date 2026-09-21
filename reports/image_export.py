@@ -26,17 +26,17 @@ try:  # Pillow is intentionally optional at import time; buttons surface errors.
 except Exception:  # pragma: no cover - exercised only on runtimes missing Pillow
     Image = ImageDraw = ImageFont = ImageOps = features = None
 
-PRIMARY = "#0A3F70"
-PRIMARY_SOFT = "#EAF4FF"
-TEXT = "#172033"
-MUTED = "#667085"
-BORDER = "#D8E4EE"
-SUCCESS = "#1FA56A"
-DANGER = "#E54848"
-WARNING = "#D9A441"
-BG = "#F7FAFC"
+PRIMARY = "#0F766E"
+PRIMARY_SOFT = "#F0FDFA"
+TEXT = "#0F172A"
+MUTED = "#64748B"
+BORDER = "#E2E8F0"
+SUCCESS = "#16A34A"
+DANGER = "#EF4444"
+WARNING = "#D97706"
+BG = "#F8FAFC"
 WHITE = "#FFFFFF"
-CARD_BG = "#F9FBFD"
+CARD_BG = "#F1F5F9"
 PAGE_W = 1240
 MARGIN = 64
 
@@ -381,7 +381,7 @@ def _draw_statement_rows(draw, y: int, rows: List[Dict[str, str]], *, max_rows: 
         _draw_text(draw, (PAGE_W - MARGIN - 28, y + 70), "لا توجد قيود ضمن الكشف", _font(22), MUTED)
         y += 130
     if clipped:
-        _rounded_rect(draw, (MARGIN, y + 14, PAGE_W - MARGIN, y + 88), radius=20, fill="#FFF7E3", outline=None)
+        _rounded_rect(draw, (MARGIN, y + 14, PAGE_W - MARGIN, y + 88), radius=20, fill="#FFFBEB", outline=None)
         _draw_text(draw, (PAGE_W - MARGIN - 24, y + 60), f"تم عرض أول {max_rows} قيد في الصورة. HTML وCSV يحتويان كل القيود.", _font(18), WARNING)
         y += 104
     return y
@@ -480,7 +480,7 @@ def _draw_report_rows(draw, y: int, report, *, max_rows: int = 180) -> int:
         _draw_text(draw, (PAGE_W - MARGIN - 28, y + 70), "لا توجد بيانات ضمن الفلاتر المحددة", _font(22), MUTED)
         y += 130
     if clipped:
-        _rounded_rect(draw, (MARGIN, y + 14, PAGE_W - MARGIN, y + 88), radius=20, fill="#FFF7E3", outline=None)
+        _rounded_rect(draw, (MARGIN, y + 14, PAGE_W - MARGIN, y + 88), radius=20, fill="#FFFBEB", outline=None)
         _draw_text(draw, (PAGE_W - MARGIN - 24, y + 60), f"تم عرض أول {max_rows} صف في الصورة. HTML وCSV يحتويان كل الصفوف.", _font(18), WARNING)
         y += 104
     return y
