@@ -327,6 +327,62 @@ def _build_alert_dialog_host(page, control):
     return host
 
 
+def _dialog_title_text(control) -> str:
+    """Extract a plain title string from an AlertDialog-like control."""
+    title = getattr(control, "title", None)
+    if title is None:
+        return ""
+    if isinstance(title, str):
+        return title
+    return str(getattr(title, "value", "") or "")
+
+
+def _build_bottom_sheet_host(page, control):
+    """Render an AlertDialog as a Nano-style bottom sheet overlay host.
+
+    The dialog's content/actions are re-mounted into a bottom-anchored sheet
+    (title bar + close button + scrollable body + sticky action row) inside a
+    plain overlay Stack — the same Android-safe route as the centered host.
+    ``close_control`` keeps working because the host is tracked via the
+    ``_hawaa_modal_host`` attribute on the logical dialog control.
+    """
+    from views.design_system.sheets import BottomSheetDialog
+
+    sheet = BottomSheetDialog(
+        page,
+        _dialog_title_text(control),
+        body=getattr(control, "content", None),
+        actions=getattr(control, "actions", None),
+        dismissible=not bool(getattr(control, "modal", False)),
+    )
+
+    original_dismiss = getattr(control, "on_dismiss", None)
+
+    def _request_close(event=None):
+        # Runs inside the sheet's X button / barrier handlers.
+        sheet.close()
+        original = original_dismiss
+        if callable(original):
+            try:
+                original(event)
+            except Exception:
+                pass
+        close_control(page, control)
+
+    sheet._on_request_close = _request_close
+    host = sheet._build_host()
+    try:
+        setattr(host, "_hawaa_sheet", sheet)
+    except Exception:
+        pass
+    _set_dialog_host(control, host)
+    try:
+        control.open = True
+    except Exception:
+        pass
+    return host
+
+
 def _set_page_dialog_pointer(page, control) -> None:
     """Expose the logical top dialog for Android Back without native routes."""
     try:
@@ -356,7 +412,10 @@ def open_control(page: ft.Page, control):
             # Defensive cleanup when a caller reuses the same dialog object.
             _remove_modal_host(page, control)
             _remove_from_overlay(page, control)
-            host = _build_alert_dialog_host(page, control)
+            # Nano-style UI: dialogs render as bottom sheets instead of
+            # centered modal cards.  The centered host builder is retained
+            # above for emergency rollback.
+            host = _build_bottom_sheet_host(page, control)
             _ensure_overlay_contains(page, host)
             _set_page_dialog_pointer(page, control)
             try:
