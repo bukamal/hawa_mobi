@@ -275,10 +275,13 @@ def confirm_sheet(
     danger: bool = False,
 ) -> BottomSheetDialog:
     """A confirmation sheet replacing centered confirm AlertDialogs."""
+    holder: dict = {}
 
     def _fire(callback):
         def handler(_=None):
-            sheet.close()
+            opened = holder.get("sheet")
+            if opened is not None:
+                opened.close()
             if callable(callback):
                 try:
                     callback()
@@ -300,7 +303,9 @@ def confirm_sheet(
         alignment=ft.MainAxisAlignment.END,
         spacing=10,
     )
-    return open_form_sheet(page, title, body=body, actions=actions, dismissible=True)
+    opened = open_form_sheet(page, title, body=body, actions=actions, dismissible=True)
+    holder["sheet"] = opened
+    return opened
 
 
 # ---------------------------------------------------------------------------

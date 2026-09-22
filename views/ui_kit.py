@@ -12,6 +12,7 @@ import flet as ft
 from views.flet_compat import (
     ALIGN_CENTER, ALIGN_TOP_LEFT, ALIGN_BOTTOM_RIGHT,
     show_snackbar as compat_show_snackbar,
+    make_floating_action_button,
 )
 from views.design_system.tokens import (
     BRAND_PRIMARY_DARK, BRAND_PRIMARY_LIGHT, BRAND_PRIMARY_TINT, BRAND_ACCENT,
@@ -209,6 +210,94 @@ def empty_state(title, subtitle=None, icon=ft.Icons.INFO_OUTLINE, padding=50, ac
         expand=True,
         padding=padding,
     )
+
+
+def swipeable_card(content, *, key, on_swiped, enabled=True, radius=None):
+    """Nano-style swipe-to-delete wrapper around a list card.
+
+    Mirrors nano_offline parties/items swipe actions exactly:
+    - Both swipe directions (left/right) reveal the same red "حذف" background,
+      so RTL/LTR gesture ambiguity has no wrong answer.
+    - ``on_swiped`` NEVER deletes directly — the app-layer handler opens the
+      central confirm sheet; cancelling must restore the row via refresh()
+      because Dismissible has already removed it visually.
+    - ``enabled=False`` (or on_swiped=None) returns the bare card so rows that
+      cannot be deleted (viewers, locked records, used entries) never expose a
+      doomed gesture.
+    """
+    from views.design_system.tokens import RADIUS_CARD as _TOKEN_RADIUS
+
+    card_radius = RADIUS_CARD if radius is None else radius
+    if not enabled or on_swiped is None:
+        return content
+
+    def _wipe_background(alignment):
+        return ft.Container(
+            content=ft.Row(
+                [
+                    ft.Icon(ft.Icons.DELETE_OUTLINE, color=ft.Colors.WHITE, size=22),
+                    ft.Text("حذف", color=ft.Colors.WHITE, size=12, weight=ft.FontWeight.W_600),
+                ],
+                spacing=6,
+                alignment=alignment,
+            ),
+            bgcolor=DANGER,
+            border_radius=card_radius,
+            padding=ft.Padding(left=20, right=20, top=4, bottom=4),
+        )
+
+    return ft.Dismissible(
+        key=key,
+        content=content,
+        dismiss_direction=ft.DismissDirection.HORIZONTAL,
+        background=_wipe_background(ft.MainAxisAlignment.START),
+        secondary_background=_wipe_background(ft.MainAxisAlignment.END),
+        on_dismiss=lambda _, *args, **kwargs: on_swiped(),
+    )
+
+
+def unified_fab(page, *, icon, on_click, tooltip, bgcolor=None, visible=True, key=None):
+    """Nano-style page FAB: one construction path + consistent placement.
+
+    Every Android list screen attaches its action button through this helper so
+    all screens share the same color token, elevation, circular shape and
+    END_FLOAT placement.  Placement is applied defensively (0.28.x wraps the
+    location attribute on some shells).
+    """
+    fab = make_floating_action_button(
+        icon=icon,
+        bgcolor=bgcolor or SUCCESS,
+        foreground_color=ft.Colors.WHITE,
+        on_click=on_click,
+        tooltip=tooltip,
+        mini=False,
+        elevation=6,
+        shape=ft.CircleBorder(),
+        visible=visible,
+    )
+    if key is not None:
+        try:
+            fab.key = key
+        except Exception:
+            pass
+    page.floating_action_button = fab
+    try:
+        page.floating_action_button_location = ft.FloatingActionButtonLocation.END_FLOAT
+    except Exception:
+        pass
+    return fab
+
+
+def refresh_fab(page, visible):
+    """Show/hide the current page FAB without rebuilding it."""
+    fab = getattr(page, "floating_action_button", None)
+    if fab is None:
+        return
+    try:
+        fab.visible = bool(visible)
+        page.update()
+    except Exception:
+        pass
 
 
 def action_text_button(label, icon, on_click, color=None, visible=True):

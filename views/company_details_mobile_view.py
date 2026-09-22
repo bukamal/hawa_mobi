@@ -6,10 +6,13 @@ from auth.session import UserSession
 from i18n.translator import translate
 from currency import currency
 from views.design_system.responsive import bottom_safe_spacer, page_width
+from views.design_system.sheets import confirm_sheet
+from views.flet_compat import make_floating_action_button
 from views.ui_kit import (
     show_snackbar, empty_state, data_card, amount_pill, key_value_tile, pill,
     summary_bar, metric_tile, info_banner, search_field, secondary_button,
-    modern_action_button, operation_menu_button, PRIMARY, PRIMARY_SOFT,
+    modern_action_button, operation_menu_button, swipeable_card,
+    PRIMARY, PRIMARY_SOFT,
     SUCCESS, DANGER, WARNING, MUTED, TEXT, BORDER,
 )
 from services.company_search_service import enrich_expense_match, normalize_search_text
@@ -122,8 +125,27 @@ class CompanyDetailsMobileView(ft.Column):
         self.controls = [
             self.summary_panel, search_banner, self.report_actions, self.people_summary,
             self.filter_surface, ft.Divider(height=1), self.records_list,
-            self.pagination_bar, bottom_safe_spacer(self._page),
+            self.pagination_bar, bottom_safe_spacer(self._page, has_fab=True),
         ]
+        # Nano pattern: the screen's primary action lives on a page FAB
+        # (hidden for viewers) while the explicit row stays available too.
+        is_viewer_view = UserSession.get_current() and UserSession.get_current().get('role') == 'viewer'
+        self.add_entry_fab = make_floating_action_button(
+            icon=ft.Icons.ADD,
+            bgcolor=SUCCESS,
+            foreground_color=ft.Colors.WHITE,
+            on_click=self._add_record,
+            tooltip="إضافة قيد",
+            mini=False,
+            elevation=6,
+            shape=ft.CircleBorder(),
+            visible=not bool(is_viewer_view),
+        )
+        self._page.floating_action_button = self.add_entry_fab
+        try:
+            self._page.floating_action_button_location = ft.FloatingActionButtonLocation.END_FLOAT
+        except Exception:
+            pass
         self._load_data()
 
     def _show_snackbar(self, message, is_error=False):
@@ -428,7 +450,17 @@ class CompanyDetailsMobileView(ft.Column):
                 padding=12,
                 elevation=0,
             )
-            cards.append(card)
+            # Nano swipe-to-delete: only plain unlocked records (no linked
+            # operation) are eligible — same guard as the actions menu. Swipe
+            # opens the central confirm sheet; nothing is deleted until it is
+            # confirmed, and cancelling re-renders the row back into place.
+            deletable = (not is_viewer) and (not str(record.get('source_type') or '').strip()) and int(record.get('is_locked') or 0) == 0
+            cards.append(swipeable_card(
+                card,
+                key=f"record-{record.get('id') or idx}",
+                on_swiped=lambda rec=dict(record): self._delete_record(rec),
+                enabled=deletable,
+            ))
 
         self._mobile_ledger_rows = cards
         self._desktop_ledger_table = None
@@ -749,7 +781,14 @@ class CompanyDetailsMobileView(ft.Column):
         open_control(self._page, dialog)
 
     def _delete_record(self, record):
-        def confirm(e):
+        """Nano-style central confirm flow (shared by button tap AND swipe).
+
+        Swipe callers need restore-on-cancel: Dismissible already removed the
+        row visually, so cancelling must re-render the ledger — nothing was
+        deleted from the database in that path.
+        """
+
+        def do_delete():
             try:
                 repo = ExpenseRepository()
                 repo.delete(record['id'], UserSession.get_current().get('id') if UserSession.get_current() else None)
@@ -757,17 +796,22 @@ class CompanyDetailsMobileView(ft.Column):
                 self._reload()
             except Exception as ex:
                 self._show_snackbar(f"خطأ: {str(ex)}", True)
-            self._close_dialog(dlg)
+                self._reload()
 
-        btn_yes = ft.TextButton("نعم", on_click=confirm)
-        btn_no = ft.TextButton("لا", on_click=lambda e: self._close_dialog(dlg))
+        def on_cancel():
+            # restore the row swiped out of view by Dismissible
+            self._load_data()
 
-        dlg = ft.AlertDialog(
-            title=ft.Text("تأكيد الحذف"),
-            content=ft.Text(f"حذف قيد بمبلغ {record['amount_original']} {record['currency_original']}؟"),
-            actions=[btn_yes, btn_no]
+        confirm_sheet(
+            self._page,
+            "تأكيد الحذف",
+            f"حذف قيد بمبلغ {record['amount_original']} {record['currency_original']}؟",
+            confirm_text="نعم، حذف",
+            cancel_text="لا",
+            danger=True,
+            on_confirm=do_delete,
+            on_cancel=on_cancel,
         )
-        open_control(self._page, dlg)
 
     def _confirm_linked_operation_delete(self, record, *, title, operation_label_text, delete_callback):
         ref = str(record.get('source_ref') or '').strip()

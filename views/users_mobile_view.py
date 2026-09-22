@@ -7,11 +7,13 @@ from auth.permissions import access_denied_message
 from auth.session import UserSession
 from database import UserRepository
 from i18n.translator import translate
-from views.flet_compat import open_control, close_control, make_floating_action_button
+from views.flet_compat import open_control, close_control
 from views.design_system.responsive import bottom_safe_spacer
+from views.design_system.sheets import confirm_sheet
 from views.ui_kit import (
     page_header, summary_bar, metric_tile, data_card, pill, empty_state,
     action_text_button, show_snackbar, search_field, info_banner,
+    swipeable_card, unified_fab,
     PRIMARY, PRIMARY_SOFT, DANGER, MUTED, TEXT,
 )
 
@@ -32,16 +34,14 @@ class UsersMobileView(ft.Column):
             ]
             return
 
-        self.add_btn = make_floating_action_button(
-            icon=ft.Icons.PERSON_ADD, bgcolor=PRIMARY, foreground_color=ft.Colors.WHITE,
-            on_click=self._add_user, tooltip=translate('add'), mini=False,
-            elevation=6, shape=ft.CircleBorder(),
+        # Nano-style page FAB: one helper owns construction + END_FLOAT placement.
+        self.add_btn = unified_fab(
+            self._page,
+            icon=ft.Icons.PERSON_ADD,
+            on_click=self._add_user,
+            tooltip=translate('add'),
+            bgcolor=PRIMARY,
         )
-        self._page.floating_action_button = self.add_btn
-        try:
-            self._page.floating_action_button_location = ft.FloatingActionButtonLocation.END_FLOAT
-        except Exception:
-            pass
         self.search = search_field("بحث بالاسم أو اسم المستخدم", self._search_changed)
         self.summary = ft.Container()
         self.users_list = ft.Column(spacing=8)
@@ -100,7 +100,14 @@ class UsersMobileView(ft.Column):
             created = (user.get('created_at') or '')[:10]
             last_login = (user.get('last_login') or 'لم يسجل بعد')[:10]
             can_delete, delete_reason = repo.can_delete(user['id'])
-            cards.append(data_card(
+            user_id = user['id']
+            username = str(user.get('username') or '')
+            row_actions = ft.Row([
+                action_text_button("تعديل", ft.Icons.EDIT_OUTLINED, lambda e, uid=user['id']: self._edit_user(uid)),
+                action_text_button("حذف", ft.Icons.DELETE_OUTLINE, lambda e, uid=user['id'], name=user.get('username',''): self._delete_user(uid, name), color=DANGER, visible=can_delete),
+                ft.IconButton(icon=ft.Icons.LOCK_OUTLINE, tooltip=delete_reason, visible=not can_delete, disabled=True),
+            ], alignment=ft.MainAxisAlignment.END)
+            card = data_card(
                 ft.Column([
                     ft.Row([
                         ft.Container(content=ft.Icon(role_icon, color=role_color, size=22), bgcolor=PRIMARY_SOFT, border_radius=14, padding=9),
@@ -114,12 +121,17 @@ class UsersMobileView(ft.Column):
                         ft.Text(f"تاريخ الإنشاء: {created}", size=11, color=MUTED),
                         ft.Text(f"آخر دخول: {last_login}", size=11, color=MUTED),
                     ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
-                    ft.Row([
-                        action_text_button("تعديل", ft.Icons.EDIT_OUTLINED, lambda e, uid=user['id']: self._edit_user(uid)),
-                        action_text_button("حذف", ft.Icons.DELETE_OUTLINE, lambda e, uid=user['id'], name=user.get('username',''): self._delete_user(uid, name), color=DANGER, visible=can_delete),
-                        ft.IconButton(icon=ft.Icons.LOCK_OUTLINE, tooltip=delete_reason, visible=not can_delete, disabled=True),
-                    ], alignment=ft.MainAxisAlignment.END),
+                    row_actions,
                 ], spacing=9), elevation=0,
+            )
+            # Nano swipe-to-delete: swipe opens the same confirm flow as the
+            # delete button — nothing is removed until the sheet is confirmed.
+            # Rows that cannot be deleted never get wrapped (no doomed gesture).
+            cards.append(swipeable_card(
+                card,
+                key=f"user-{user_id}",
+                on_swiped=lambda uid=user_id, name=username: self._delete_user(uid, name),
+                enabled=can_delete,
             ))
         self.users_list.controls = cards or [empty_state("لا توجد نتائج", "غيّر عبارة البحث أو أضف مستخدمًا جديدًا", ft.Icons.GROUP_OFF)]
         try:
@@ -136,29 +148,38 @@ class UsersMobileView(ft.Column):
         open_control(self._page, UserDialog(page=self._page, user_id=user_id, on_save=self._load_users))
 
     def _delete_user(self, user_id, username):
+        """Nano-style central confirm flow (shared by button tap AND swipe).
+
+        Swipe callers need restore-on-cancel: Dismissible already removed the
+        row visually before this runs, so cancelling must redraw the list —
+        nothing was deleted from the database, so a re-render brings it back.
+        """
         repo = UserRepository()
         allowed, reason = repo.can_delete(user_id)
         if not allowed:
             self._show_snackbar(reason, True)
+            self._load_users()
             return
 
-        def confirm_delete(e):
+        def do_delete():
             try:
                 repo.delete(user_id)
                 self._show_snackbar(f"تم حذف المستخدم {username}", False)
-                self._load_users()
             except Exception as ex:
                 self._show_snackbar(str(ex), True)
-            finally:
-                close_control(self._page, dlg)
+            self._load_users()
 
-        dlg = ft.AlertDialog(
-            modal=True,
-            title=ft.Text("حذف مستخدم", color=DANGER, weight=ft.FontWeight.BOLD),
-            content=ft.Text(f"سيتم حذف حساب «{username}». لا يؤثر ذلك في القيود التاريخية المنسوبة إليه. هل تريد المتابعة؟"),
-            actions=[
-                ft.TextButton("إلغاء", on_click=lambda e: close_control(self._page, dlg)),
-                ft.FilledButton("حذف المستخدم", bgcolor=DANGER, color=ft.Colors.WHITE, on_click=confirm_delete),
-            ],
+        def on_cancel():
+            # restore row swiped out of view by Dismissible
+            self._load_users()
+
+        confirm_sheet(
+            self._page,
+            "حذف مستخدم",
+            f"سيتم حذف حساب «{username}». لا يؤثر ذلك في القيود التاريخية المنسوبة إليه. هل تريد المتابعة؟",
+            confirm_text="حذف المستخدم",
+            cancel_text="إلغاء",
+            danger=True,
+            on_confirm=do_delete,
+            on_cancel=on_cancel,
         )
-        open_control(self._page, dlg)

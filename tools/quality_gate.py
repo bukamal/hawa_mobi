@@ -159,6 +159,7 @@ def main() -> int:
         "tools/flet_entrypoint_compat_smoke_test.py",
         "tools/flet_alignment_compat_smoke_test.py",
         "tools/flet_fab_compat_smoke_test.py",
+        "tools/nano_interactions_smoke_test.py",
         "tools/flet_expansion_tile_compat_smoke_test.py",
         "tools/mandatory_password_change_flow_smoke_test.py",
         "tools/credential_store_smoke_test.py",
