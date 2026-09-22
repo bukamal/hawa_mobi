@@ -57,7 +57,11 @@ ios = true
 web = true
 
 [tool.flet.android]
-adaptive_icon_background = "#0A3F70"
+# White backing layer for the adaptive icon: the foreground (icon_android.png)
+# is the navy artwork on transparency, so every mask shape (circle/squircle/
+# rounded square) shows the artwork on white — matching the app logo and the
+# store/installer preview instead of a white patch on a navy disc.
+adaptive_icon_background = "#FFFFFF"
 
 [tool.flet.android.manifest_application]
 allowBackup = "false"
