@@ -106,6 +106,10 @@ def migration_and_planner_checks():
 def coordinator_reconciliation_checks():
     db_path = get_local_db_path()
     now = dt.datetime.now().isoformat(timespec="seconds")
+    # The coordinator plans against the real clock, so the due date must stay
+    # in the future on every run; a hardcoded calendar date goes stale and
+    # flips the four scheduled milestones into a single "already shown" one.
+    due = (dt.date.today() + dt.timedelta(days=5)).isoformat()
     with sqlite3.connect(db_path) as conn:
         cur = conn.execute(
             """INSERT INTO expenses(company_name,amount,amount_base,type,date,currency,amount_original,
@@ -113,12 +117,12 @@ def coordinator_reconciliation_checks():
                  service_type,operation_type,is_settleable,payment_status,created_at)
                VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
             ("شركة ثانية", 500, 500, "incoming", "2026-07-28", "USD", 500, "USD", 1,
-             "approved", "2026-08-10", "normal", "سارة", "قيد عادي", "normal", 1, "unpaid", now),
+             "approved", due, "normal", "سارة", "قيد عادي", "normal", 1, "unpaid", now),
         )
         expense_id = cur.lastrowid
         conn.execute(
             "INSERT INTO payment_reminders(expense_id,reminder_date,note,is_done,created_at) VALUES(?,?,?,?,?)",
-            (expense_id, "2026-08-10", "متابعة", 0, now),
+            (expense_id, due, "متابعة", 0, now),
         )
 
     class FakeNative:
